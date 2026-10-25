@@ -27,8 +27,10 @@ bool GameCubeRuntime::LoadGame(const char* dol_path) {
     return false;
   }
   dispatch_.RegisterGuestBoot();
-  SFA_LOGI("runtime: DOL cargado, entry 0x%08X, listo para dispatch",
-           result.entry);
+  dispatch_.RegisterGuestInit();
+  SFA_LOGI("runtime: DOL cargado, entry 0x%08X, dispatch guest con "
+           "%zu simbolos (boot + init)",
+           result.entry, dispatch_.GuestCount());
   return true;
 }
 

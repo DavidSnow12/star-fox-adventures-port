@@ -199,6 +199,61 @@ un dispositivo real.
   (documentado para JDK 17); si el primer build falla por JDK,
   opciones: JDK 17 con `org.gradle.java.home`, o subir AGP.
 
+## Alcance HLE/GX/DSP/input (análisis verificado, trabajo local)
+
+Análisis en `work-port/gx-scope/` (fuera del repo, solo lectura del
+repo, sin modificarlo): conteos por grep en los 176 chunks y en
+`symbols.map` (24.957 líneas, 24.945 direcciones distintas).
+
+- **Contrato CPU:** gpr 940.106 usos, pc 714.808, downcount 144.810,
+  cr 135.181, fpr 130.579, lr 64.198, ps1 50.652, xer 47.066, ctr
+  11.413, exception 5.456; `mem_*` en total 274.147 usos
+  (read32 107.456, write32 81.083, resto 8/16/64). Toda la interacción
+  con el mundo pasa por esas 8 `mem_*`: si no distinguen RAM de
+  hardware, nada más funciona.
+- **Correcciones aplicadas de este análisis:** `CpuState` ahora
+  incluye `host_call` (flag que `generated.h` consulta junto a
+  `ppc_host_call`); `IsHardwareRegister` ampliado a 0xCC020000
+  (CC00: 171 `lis`, CC01: 202 `lis`; antes CC01 caía en exception).
+  Hardware no se escribe como literal en el C: se construye con
+  `lis` decimal con signo, así que la intercepción correcta es en
+  `mem_*`, no buscando literales.
+- **Familias HLE:** GX 164, OS+__OS 130, DVD 39, EXI 26, CARD 23,
+  SI 21, AI 17, DB 17, PAD 13, VI 11, DSP 10, THP 9, DC 7, LC 6,
+  AR 5 + ARQ 2. Trampas evitadas: `ARW*` (44, Arwing del juego) no es
+  ARAM; `AX*` = 0 (el juego no usa AX, su audio es MusyX propio:
+  `synth*` 50, `snd*` 38, `Audio*` 117, `dsp*` 23 en minúscula).
+- **Cadena de arranque verificada:** __start -> __init_registers ->
+  __init_hardware -> __init_data -> DBInit -> OSInit -> __init_user
+  -> main (0x800214A4) -> init (0x80020F8C) -> checkReset ->
+  gameLoop (0x80020E2C). `init` llama en orden: OSInit, DVDInit,
+  VIInit, PADInit, LCEnable, videoInit (GXInit 0x802556DC),
+  audioInit, initLoadFiles, _initCardAndDsp. Por eso el primer HLE
+  no es GX, es OS+DVD+VI+PAD+LC/DC en ese orden. Tabla guest de
+  arranque+init ya registrada (7 + 12 símbolos).
+- **GX mínimo:** por HLE sustituyendo funciones GX (no emulando el
+  FIFO a nivel `mem_*` como primer paso): GXInit/FIFO, matrices/
+  viewport, estado fijo, texturas (RGB5A3 11.036, CMPR 5.076 con
+  reorden DXT1 o descompresión, RGBA8 1.134 con reentrelazado,
+  IA8/I8/I4/IA4 a RGBA; sin paletas TLUT, 0 casos), TEV mínimo
+  (1 etapa directa), GXBegin y luego display lists. Bloqueador:
+  falta el mapa dirección-guest -> textura del disco (PNG indexados
+  por banco/id, no por dirección de carga).
+- **Audio:** streams ADP 958 WAV (32 kHz, 14.938 s), MusyX 1.472 WAV
+  (1.548 s, frecuencias en inventario); secuencias MusyX NO
+  reproducibles (`.pro`/`.poo`/`midi.wad` sin semántica). Primer paso:
+  backend AAudio/OpenSL detrás de la API actual + WAV por ID, no DSP
+  emulado.
+- **Input:** `padUpdate` 0x80014F6C + globales
+  `gPadButtonsHeld` 0x8033B220, `JustPressed` 0x8033B240, etc.
+  Mapeo mínimo: stick izquierdo, A/B/X/Y/Z, L/R todo o nada,
+  D-pad, Start, C-stick a 0, rumble no-op.
+- **Bloqueador nº 1 que queda:** no existe `cpu/cpu.h` global ni
+  `mem_*` C enlazables: `generated.h` exige esa cabecera con el
+  layout exacto de `CpuState` + `host_call`/`ram`/`ram_size`.
+  Sin ese shim, los 176 chunks no compilan dentro de la app.
+  Siguiente paso concreto: crear ese shim y enlazar los chunks.
+
 ## Orden que queda
 
 1. Shim global `cpu/cpu.h` + enlace de chunks + `ppc_host_call`.

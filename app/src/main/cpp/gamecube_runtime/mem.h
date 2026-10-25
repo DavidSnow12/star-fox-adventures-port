@@ -16,6 +16,10 @@
 namespace sfa {
 
 // Rangos de registros de hardware (lectura devuelve 0 en la base).
+// 0xCC000000-0xCC020000: cubre CC00 (171 lis en chunks) y CC01
+// (202 lis); el rango anterior solo llegaba a 0xCC010000 y dejaba
+// la página CC01 fuera, cayendo en exception (corrección del
+// análisis GX/HLE).
 bool IsHardwareRegister(uint32_t guest_address);
 
 // Lecturas big-endian. Devuelven 0 fuera de rango (con exception).

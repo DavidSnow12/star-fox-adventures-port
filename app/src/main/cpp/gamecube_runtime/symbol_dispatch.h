@@ -52,6 +52,10 @@ class SymbolDispatch {
   // Devuelve 0 si no está registrado.
   uint32_t LookupGuest(const char* name) const;
   void RegisterGuestBoot();
+  // Cadena init/game (verificada en symbols.map, análisis GX/HLE):
+  // OSInit, __init_user, main, init, gameLoop, DVDInit, VIInit,
+  // PADInit, GXInit, padUpdate, VIWaitForRetrace, PADRead.
+  void RegisterGuestInit();
   std::size_t GuestCount() const { return guest_count_; }
 
  private:

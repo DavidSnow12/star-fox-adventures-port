@@ -31,7 +31,7 @@ uint8_t* HostPtr(CpuState* ctx, uint32_t guest_address, uint32_t size,
 }  // namespace
 
 bool IsHardwareRegister(uint32_t guest_address) {
-  return guest_address >= 0xCC000000u && guest_address < 0xCC010000u;
+  return guest_address >= 0xCC000000u && guest_address < 0xCC020000u;
 }
 
 uint8_t MemRead8(CpuState* ctx, uint32_t guest_address) {

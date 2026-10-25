@@ -55,6 +55,21 @@ void SymbolDispatch::RegisterGuestBoot() {
   RegisterGuest("memcpy", 0x80003494u);
 }
 
+void SymbolDispatch::RegisterGuestInit() {
+  RegisterGuest("OSInit", 0x80240EA4u);
+  RegisterGuest("__init_user", 0x80247680u);
+  RegisterGuest("main", 0x800214A4u);
+  RegisterGuest("init", 0x80020F8Cu);
+  RegisterGuest("gameLoop", 0x80020E2Cu);
+  RegisterGuest("DVDInit", 0x80249BA0u);
+  RegisterGuest("VIInit", 0x8024CE24u);
+  RegisterGuest("PADInit", 0x8024EFC4u);
+  RegisterGuest("GXInit", 0x802556DCu);
+  RegisterGuest("padUpdate", 0x80014F6Cu);
+  RegisterGuest("VIWaitForRetrace", 0x8024D29Cu);
+  RegisterGuest("PADRead", 0x8024F1D4u);
+}
+
 void* SymbolDispatch::Lookup(const char* name) {
   if (name == nullptr) return nullptr;
   for (std::size_t i = 0; i < count_; ++i) {

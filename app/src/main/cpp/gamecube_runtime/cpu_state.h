@@ -41,6 +41,12 @@ struct CpuState {
   uint32_t ear = 0;
   int64_t downcount = 0;
   int exception = 0;
+  // Flag que generated.h consulta en dolrecomp_call():
+  //   if (ctx->host_call && ppc_host_call(ctx, address)) ...
+  // Es un flag, no el puntero a la función: ppc_host_call es una
+  // función externa del runtime. Sin este campo, el shim cpu/cpu.h
+  // no compila con generated.h (hallazgo del análisis GX/HLE).
+  bool host_call = false;
   // Puntero al buffer host de la RAM guest (ver GCMemory).
   // DolRecomp lo llama ram/ram_size en generated.h; aquí se guarda
   // como referencia externa, no como copia.
