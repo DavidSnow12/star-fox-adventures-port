@@ -2,6 +2,9 @@
 
 #include <cstring>
 
+#include <dirent.h>
+#include <strings.h>
+
 #include "cpu/cpu.h"
 #include "log.h"
 
@@ -61,6 +64,9 @@ constexpr HleEntry kHleTable[] = {
     {Hle::kGxInitFifoLimits, "GXInitFifoLimits"},
     {Hle::kGxSetCpuFifo, "GXSetCPUFifo"},
     {Hle::kGxSetGpFifo, "GXSetGPFifo"},
+    {Hle::kGxLoadTexObj, "GXLoadTexObj"},
+    {Hle::kOsSleepThread, "OSSleepThread"},
+    {Hle::kPpcSync, "PPCSync"},
 };
 
 const char* FindHleName(uint32_t address) {
@@ -220,6 +226,34 @@ int Hle::DvdOpen(CpuState* cpu, uint32_t filename_guest,
     file = std::fopen(candidates[i].c_str(), "rb");
     if (file != nullptr) used = candidates[i];
   }
+  if (file == nullptr &&
+      name.find('/') == std::string::npos) {
+    // Fallback sin distincion de mayusculas (Fase 5): el arbol
+    // extraido del disco trae PREANIM.BIN/PREANIM.TAB en
+    // mayusculas y el juego pide 'PREANIM.bin'/'PREANIM.tab';
+    // en el host el FS distingue mayusculas y el fopen exacto
+    // falla, aunque el fichero ESTA en el arbol del disco del
+    // usuario. Se escanea el directorio raiz y se compara sin
+    // distinguir mayusculas; solo para nombres planos (sin '/').
+    DIR* dir = ::opendir(disc_root_.c_str());
+    if (dir != nullptr) {
+      while (file == nullptr) {
+        struct dirent* ent = ::readdir(dir);
+        if (ent == nullptr) break;
+        if (::strcasecmp(ent->d_name, name.c_str()) == 0) {
+          std::string path = disc_root_ + "/" + ent->d_name;
+          file = std::fopen(path.c_str(), "rb");
+          if (file != nullptr) {
+            used = path;
+            SFA_LOGI("hle: DVDOpen '%s': resuelto sin distinguir "
+                     "mayusculas como '%s'",
+                     name.c_str(), ent->d_name);
+          }
+        }
+      }
+      ::closedir(dir);
+    }
+  }
   if (file == nullptr) {
     SFA_LOGE("hle: DVDOpen '%s': no encontrado bajo '%s'", name.c_str(),
              disc_root_.c_str());
@@ -285,6 +319,89 @@ bool Hle::DvdClose(CpuState* cpu, uint32_t fileinfo_guest) {
 }
 
 bool Hle::HandleHostCall(CpuState* cpu, uint32_t address) {
+  // Evento DSP (Fase 5, desbloqueo salInitDsp): NO es una
+  // sustitucion de funcion, sino la entrega del evento que el
+  // DSP real produciria. Cadena verificada en el chunk_0160:
+  // salInitDsp (0x80285248) construye la tarea DSP (campo
+  // [40] = dspInitCallback 0x80285084, [44] =
+  // dspResumeCallback), llama a DSPAddTask (0x802519CC, codigo
+  // huesped: lista de tareas + __DSP_boot_task con el
+  // handshake de buzones ya modelado), luego pone a 0 el
+  // flag [r13-19912] (0x802852D4) y gira en 0x802852DC
+  // (lwz r0,-19912(r13); cmplwi r0,0; bc si ==0) hasta que
+  // el callback de init del DSP lo ponga a 1. Sin DSP no hay
+  // interrupcion que dispare ese callback (run10: giro sin
+  // fin en 0x802852DC, 0 excepciones). Como DSPAddTask y el
+  // bucle son puntos de despacho (llamada cross-chunk y
+  // retorno por el dispatcher), el HLE recuerda la tarea en
+  // la entrada a DSPAddTask y entrega el callback al
+  // aterrizar en el bucle: si el init_cb de la tarea es
+  // dspInitCallback, se aplican SUS efectos exactos
+  // ([r13-19928]=1 y [r13-19912]=1, leidos en 0x80285084);
+  // cualquier otro init_cb queda solo registrado (sin
+  // efecto), no inventado. El codigo huesped (lista,
+  // handshake, flag a 0, sndEnd/sndBegin) corre intacto;
+  // solo se suple el evento DSP, igual que el buzon
+  // "siempre listo" de cpu.c. LIMITACION: las tareas DSP
+  // no se ejecutan de verdad (audio DSP pendiente).
+  if (address == kDspAddTask) {
+    pending_dsp_task_ = cpu->gpr[3];
+  } else if (address == kSalInitDspSpinHead && pending_dsp_task_ != 0) {
+    uint32_t task = pending_dsp_task_;
+    pending_dsp_task_ = 0;
+    uint32_t init_cb = ::mem_read32(cpu, task + 40u);
+    if (cpu->exception == 0 && init_cb == kDspInitCallback) {
+      uint32_t r13 = cpu->gpr[13];
+      ::mem_write32(cpu, r13 - 19912u, 1u);
+      ::mem_write32(cpu, r13 - 19928u, 1u);
+      SFA_LOGI("hle: DSP task init callback entregado "
+               "(tarea 0x%08X, [r13-19912]=[r13-19928]=1)",
+               task);
+    } else {
+      SFA_LOGI("hle: DSP task init callback 0x%08X sin modelar "
+               "(tarea 0x%08X): sin efecto",
+               init_cb, task);
+    }
+  }
+  // Evento ARQ (Fase 5, desbloqueo aramInit): mismo patron que
+  // el DSP. Cadena verificada en chunk_0160: aramUploadData
+  // (0x802849A8) encola una subida de 40 B y llama a
+  // ARQPostRequest (0x802516D4, SDK, codigo huesped), y luego
+  // hace contador++ ([r31+641], 0x80284B30); aramInit
+  // (0x80284B94) gira en 0x80284D58
+  // (lbz r0,0(r30); cmplwi r0,0; bc si !=0) hasta que el
+  // contador vuelve a 0. El contador solo lo baja
+  // aramQueueCallback (0x80284910), que el servicio ARQ
+  // ejecuta al completarse el DMA ARAM (interrupcion ARQ):
+  // sin interrupciones, la cola nunca drena (run11: giro
+  // sin fin en 0x80284D58, 0 excepciones). En este HLE el
+  // DMA ARAM es instantaneo (no hay ARAM modelada ni datos
+  // que leer de vuelta en esta fase), asi que cada peticion
+  // ARQ se da por completada en diferido: se cuenta en la
+  // entrada a ARQPostRequest y se aplica como decrementos
+  // del contador que el bucle lee (puntero en r30 del huesped)
+  // al aterrizar en el bucle. Los callbacks de las entradas
+  // de aramInit son nulos (r8=0 en la llamada), asi que
+  // drenar equivale exactamente a bajar el contador; si una
+  // subida futura trae callback no nulo, habra que invocarlo
+  // aqui (limitacion documentada). Las peticiones ARQ
+  // intra-chunk (sin despacho) no pasan por este gancho.
+  if (address == kArqPostRequest) {
+    ++pending_arq_completions_;
+  } else if (address == kAramInitSpinHead && pending_arq_completions_ != 0) {
+    uint32_t count_addr = cpu->gpr[30];
+    uint32_t count = ::mem_read8(cpu, count_addr);
+    if (cpu->exception == 0) {
+      uint32_t applied =
+          pending_arq_completions_ < count ? pending_arq_completions_ : count;
+      ::mem_write8(cpu, count_addr, (uint8_t)(count - applied));
+      pending_arq_completions_ -= applied;
+      SFA_LOGI("hle: ARQ drenado en aramInit (contador "
+               "0x%08X: %u -> %u, pendientes restantes %u)",
+               count_addr, count, count - applied,
+               pending_arq_completions_);
+    }
+  }
   const char* name = FindHleName(address);
   if (name == nullptr) return false;
   LogCall(cpu, name, address);
@@ -452,8 +569,19 @@ bool Hle::HandleHostCall(CpuState* cpu, uint32_t address) {
       return Return(cpu, 0);
     case kGxInit:
       gx_init_done_ = true;
-      SFA_LOGI("hle: GXInit STUB (Fase 3): registra y devuelve; "
-               "el GX real es la fase siguiente");
+      SFA_LOGI("hle: GXInit HLE (Fase 5, GX por HLE): registra y "
+               "devuelve; el estado GX se construye funcion a "
+               "funcion, sin GPU todavia");
+      return Return(cpu, 0);
+    case kGxLoadTexObj:
+      // Sin GPU: registrar (texObj=r3, mapa=r4) en Calls() y
+      // devolver. Ver kGxLoadTexObj en hle.h.
+      SFA_LOGI("hle: GXLoadTexObj HLE: texObj 0x%08X mapa %u "
+               "(registrado, sin GPU)",
+               cpu->gpr[3], cpu->gpr[4]);
+      return Return(cpu, 0);
+    case kOsSleepThread:
+      // Sueno instantaneo (ver kOsSleepThread en hle.h).
       return Return(cpu, 0);
     case kGxInitFifoBase:
     case kGxInitFifoPtrs:
@@ -462,6 +590,13 @@ bool Hle::HandleHostCall(CpuState* cpu, uint32_t address) {
     case kGxSetGpFifo:
       // Stubs GX previos al GX real: se guarda solo el log, no
       // se toca hardware ni FIFO.
+      return Return(cpu, 0);
+    case kPpcSync:
+      // Barrera SDK (ver hle.h): no-op, retorno a lr. Sin esto,
+      // el `sc` de PPCSync cae en la excepcion de llamada al
+      // sistema (0xC00) y el chassis se detiene; el vector
+      // 0xC00 no esta en el DOL cargado (vive bajo 0x80003100),
+      // asi que no hay codigo huesped que ejecutar ahi.
       return Return(cpu, 0);
     case kLcEnable:
       return Return(cpu, 0);

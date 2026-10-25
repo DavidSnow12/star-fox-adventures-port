@@ -18,9 +18,11 @@
 //     re-despacha con presupuesto nuevo. Sin reposicion,
 //     downcount decreceria sin limite y un bucle de espera
 //     generaria despachos eternos sin control.
-//   - timebase avanza de forma simulada (+10000 por despacho, sin
+//   - timebase avanza de forma simulada (+200 por despacho, sin
 //     pretension de precision de ciclo): los mftb del juego ven
-//     pasar el tiempo en vez de un contador congelado.
+//     pasar el tiempo en vez de un contador congelado. El valor
+//     importa: +10000 y +100 hacian inalcanzable la ventana de
+//     __AI_SRC_INIT (ver chassis.cpp); +200 la hace alcanzable.
 //   - Paradas limpias, nunca silenciosas: exception (con su PC y
 //     valor), PC sin funcion (dolrecomp_call devuelve 0),
 //     tope de despachos, tope de tiempo, llegada al PC de parada

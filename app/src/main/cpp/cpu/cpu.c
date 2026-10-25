@@ -18,6 +18,146 @@
 
 unsigned dolrecomp_call_depth = 0;
 
+/* ---------------- estado ARAM/DSP minimo (Fase 5, desbloqueo AR) ---------------- */
+/* YAGCD nombra 0xCC005012 AR_SIZE, 0xCC005016 AR_MODE y 0xCC005020+
+ * AR_DMA_*; no da el desglose de bits de AR_MODE. Lo que el chunk
+ * SI demuestra (chunk_0147, __ARChecksize 0x80250B88, bucle
+ * 0x80250BA0: lhz r0,22(r3) con r3=0xCC005000 -> 0xCC005016;
+ * rlwinm. bit 31; bc si EQ): el bucle solo sale cuando el bit 0
+ * de AR_MODE vale 1. El shim anterior devolvia 0 a todo el
+ * hardware, asi que el juego giraba para siempre en ese bucle
+ * (run2: 25.219.146 lecturas 16-bit de 0xCC005016).
+ * Modelo minimo: los registros AR 0xCC005000-0xCC00503F se
+ * guardan (lectura-modificacion-escritura coherente, p. ej. el
+ * AR_SIZE que __ARChecksize lee, enmascara y reescribe), y
+ * AR_MODE se lee siempre con el bit 0 a 1: en este HLE nunca hay
+ * un DMA ARAM pendiente (no se emula DMA ARAM todavia; un DMA
+ * programado se trataria como instantaneo), asi que ARAM esta
+ * siempre lista/inactiva. La polaridad queda validada
+ * empiricamente: con bit0=1 el giro termina y la ejecucion
+ * avanza (ver run3); con bit0=0 no avanzaba nunca. Solo se
+ * modelan accesos 16-bit, que son los que usa el codigo AR del
+ * juego verificado (__ARChecksize usa lhz/sth); accesos 8/32-bit
+ * a estos registros siguen devolviendo 0 / sin efecto. */
+#define SFA_AR_BASE 0xCC005000u
+#define SFA_AR_END 0xCC005040u
+#define SFA_AR_MODE 0xCC005016u
+
+static u16 sfa_ar_regs[(SFA_AR_END - SFA_AR_BASE) / 2];
+
+/* ---------------- buzones DSP (Fase 5, desbloqueo DSP) ---------------- */
+/* El bloque 0xCC005000 es compartido DSP/ARAM: dentro del rango AR
+ * ya guardado viven los buzones DSP, segun demuestra el propio
+ * chunk_0147:
+ *   DSPCheckMailToDSP   0x80251830: lhz [0xCC005000], rlwinm
+ *     17,31,31 -> el C generado es rotl32(v,17)&1, es decir, el
+ *     bit 15 (0x8000) de la mitad alta: 1 = buzon CPU->DSP lleno.
+ *   DSPCheckMailFromDSP 0x80251840: igual sobre [0xCC005004]:
+ *     bit 15 = 1 significa que hay correo del DSP.
+ *   DSPSendMailToDSP    0x80251868: sth mitad alta a [0xCC005000],
+ *     mitad baja a [0xCC005002].
+ *   DSPReadMailFromDSP  0x80251850: lhz [0xCC005004] y [0xCC005006]
+ *     como valor 32-bit.
+ * __DSP_boot_task (0x80252050, llamado desde DSPAddTask) primero
+ * espera correo DEL DSP (bucle 0x80252074: mientras CheckFrom==0)
+ * y luego envia una serie de correos con espera de hueco libre
+ * (CheckTo==0). Sin DSP real, el correo de arranque nunca llega
+ * y el juego giraba en 0x80252074 (run7: 73.672.215 lecturas de
+ * 0xCC005004, 0 excepciones).
+ * Modelo minimo, coherente con el de AR (siempre listo): el DSP
+ * esta siempre arrancado y su correo de arranque siempre
+ * presente; el correo CPU->DSP se consume al instante. En
+ * concreto: [0xCC005004] se lee siempre con el bit 15 a 1 (el
+ * resto del valor a 0: __DSP_boot_task guarda el correo leido
+ * en 12(r1) y NO lo vuelve a leer en toda la funcion, asi que
+ * el valor es irrelevante ahi); [0xCC005000] se lee con el bit
+ * 15 a 0 (buzon libre) aunque se conserve el ultimo valor
+ * enviado para la traza; las escrituras al buzon FROM se
+ * ignoran (la CPU no puede escribir el correo del DSP).
+ * LIMITACION HONESTA: esto no modela la finalizacion de tareas
+ * DSP reales (p. ej. audio): cualquier codigo que espere un
+ * correo DSP concreto pasara al instante con el valor fijo
+ * 0x80000000. Cuando llegue la fase de audio habra que modelar
+ * las tareas DSP de verdad o HLEar el cliente DSP. */
+#define SFA_DSP_MBOX_TO_HI 0xCC005000u
+#define SFA_DSP_MBOX_FROM_HI 0xCC005004u
+#define SFA_DSP_MBOX_FROM_LO 0xCC005006u
+#define SFA_DSP_MBOX_FLAG 0x8000u
+
+static u16 sfa_ar_read16(u32 addr) {
+    if (addr == SFA_AR_MODE) {
+        return (u16)(sfa_ar_regs[(addr - SFA_AR_BASE) / 2] | 0x0001u);
+    }
+    if (addr == SFA_DSP_MBOX_TO_HI) {
+        /* Buzon CPU->DSP: libre (consumo instantaneo); se conserva
+         * el valor enviado salvo el bit de lleno. */
+        return (u16)(sfa_ar_regs[(addr - SFA_AR_BASE) / 2] &
+                     (u16)~SFA_DSP_MBOX_FLAG);
+    }
+    if (addr == SFA_DSP_MBOX_FROM_HI) {
+        /* Correo de arranque del DSP siempre presente. */
+        return SFA_DSP_MBOX_FLAG;
+    }
+    if (addr == SFA_DSP_MBOX_FROM_LO) {
+        return 0;
+    }
+    if (addr >= SFA_AR_BASE && addr < SFA_AR_END && (addr & 1u) == 0) {
+        return sfa_ar_regs[(addr - SFA_AR_BASE) / 2];
+    }
+    return 0;
+}
+
+static void sfa_ar_write16(u32 addr, u16 value) {
+    if (addr == SFA_DSP_MBOX_FROM_HI || addr == SFA_DSP_MBOX_FROM_LO) {
+        return;
+    }
+    if (addr >= SFA_AR_BASE && addr < SFA_AR_END && (addr & 1u) == 0) {
+        sfa_ar_regs[(addr - SFA_AR_BASE) / 2] = value;
+    }
+}
+
+/* ---------------- estado AI minimo (Fase 5, desbloqueo AI) ---------------- */
+/* Tras AR, la ejecucion llega a __AI_SRC_INIT (0x8025072C), que
+ * habilita AI (RMW sobre 0xCC006C00) y luego espera a que el
+ * contador de muestras 0xCC006C08 CAMBIE (bucle 0x802507A0:
+ * r3=[contador]; bucle mientras r3==[contador]). Con lecturas
+ * hardware a 0 constante, el contador nunca cambia y el juego
+ * gira para siempre (run4: 171.417.078 lecturas de 0xCC006C08).
+ * Modelo: el contador se deriva del timebase simulado, como en
+ * el hardware real, donde avanza a la frecuencia de muestreo
+ * (32 kHz) mientras el timebase corre a 40,5 MHz (bus 162/4):
+ * 40500000/32000 = 1265,625 ticks/muestra -> divisor 1266.
+ * Asi la calibracion SRC que hace __AI_SRC_INIT (OSGetTime
+ * antes/desputes de esperar el cambio, y cociente ticks por
+ * muestra) sale autoconsistente (~1266) en vez de depender del
+ * numero arbitrario de lecturas. Los demas registros AI
+ * 0xCC006C00-0xCC006C3F se guardan (RMW coherente del control);
+ * el contador es de solo lectura (sus escrituras se ignoran). */
+#define SFA_AI_BASE 0xCC006C00u
+#define SFA_AI_END 0xCC006C40u
+#define SFA_AI_SAMPLE_COUNTER 0xCC006C08u
+#define SFA_AI_TICKS_PER_SAMPLE 1266u
+
+static u32 sfa_ai_regs[(SFA_AI_END - SFA_AI_BASE) / 4];
+
+static u32 sfa_ai_read32(CPUState *cpu, u32 addr) {
+    if (addr == SFA_AI_SAMPLE_COUNTER) {
+        u64 tb = cpu != NULL ? cpu->timebase : 0;
+        return (u32)(tb / SFA_AI_TICKS_PER_SAMPLE);
+    }
+    if (addr >= SFA_AI_BASE && addr < SFA_AI_END) {
+        return sfa_ai_regs[(addr - SFA_AI_BASE) / 4];
+    }
+    return 0;
+}
+
+static void sfa_ai_write32(u32 addr, u32 value) {
+    if (addr == SFA_AI_SAMPLE_COUNTER) return;
+    if (addr >= SFA_AI_BASE && addr < SFA_AI_END) {
+        sfa_ai_regs[(addr - SFA_AI_BASE) / 4] = value;
+    }
+}
+
 /* ---------------- traza dinamica de hardware (Fase 4) ---------------- */
 
 #define SFA_HW_TRACE_MAX_ADDRS 2048
@@ -286,8 +426,9 @@ u16 mem_read16(CPUState *cpu, u32 addr) {
     bool hw = false;
     u8 *p = read_ptr(cpu, addr, 2, &hw);
     if (hw) {
-        sfa_hw_trace_record(cpu, addr, 2, 0, 0);
-        return 0;
+        u16 v = sfa_ar_read16(addr);
+        sfa_hw_trace_record(cpu, addr, 2, 0, v);
+        return v;
     }
     if (p == NULL) {
         if (cpu != NULL) {
@@ -305,8 +446,9 @@ u32 mem_read32(CPUState *cpu, u32 addr) {
     bool hw = false;
     u8 *p = read_ptr(cpu, addr, 4, &hw);
     if (hw) {
-        sfa_hw_trace_record(cpu, addr, 4, 0, 0);
-        return 0;
+        u32 v = sfa_ai_read32(cpu, addr);
+        sfa_hw_trace_record(cpu, addr, 4, 0, v);
+        return v;
     }
     if (p == NULL) {
         if (cpu != NULL) {
@@ -361,6 +503,7 @@ void mem_write16(CPUState *cpu, u32 addr, u16 value) {
     bool hw = false;
     u8 *p = write_ptr(cpu, addr, 2, &hw);
     if (hw) {
+        sfa_ar_write16(addr, value);
         sfa_hw_trace_record(cpu, addr, 2, 1, value);
         return;
     }
@@ -379,6 +522,7 @@ void mem_write32(CPUState *cpu, u32 addr, u32 value) {
     bool hw = false;
     u8 *p = write_ptr(cpu, addr, 4, &hw);
     if (hw) {
+        sfa_ai_write32(addr, value);
         sfa_hw_trace_record(cpu, addr, 4, 1, value);
         return;
     }

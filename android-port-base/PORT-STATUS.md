@@ -5,11 +5,15 @@
 ## Resumen honesto
 
 **La app NO es jugable todavía.** Lo que hay es una base compilable
-más el runtime base verificado en host (cargador DOL, memoria guest,
-dispatch y SMC) y, desde este tramo, los 176 chunks DolRecomp
-enlazados en `libstarfox.so` con su shim C. No hay APK jugable en
-el repo. Cuando la haya, se anunciará aquí con su commit, tamaño y
-SHA, y solo entonces merece la pena descargarla para probar el juego.
+más el runtime verificado en host: el juego ya NO se queda en el
+arranque — en host ejecuta su arranque completo, carga los 89
+ficheros base por DVD, pasa audio/DSP/ARAM y entra en su bucle de
+frames estable (ver «Fase 5» abajo: 5.000.000 despachos sin
+exception, 1.789.482 escrituras FIFO GX, encuesta PAD por frame).
+No hay APK jugable en el repo ni renderer: sin GPU, el bucle
+emite comandos GX que nadie dibuja todavía. Cuando haya APK
+jugable, se anunciará aquí con su commit, tamaño y SHA, y solo
+entonces merece la pena descargarla para probar el juego.
 
 ## Qué funciona (verificado)
 
@@ -54,21 +58,27 @@ SHA, y solo entonces merece la pena descargarla para probar el juego.
 - Renderer EGL/GLES3: clear + `DrawQuad` stub. Audio: API limpia
   (Start/Stop/SubmitBuffer/SetMasterVolume) sin sonido. Input: primer
   evento táctil registrado, sin mapeo a mando todavía.
+- **Fase 5 — Bucle de juego en host (NUEVO, verificado):**
+  desbloqueos AR/AI/DSP/ARAM/hilos (ver sección «Fase 5»),
+  carga DVD completa (89 ficheros) y bucle de frames estable
+  sin exception (run14). GX por HLE empezado (`GXLoadTexObj`
+  registrado); texturas y renderer, pendientes (sin maquillar).
 
 ## Qué NO funciona todavía (bloqueadores, sin maquillar)
 
-1. **Dispatch real y HLE pendientes (bloqueador actual nº 1):**
-   los chunks ya enlazan (Fase 1), pero el runtime todavía no llama
-   a `dolrecomp_run_blocks()` desde `0x80003140` ni existe el HLE
-   (OS/GX/VI/DVD/SI/DSP/PAD) que el arranque exige. Hasta entonces
-   la CPU es un stub y no se ejecuta código del juego. Este es el
-   trabajo de la Fase 2, no un detalle menor.
-2. **HLE completo pendiente:** GX, VI, DVD, SI/EXI, DSP, PAD, OS y
-   demás llamadas del sistema. El juego llamará a esas familias
-   desde el primer arranque; sin HLE, el primer bloque real fallará
-   de forma explícita en `boot.log`, no silenciosamente.
-3. **GX real pendiente:** solo clear. Falta FIFO, display lists y
-   texturas (CMPR/RGB5A3/RGBA8 ya extraídas) para un frame real.
+1. **~~Dispatch real y HLE pendientes (bloqueador actual nº 1):~~
+   HECHO en Fases 2–5:** el juego ejecuta su arranque completo
+   y su bucle de frames en host (ver «Fase 5»). El bloqueador
+   actual nº 1 es el renderer GX + texturas (sin ellos, el
+   bucle emite comandos que nadie dibuja).
+2. **HLE completo pendiente:** GX (máquina de estado y
+   display lists), callback async de DVD, struct PADStatus,
+   audio DSP real, planificador de hilos real. El HLE actual
+   cubre arranque + eventos DSP/ARQ + sueño instantáneo.
+3. **GX real pendiente:** solo clear. Falta la máquina de
+   estado GX, display lists interpretadas y texturas
+   convertidas (CMPR/RGB5A3/RGBA8 ya extraídas) para un
+   frame real.
 4. **Audio MusyX/DSP pendiente:** backend AAudio/OpenSL sin
    implementar, sin mezcla ni streams.
 5. **Input pendiente:** sin mapeo táctil a stick/botones/gatillos ni
@@ -412,9 +422,12 @@ frontera ARAM (ver abajo), no el dispatch.
    (OS/GX/VI/DVD/SI) para que __start avance.~~ HECHO en este
    tramo (Fases 2–4, ver abajo): ruta a videoInit verificada y
    exploración hasta la frontera ARAM.
-2. GX real (primer frame) + ARAM/DSP (la frontera actual es
+2. ~~GX real (primer frame) + ARAM/DSP (la frontera actual es
    `__ARChecksize` esperando el estado ARAM en `0xCC005016`) y
-   luego input y carga de ficheros (DVD) hasta gameLoop.
+   luego input y carga de ficheros (DVD) hasta gameLoop.~~
+   HECHO en Fase 5 (ver abajo): ARAM/DSP desbloqueados, DVD
+   completo (89 ficheros) y bucle de juego alcanzado. Falta el
+   frame real: máquina de estado GX + texturas + renderer.
 3. Paquete de datos + build APK + validación + test en Tab S8.
 
 ## Fases 2–4 (este tramo): dispatch real, HLE mínimo y traza HW
@@ -700,3 +713,268 @@ en el `.so` final. El directorio de build de Fase 1
   arena definitiva (no provisional), input con mapeo a
   táctil/mando, paquete de datos Pack B, APK jugable y test
   en Tab S8. Sin ejecución en dispositivo todavía.
+
+## Fase 5 (este tramo): desbloqueo AR/DSP/ARAM, carga DVD y bucle de juego
+
+Trabajo en `android-port-base` (commit del tramo al final).
+Ficheros tocados: `cpu/cpu.{h,c}` (estado AR/AI/
+DSP), `gamecube_runtime/chassis.{h,cpp}` (timebase +200,
+valores IPL), `gamecube_runtime/dol_loader.cpp` (orden
+BSS/datos), `gamecube_runtime/hle.{h,cpp}` (eventos DSP/ARQ,
+GXLoadTexObj, OSSleepThread, DVDOpen sin mayúsculas).
+Tests host en `work-port/fase2-tests/` (fuera del repo):
+`test_boot.cpp` (run1, puerta de paso), `test_trace2.cpp`
+(runs 7–14) y `test_pchist.cpp` (diagnóstico: histograma,
+pre-racha, volcado de pila/globales).
+
+### 0. Desbloqueo previo (obligatorio, COMPLETADO y superado)
+
+La frontera de Fases 2–4 era `__ARChecksize` 0x80250B88
+girando en `0xCC005016` (run2: 25.219.146 lecturas). La
+cadena completa de desbloqueos, cada uno verificado por
+separado antes de seguir (si uno no se verificaba, no se
+seguía), fue:
+
+- **AR_MODE (cpu.c):** `__ARChecksize` lee `0xCC005016`
+  (`lhz` 16-bit) y solo sale cuando el bit 0 vale 1. Los
+  registros AR `0xCC005000–0xCC00503F` se guardan (RMW
+  coherente) y AR_MODE se lee siempre con bit 0 a 1 (en
+  este HLE nunca hay DMA ARAM pendiente). run3: traza HW
+  1.056 eventos frente a 25.220.080 en run2; el giro terminó.
+- **PPCSync (hle):** tras AR, exception `0x8` en
+  `0x80240CBC` (un único `sc` + `blr`); HLE no-op con
+  retorno a `lr`. run4: superado.
+- **Contador AI (cpu.c):** `__AI_SRC_INIT` 0x8025072C
+  espera que el contador `0xCC006C08` CAMBIE; modelo
+  `timebase / 1266` (40,5 MHz / 32 kHz). run5: primer bucle
+  superado, segundo bucle alcanzado.
+- **Calibración SRC (chassis.cpp):** la medición de
+  `__AI_SRC_INIT` solo acepta Δticks < 1144 o
+  1384 ≤ Δ < 1566; con timebase +10000 o +100 los deltas
+  caían siempre fuera (1200/1300, en el hueco); con
+  **+200 por despacho** el Δ alcanzable es 1200 o 1400
+  según la fase, y 1400 está en la ventana, así que la
+  calibración termina en pocos intentos. Además
+  `InitCpuForBoot` escribe los valores IPL en RAM guest
+  (`0x800000F8` = 162.000.000 bus, `0x800000FC` =
+  486.000.000 CPU). run1 sigue TODO OK tras el cambio.
+  `__AI_SRC_INIT` NO se HLEa a propósito: sus 3 llamadores
+  están en su mismo chunk (goto, no despacho) y una entrada
+  HLE sería código muerto.
+- **BSS que borraba datos (dol_loader.cpp, causa raíz del
+  salto a 0):** el cargador copiaba text/data y LUEGO ponía
+  el BSS a cero, pero el BSS de cabecera (`0x803371A0`,
+  732.344 B → hasta `0x803E3E58`) SOLAPA las secciones
+  data #6 (`0x803DCB40`) y #7 (`0x803DFEC0`): destruía
+  ~46 KB de datos inicializados, entre ellos los punteros
+  malloc/free de `.sdata2` en `0x803DFF08/0x803DFF0C` (en
+  el fichero: `0x8000A1D8` / `0x8000A1B8`). Resultado:
+  `audioInit` → `sndSetHooks` copiaba ceros a los globales
+  `[r13-19980]/[r13-19976]` y `salMalloc` 0x802854DC
+  saltaba por el puntero 0 (PC 0 a los 6.905 despachos).
+  La tabla de `__init_data` del propio juego lo confirma:
+  su BSS verdadero EXCLUYE esas secciones
+  (`[0x803371A0,+678304)`, `[0x803DE160,+7492)`,
+  `[0x803E9E20,+56)`) y sus copias son src==dst.
+  Corrección: poner el BSS a cero ANTES de copiar
+  text/data (los datos ganan en el solape). Tras ella:
+  hooks `0x8000A1D8`/`0x8000A1B8` correctos en RAM.
+- **Buzones DSP (cpu.c):** `__DSP_boot_task` 0x80252050
+  espera correo DEL DSP (`DSPCheckMailFromDSP` 0x80251840:
+  `lhz [0xCC005004]`, `rotl32(v,17)&1` = **bit 15**,
+  0x8000 — el primer intento con bit 14 / 0x4000 falló y
+  la traza lo delató: primer valor 0x4000 sin salir del
+  giro). Modelo: correo FROM siempre presente (bit 15 a
+  1, valor resto 0; `__DSP_boot_task` guarda el correo en
+  12(r1) y NO lo vuelve a leer, así que el valor es
+  irrelevante ahí); buzón TO siempre libre (bit 15 a 0 en
+  lectura, consumo instantáneo; se conserva el valor
+  enviado para la traza); escrituras al buzón FROM se
+  ignoran. run10: el giro de 73.672.215 lecturas de
+  `0xCC005004` desapareció de la traza.
+- **Callback de init DSP (hle.cpp, evento, no sustitución):**
+  `salInitDsp` 0x80285248 añade la tarea (campo [40] =
+  `dspInitCallback` 0x80285084), pone a 0 el flag
+  `[r13-19912]` y gira en 0x802852DC hasta que el callback
+  lo ponga a 1. Sin DSP no hay interrupción que lo
+  dispare (run10: giro sin fin, 0 excepciones). Como
+  `DSPAddTask` 0x802519CC (código huésped: lista +
+  handshake, NO HLEado) y el bucle son puntos de
+  despacho, el HLE recuerda la tarea en la entrada a
+  `DSPAddTask` y entrega el callback al aterrizar en el
+  bucle: si el init_cb es `dspInitCallback`, aplica SUS
+  efectos exactos (`[r13-19928]=[r13-19912]=1`); otro
+  init_cb queda solo registrado, sin efecto. run11: log
+  `DSP task init callback entregado (tarea 0x803D61E0)`.
+- **Drenaje ARQ (hle.cpp, evento):** `aramInit`
+  0x80284B94 gira en 0x80284D58 mientras el contador de
+  la cola ARAM `[r31+641]` != 0; solo lo baja
+  `aramQueueCallback` 0x80284910, que corre al completarse
+  el DMA ARAM (interrupción ARQ: inexistente aquí).
+  Modelo: DMA ARAM instantáneo en diferido — cada entrada
+  a `ARQPostRequest` 0x802516D4 (código huésped) cuenta
+  una petición pendiente y al aterrizar en el bucle se
+  aplica como decrementos del contador que el bucle lee
+  (puntero en r30 del huésped). Las entradas de
+  `aramInit` tienen callback nulo (r8=0), así que drenar
+  equivale exactamente a bajar el contador. run12: log
+  `ARQ drenado en aramInit (contador 0x803D5B41: 1 -> 0)`.
+- **DVD sin mayúsculas (hle.cpp):** el árbol extraído trae
+  `PREANIM.BIN`/`PREANIM.TAB` y el juego pide
+  `PREANIM.bin`/`PREANIM.tab`; el FS del host distingue
+  mayúsculas y el `fopen` exacto fallaba. `DVDOpen` ahora
+  prueba, solo para nombres planos, un escaneo del
+  directorio raíz con comparación sin mayúsculas. run13:
+  `PREANIM.bin` resuelto como `PREANIM.BIN` (946.880 B).
+- **GXLoadTexObj (hle.cpp, GX por HLE):** el huésped llama
+  a un puntero del estado GX en `[estado+1040]` que el
+  `GXInit` stub nunca inicializó (en el fallo:
+  `gx_state_ptr [r13-27608] = 0x803AFE20`,
+  `slot1040 = 0x00000000`) y saltaba a 0 (run12: PC 0 a
+  1.381.102 despachos, tras 89 `DVDOpen`). En vez de
+  adivinar ese puntero, `GXLoadTexObj` 0x8025B260 se HLEa
+  entero: sin GPU, "cargar" es registrar (texObj, mapa)
+  en `Calls()` (r3/r4 de cada llamada). run13: dos
+  llamadas desde `selectTextureWithSecondary` 0x8004C448
+  (texObj `0x816C0020`, mapa 0).
+- **OSSleepThread (hle.cpp, bucle de juego):** tras la
+  carga, `waitNextFrame` 0x8004AA4C duerme el hilo
+  principal (`Queue_GetCount` > 1 → `OSSleepThread`
+  0x8024740C con el hilo en `r13-25796`) esperando el
+  siguiente retrace; sin interrupciones nadie lo despierta
+  y `SelectThread` 0x80246A24 gira con la máscara de
+  listos `[r13-21248]` a 0 (run13: 1.618.366 despachos en
+  0x80246B5C). HLE: el sueño termina al instante (igual
+  que `VIWaitForRetrace`, que ya era retrace simulado).
+  run14: el juego entra en su bucle de frames (ver abajo).
+
+### Bucle de juego alcanzado (run14, 5.000.000 despachos)
+
+Sin exception, sin PC desconocido, corte por tope de
+despachos en `0x802440BC` (mitad de frame, no un giro).
+Llamadas HLE totales 150.477 (frente a 357 en run13):
+`PADRead` ×24.923, `PADReset` ×24.924 (una encuesta de
+input por iteración), `DVDOpen` ×89, `DVDReadAsyncPrio`
+×82 (toda la carga base ya hecha: `MAPS`, `MAPINFO`,
+`TEXTABLE`, `HITS`, `MODELIND`, `MODANIM`, `AMAP`,
+`BITTABLE`, `WEAPONDA`, `VOXOBJ`, `MODLINES`, `SAVEGAME`,
+`OBJSEQ`, `OBJECTS`, `OBJINDEX`, `OBJEVENT`, `OBJHITS`,
+`TEXPRE`, `PREANIM`, `ENVFXACT`, ...), `GXLoadTexObj` ×2,
+`OSSleepThread` repetido desde `waitNextFrame` (retorno
+0x8004ABE0, el sitio exacto del sueño). Escrituras FIFO
+GX `0xCC008000`: **1.789.482** (frente a 285 en run2).
+Perfil por iteración (~24.900 iteraciones, ~200
+despachos cada una): `GXSetViewport` ×24.924,
+`gxSetZMode_` ×24.924, `GXFlush` ×49.845,
+`gameTextRun` 74.769 despachos, `padUpdate` 99.692,
+`evalNoisePlacements` 1.174.093 (23%),
+`mmFreeTick` 274.142, `OSReport` ×24.973,
+`OSDisable/RestoreInterrupts` ×100.186 cada uno. Es un
+bucle de frames estable con trabajo GX por frame
+(viewport, Z, flush, texto UI), no un giro: la
+interpretación prudente es pantalla de título o de carga
+animada en espera de input (PAD siempre a 0: sin botones,
+no avanza de pantalla). Distinguir título de carga exige
+capturar el texto de `OSReport` o inyectar Start; queda
+como siguiente paso, no como afirmación de este tramo.
+
+### GX por HLE (paso 1): estado
+
+- Hecho: `GXInit`/FIFO como stubs con log (heredados),
+  `GXLoadTexObj` HLE con registro (texObj, mapa).
+  El resto de GX (`GXSetViewport`, `GXFlush`,
+  `GXSetTexCoordGen2`, `__GXSetMatrixIndex`, `GXBegin`,
+  ...) corre como código huésped y emite comandos FIFO
+  reales (trazados en `0xCC008000`, no interpretados).
+- NO hecho (sin maquillar): máquina de estado GX en el
+  host (matrices, viewport, estado fijo, TEV) ni
+  interpretación de display lists; TEV multi-etapa,
+  `Rcp_*` y EFB siguen siendo no-op documentados, no
+  promesas. El siguiente subpaso es esa máquina de estado
+  (o, antes, decidir si el render va por GLES en la APK o
+  por un rasterizador host para verificación).
+
+### Texturas (paso 2): NO verificado todavía
+
+Evidencia de partida, no conversión: `GXLoadTexObj`
+registra texObj `0x816C0020`, mapa 0 (desde
+`selectTextureWithSecondary`, probablemente textura UI).
+Falta: decodificar el `GXTexObj` huésped (dirección de
+imagen, formato, tamaño), resolverlo contra
+`assets/inventarios/texturas.csv` y convertir (RGB5A3,
+CMPR con reorden DXT1 o descompresión, RGBA8
+reentrelazado, IA8/I8/I4/IA4 a RGBA, sin TLUT). Ninguna
+conversión está verificada en este tramo; si una
+dirección no resuelve, la regla sigue siendo log +
+placeholder magenta/negra documentada, no inventar
+texturas.
+
+### Verificación por subpaso (paso 3): estado honesto
+
+- Clear (Fase 0 APK): intacto, sin reconstruir (ver abajo).
+- Quad con textura convertida: NO verificado (falta
+  conversión + renderer).
+- Display list mínima: NO verificado (DLs huésped solo
+  trazadas como bytes FIFO).
+- HUD/UI: NO verificado como frame (el juego ejecuta
+  `gameTextRun` por frame, pero sin renderer no hay
+  imagen que mostrar).
+- El bucle de juego estable de run14 es la base sobre la
+  que esos subpasos se verificarán; no se presenta como
+  uno de ellos.
+
+### No-op y limitaciones documentadas (Fase 5)
+
+- Buzones DSP: correo FROM siempre presente, TO siempre
+  libre; la finalización de tareas DSP reales (audio) NO
+  está modelada: cualquier código que espere un correo
+  DSP concreto pasará al instante con el valor fijo
+  `0x80000000`.
+- ARQ: DMA instantáneo en diferido; entradas con callback
+  no nulo no se invocan todavía (las de `aramInit` son
+  nulas); peticiones ARQ intra-chunk (sin despacho) no
+  pasan por el gancho.
+- `OSSleepThread`: sin suspensión real ni planificador;
+  un bucle que espere un mensaje que nunca llega seguirá
+  girando como bucle de despachos (entonces pedirá el
+  siguiente HLE, p. ej. el callback async de DVD, que
+  sigue pendiente: `DVDReadAsyncPrio` lee en síncrono
+  pero NO invoca el callback).
+- `GXLoadTexObj`: no escribe los registros BP ni el
+  estado GX que el huésped escribiría; si una lectura
+  posterior del estado GX lo exigiera, se rellenará en el
+  HLE.
+- PAD: sigue a 0 (sin botones); el juego no puede salir
+  de la pantalla en espera de input hasta el mapeo.
+
+### Build NDK (verificación Fase 5)
+
+Build `fase5-ndk-build`, JOBS=4 (directorio nuevo: el de
+Fase 2 ya no persistía; 178 chunks recompilados desde cero):
+PASS, 0 errores. `libstarfox.so` 27.260.624 B, SHA-256
+`c24a7eab1e9eaf578320ceedaea3908dca353abf2f237adb3c0c8766f9efb6ed`,
+comprobación del script "OK: ningún símbolo
+mem_/ppc_/func_/dolrecomp_ sin resolver", 120 undefined
+totales (solo libs del sistema, verificado por el script;
+115 en Fase 2 — entre los nuevos están `readdir` y
+`strcasecmp` del fallback `DVDOpen` sin mayúsculas).
+Los 4 ficheros cambiados ya compilaban limpios por separado
+antes del enlace completo (`cpu.c`, `hle.cpp`, `chassis.cpp`,
+`dol_loader.cpp` con clang NDK r28c, API 26, `-fPIC`).
+
+### Qué queda (tras Fase 5, en orden)
+
+1. Máquina de estado GX en host + decodificación
+   `GXTexObj` y conversiones de textura (pasos 1–2).
+2. Renderer (GLES en APK o verificación host) para los
+   subpasos de imagen (paso 3).
+3. Callback async de DVD + struct `DVDFileInfo` (los
+   reads ya son síncronos; falta avisar al juego).
+4. Input: PADStatus real + mapeo táctil/mando (el juego
+   ya encuesta PAD cada frame; con Start debería avanzar
+   de pantalla).
+5. Audio DSP real (tareas DSP, no solo el evento de
+   init) + backend de audio.
+6. Paquete de datos Pack B, APK jugable y test en Tab S8.
+   La APK Fase 0 sigue siendo solo arranque (ver abajo).
+

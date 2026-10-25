@@ -26,9 +26,10 @@
  *     0xC0000000-0xC1800000, mas la forma fisica (offset < ram_size)
  *     que generated.h aliasa a GC_RAM_BASE.
  *   - Registros de hardware 0xCC000000-0xCC020000 (CC00 y CC01):
- *     lectura 0, escritura ignorada, SIN exception. El HLE de esos
- *     registros es trabajo de la Fase 2; hasta entonces no deben
- *     tumbar la ejecucion.
+ *     lectura 0, escritura ignorada, SIN exception, EXCEPTO el
+ *     bloque ARAM/DSP 0xCC005000-0xCC00503F (Fase 5): registros
+ *     guardados, y AR_MODE (0xCC005016) leido siempre con bit 0
+ *     a 1 (ARAM lista, sin DMA pendiente). Ver cpu.c.
  *   - Fuera de rango: lectura 0 / escritura ignorada, CON
  *     exception = 1 en el estado (comportamiento ya verificado de
  *     la base anterior, conservado).

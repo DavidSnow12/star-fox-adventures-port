@@ -33,6 +33,10 @@
 //     contra el uso del juego en initLoadFiles): guarda la
 //     entrada en una tabla HLE indexada por la direccion guest
 //     del fileInfo, y DVDRead la resuelve por esa direccion.
+//   DSP (Fase 5): DSPAddTask corre como codigo huesped; el HLE
+//     solo entrega el evento de init de la tarea (el callback
+//     que el DSP real dispararia por interrupcion) al llegar
+//     al bucle de espera de salInitDsp. Ver HandleHostCall.
 //
 // Log: cada llamada HLE queda en Calls() (nombre, direccion
 // guest, retorno, r3-r6 de entrada). En logcat/boot.log solo
@@ -82,6 +86,21 @@ class Hle {
   static constexpr uint32_t kPadRecalibrate = 0x8024EEC0u;
   static constexpr uint32_t kGxInit = 0x802556DCu;
   static constexpr uint32_t kLcEnable = 0x80242548u;
+  // DSP (Fase 5, evento de tarea): DSPAddTask NO esta en la
+  // tabla HLE (su codigo huesped corre de verdad: lista de
+  // tareas + handshake de arranque por buzones, ya modelado en
+  // cpu.c); solo se usa su entrada para recordar la tarea
+  // pendiente. La entrega del callback de init se hace en el
+  // bucle de espera de salInitDsp (ver HandleHostCall).
+  static constexpr uint32_t kDspAddTask = 0x802519CCu;
+  static constexpr uint32_t kDspInitCallback = 0x80285084u;
+  static constexpr uint32_t kSalInitDspSpinHead = 0x802852DCu;
+  // ARQ (Fase 5, drenaje ARAM): ARQPostRequest tampoco esta en
+  // la tabla (su codigo huesped corre: programa el DMA ARAM);
+  // solo se cuenta la peticion pendiente. La entrega se hace
+  // en el bucle de espera de aramInit (ver HandleHostCall).
+  static constexpr uint32_t kArqPostRequest = 0x802516D4u;
+  static constexpr uint32_t kAramInitSpinHead = 0x80284D58u;
   static constexpr uint32_t kDcInvalidateRange = 0x802422F8u;
   static constexpr uint32_t kDcFlushRange = 0x80242328u;
   static constexpr uint32_t kDcStoreRange = 0x8024235Cu;
@@ -103,11 +122,53 @@ class Hle {
   static constexpr uint32_t kOsResumeThread = 0x80247014u;
   static constexpr uint32_t kOsInitContext = 0x80242DD8u;
   static constexpr uint32_t kOsInitMessageQueue = 0x80244940u;
+  // OSSleepThread (Fase 5, bucle de juego): el chassis es
+  // monohilo y no entrega interrupciones (VI retrace, DVD,
+  // ARQ...), asi que un hilo dormido no lo despertaria nadie:
+  // waitNextFrame (0x8004AA4C) duerme el hilo principal
+  // esperando el siguiente retrace y SelectThread gira sin
+  // fin con la mascara de listos a 0 (run13). HLE: el sueno
+  // termina al instante (igual que VIWaitForRetrace, que ya
+  // era "retrace simulado, nunca espera"). No se toca el
+  // struct del hilo huesped: el chassis no lo consulta.
+  // LIMITACION: no hay suspension real ni planificador; un
+  // bucle que espere un mensaje que nunca llega seguira
+  // girando (se vera como bucle de despachos, no como giro
+  // en SelectThread) y pedira el siguiente HLE (p. ej. el
+  // callback async de DVD).
+  static constexpr uint32_t kOsSleepThread = 0x8024740Cu;
   static constexpr uint32_t kGxInitFifoBase = 0x80256868u;
   static constexpr uint32_t kGxInitFifoPtrs = 0x802568D4u;
   static constexpr uint32_t kGxInitFifoLimits = 0x80256944u;
   static constexpr uint32_t kGxSetCpuFifo = 0x80256950u;
   static constexpr uint32_t kGxSetGpFifo = 0x80256A60u;
+  // GXLoadTexObj (Fase 5, GX por HLE): el huesped llama a un
+  // puntero del estado GX en [estado+1040] que el GXInit HLE
+  // (stub) nunca inicializo, y saltaba a 0 (run12). En vez de
+  // adivinar ese puntero, GXLoadTexObj se HLEa entero: en
+  // esta fase sin GPU, "cargar" una textura es registrar
+  // (texObj, mapa) en el log de llamadas HLE (Calls() guarda
+  // r3/r4 de cada llamada) para el paso de texturas; los
+  // registros BP que el huesped escribiria al FIFO no se
+  // leen de vuelta en la ruta observada. Si una lectura
+  // posterior del estado GX lo exigiera, se rellenaria aqui.
+  static constexpr uint32_t kGxLoadTexObj = 0x8025B260u;
+  // Barrera PPCSync (Fase 5, desbloqueo AR): su cuerpo en este
+  // binario es un unico `sc` (ver chunk_0143, 0x80240CBC) seguido
+  // de blr; el SDK lo usa como barrera de pipeline y el manejador
+  // de la excepcion retorna al llamador. En recompilacion no hay
+  // pipeline ni caches separadas que serializar: no-op con
+  // retorno a lr. Los otros dos `sc` del binario (colas de
+  // DCFlushRange 0x80242354 y DCStoreRange 0x80242388) ya son
+  // inalcanzables porque esas funciones estan HLEadas enteras.
+  static constexpr uint32_t kPpcSync = 0x80240CBCu;
+  // __AI_SRC_INIT (0x8025072Cu) NO se HLEa aqui a proposito:
+  // sus 3 llamadores (0x802501A4, 0x80250298, 0x80250388)
+  // estan en el MISMO chunk que la funcion (chunk_0147), asi
+  // que DolRecomp los emite como goto, no como despacho: el
+  // host_call nunca ve 0x8025072C y una entrada en la tabla
+  // seria codigo muerto que fingiria cobertura. El desbloqueo
+  // real es el timebase del chassis (ver chassis.cpp).
 
   Hle();
   ~Hle();
@@ -204,6 +265,18 @@ class Hle {
   // OR de bits sobre lo leido, no comprueba bits previos).
   uint32_t hid0_ = 0;
   uint32_t l2cr_ = 0;
+  // Tarea DSP pendiente de callback de init (Fase 5): se fija
+  // en la entrada a DSPAddTask (codigo huesped, no HLEado) y
+  // se consume al aterrizar en el bucle de espera de
+  // salInitDsp. 0 = ninguna pendiente (una tarea real nunca
+  // tiene direccion 0).
+  uint32_t pending_dsp_task_ = 0;
+  // Peticiones ARQ pendientes de completar (Fase 5): se
+  // incrementa en cada entrada a ARQPostRequest (codigo
+  // huesped, no HLEado) y se aplica como decrementos del
+  // contador de la cola del juego al aterrizar en el bucle
+  // de espera de aramInit.
+  uint32_t pending_arq_completions_ = 0;
 };
 
 }  // namespace sfa

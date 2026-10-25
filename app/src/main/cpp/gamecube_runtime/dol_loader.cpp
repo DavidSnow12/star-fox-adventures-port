@@ -74,6 +74,33 @@ DolLoadResult LoadDolFromBuffer(const uint8_t* dol, uint32_t dol_size,
     }
   }
 
+  // ORDEN (Fase 5, desbloqueo salMalloc): primero se pone a cero
+  // el BSS y DESPUES se copian text/data. El BSS de la cabecera
+  // (0x803371A0, 732344 B -> hasta 0x803E3E58) SOLAPA las
+  // secciones data #6 (0x803DCB40) y #7 (0x803DFEC0): si se
+  // pone a cero despues de copiar, se destruyen ~46 KB de datos
+  // inicializados, entre ellos los punteros malloc/free de
+  // .sdata2 en 0x803DFF08/0x803DFF0C (en el fichero: 0x8000A1D8
+  // / 0x8000A1B8). El resultado era: audioInit -> sndSetHooks
+  // copiaba ceros a los globales, salMalloc saltaba por el
+  // puntero 0 y la ejecucion caia a PC 0. El BSS verdadero
+  // segun la tabla de __init_data del propio juego excluye
+  // esas secciones ([0x803371A0,+678304), [0x803DE160,+7492),
+  // [0x803E9E20,+56)); con este orden, el estado final coincide
+  // con el que deja __init_data (copias src==dst + ceros solo
+  // en el BSS verdadero). Para DOLs sin solape el orden es
+  // indiferente.
+  if (!memory->ZeroBss()) {
+    // BSS de este DOL coincide con la constante de GCMemory; si no
+    // coincidiera, el cargador debería usar bss_addr/bss_size del
+    // fichero. Se registra y se falla de forma explícita.
+    SFA_LOGE("dol: BSS del fichero (0x%08X, %u) no coincide con "
+             "GCMemory::kBss (0x%08X, %u)",
+             bss_addr, bss_size, GCMemory::kBssBase, GCMemory::kBssSize);
+    result.error = "BSS del fichero distinto de GCMemory::kBss";
+    return result;
+  }
+
   for (int i = 0; i < 7; ++i) {
     if (text_size[i] == 0) continue;
     if (!memory->WriteBytes(text_addr[i], dol + text_off[i],
@@ -93,16 +120,6 @@ DolLoadResult LoadDolFromBuffer(const uint8_t* dol, uint32_t dol_size,
     }
     result.data_sections++;
     result.data_bytes += data_size[i];
-  }
-  if (!memory->ZeroBss()) {
-    // BSS de este DOL coincide con la constante de GCMemory; si no
-    // coincidiera, el cargador debería usar bss_addr/bss_size del
-    // fichero. Se registra y se falla de forma explícita.
-    SFA_LOGE("dol: BSS del fichero (0x%08X, %u) no coincide con "
-             "GCMemory::kBss (0x%08X, %u)",
-             bss_addr, bss_size, GCMemory::kBssBase, GCMemory::kBssSize);
-    result.error = "BSS del fichero distinto de GCMemory::kBss";
-    return result;
   }
 
   result.ok = true;

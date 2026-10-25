@@ -26,6 +26,25 @@ void InitCpuForBoot(CpuState* cpu, uint8_t* ram, uint32_t ram_size,
   cpu->msr = 0;
   cpu->timebase = 0;
   cpu->downcount = 0;
+  // Informacion de arranque que en hardware escribe el IPL antes
+  // de saltar al juego (Fase 5, desbloqueo AI): AIInit
+  // (0x80250458) lee [0x800000F8] como reloj de bus y de ahi
+  // deriva las constantes SRC que __AI_SRC_INIT valida; con la
+  // RAM a cero, todas salian 0 y la validacion no pasaba nunca
+  // (el bucle de medicion se repetia sin fin). GameCube real:
+  // bus 162 MHz, CPU 486 MHz (3x). Se escriben big-endian en
+  // RAM guest (offset = direccion - 0x80000000); el DOL empieza
+  // en 0x80003100, asi que nada lo sobrescribe.
+  if (ram != nullptr && ram_size > 0x100u) {
+    auto put_be32 = [&ram](uint32_t off, uint32_t v) {
+      ram[off] = static_cast<uint8_t>(v >> 24);
+      ram[off + 1] = static_cast<uint8_t>(v >> 16);
+      ram[off + 2] = static_cast<uint8_t>(v >> 8);
+      ram[off + 3] = static_cast<uint8_t>(v);
+    };
+    put_be32(0xF8u, 162000000u);  // 0x800000F8: reloj de bus
+    put_be32(0xFCu, 486000000u);  // 0x800000FC: reloj de CPU
+  }
 }
 
 ChassisResult RunChassis(CpuState* cpu, Hle* hle,
@@ -103,7 +122,22 @@ ChassisResult RunChassis(CpuState* cpu, Hle* hle,
       }
     }
     if (cpu->downcount < 0) cpu->downcount = 0;
-    cpu->timebase += 10000;
+    // Timebase simulado (Fase 5, desbloqueo AI): +200 por
+    // despacho, NO +10000 ni +100. __AI_SRC_INIT mide los ticks
+    // entre dos cambios del contador AI (periodo 1266 ticks a
+    // 32 kHz) y solo acepta delta < 1144 o 1384 <= delta < 1566
+    // (constantes SRC de AIInit: 1264/120/1686). Cada espera se
+    // sincroniza al siguiente cambio de contador, asi que el
+    // delta medido queda clavado cerca del periodo, cuantizado
+    // a la rejilla del incremento: con +10000 era multiplo de
+    // 10000 (siempre fuera); con +100 era siempre 1200/1300
+    // (medido en pchist: 1160x1200 + 2253x1300, 0 fuera de ahi,
+    // siempre en el hueco (1144, 1384)); con +200 el delta
+    // alcanzable es 1200 o 1400 segun la fase, y 1400 SI esta
+    // en la ventana, asi que la calibracion termina en pocos
+    // intentos (la fase deriva entre intentos). El valor sigue
+    // siendo simulado, sin pretension de precision de ciclo.
+    cpu->timebase += 200;
     int ok = dolrecomp_call(cpu, pc);
     ++result.dispatches;
     if (!ok) {
