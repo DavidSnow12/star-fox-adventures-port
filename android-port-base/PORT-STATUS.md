@@ -6,9 +6,10 @@
 
 **La app NO es jugable todavía.** Lo que hay es una base compilable
 más el runtime base verificado en host (cargador DOL, memoria guest,
-dispatch y SMC). No hay APK jugable en el repo. Cuando la haya, se
-anunciará aquí con su commit, tamaño y SHA, y solo entonces merece
-la pena descargarla para probar el juego.
+dispatch y SMC) y, desde este tramo, los 176 chunks DolRecomp
+enlazados en `libstarfox.so` con su shim C. No hay APK jugable en
+el repo. Cuando la haya, se anunciará aquí con su commit, tamaño y
+SHA, y solo entonces merece la pena descargarla para probar el juego.
 
 ## Qué funciona (verificado)
 
@@ -17,6 +18,14 @@ la pena descargarla para probar el juego.
 - C++ nativo para arm64-v8a con NDK r28c: enlaza como `libstarfox.so`
   (AArch64, `android_main` exportado). Revalidado en este tramo con
   los ficheros nuevos (12 C++ + glue).
+- **Fase 1 — Shim global y enlace de chunks (NUEVO, verificado):**
+  ver la sección «Fase 1 — Shim `cpu/cpu.h` y enlace de chunks»
+  más abajo. En resumen: `generated.c` + 176 chunks compilan para
+  arm64 con NDK r28c (0 errores) y enlazan en `libstarfox.so` con
+  **cero símbolos de shim/chunks sin resolver** (176 `func_*` en
+  `T`, `mem_*`/`ppc_*` en `T`, `dolrecomp_call_depth` en `B`).
+  El runtime sigue siendo stub: el juego todavía NO se ejecuta
+  (falta el dispatch real desde `0x80003140` y el HLE).
 - **Fase 1 — Cargador DOL (NUEVO, verificado en host):**
   `gamecube_runtime/dol_loader.*` parsea la cabecera DOL (offsets,
   direcciones y tamaños big-endian), copia 2 secciones text y 8 data
@@ -48,12 +57,12 @@ la pena descargarla para probar el juego.
 
 ## Qué NO funciona todavía (bloqueadores, sin maquillar)
 
-1. **Chunks DolRecomp no enlazados:** los 176 chunks usan un
-   `CPUState` global en C (`cpu/cpu.h` de `generated.h`) y funciones
-   `mem_*`/`ppc_host_call` globales. El shim global con el layout
-   exacto de `cpu_state.h` y el enlace de los chunks en CMake es el
-   siguiente paso; hasta entonces la CPU es un stub y no se ejecuta
-   código del juego.
+1. **Dispatch real y HLE pendientes (bloqueador actual nº 1):**
+   los chunks ya enlazan (Fase 1), pero el runtime todavía no llama
+   a `dolrecomp_run_blocks()` desde `0x80003140` ni existe el HLE
+   (OS/GX/VI/DVD/SI/DSP/PAD) que el arranque exige. Hasta entonces
+   la CPU es un stub y no se ejecuta código del juego. Este es el
+   trabajo de la Fase 2, no un detalle menor.
 2. **HLE completo pendiente:** GX, VI, DVD, SI/EXI, DSP, PAD, OS y
    demás llamadas del sistema. El juego llamará a esas familias
    desde el primer arranque; sin HLE, el primer bloque real fallará
@@ -248,15 +257,160 @@ repo, sin modificarlo): conteos por grep en los 176 chunks y en
   `gPadButtonsHeld` 0x8033B220, `JustPressed` 0x8033B240, etc.
   Mapeo mínimo: stick izquierdo, A/B/X/Y/Z, L/R todo o nada,
   D-pad, Start, C-stick a 0, rumble no-op.
-- **Bloqueador nº 1 que queda:** no existe `cpu/cpu.h` global ni
-  `mem_*` C enlazables: `generated.h` exige esa cabecera con el
-  layout exacto de `CpuState` + `host_call`/`ram`/`ram_size`.
-  Sin ese shim, los 176 chunks no compilan dentro de la app.
-  Siguiente paso concreto: crear ese shim y enlazar los chunks.
+- **Bloqueador nº 1 anterior, RESUELTO en este tramo:** ya existe
+  `cpu/cpu.h` global con el layout exacto de `CpuState` +
+  `host_call`/`ram`/`ram_size` y las `mem_*` C enlazables; los 176
+  chunks compilan y enlazan (ver la sección Fase 1 más abajo).
+  El bloqueador que queda es el dispatch real + HLE (Fase 2).
+
+## Fase 1 — Shim `cpu/cpu.h` y enlace de chunks (2026-10-25)
+
+**Ficheros (rama `android-port-base`, este commit):**
+
+- `app/src/main/cpp/cpu/cpu.h` — Cabecera C que exige
+  `codigo/generated/generated.h` como `cpu/cpu.h`. Tipos
+  `u8/u16/u32/u64/s8/s16/s32/s64/f32/f64`, constantes
+  `GC_RAM_BASE` (0x80000000), `GC_RAM_UNCACHED`, `PPC_PROGRAM_TRAP`
+  y resto de la ABI, y el `struct CPUState` en el **orden
+  canónico de DolRecomp** (gpr, fpr, ps1, pc, lr, ctr, cr, xer,
+  fpscr, msr, srr0, srr1, dar, dsisr, ear, hid2, timebase, sr,
+  gqr, exception, program_exception, … , `host_call` como
+  puntero `PPCHostCall` — no bool —, `ram`, `ram_size`,
+  `downcount`, `cycle_budget`, hooks y MEM2). Todos los campos
+  que los chunks usan por nombre están ahí, verificados por grep.
+- `app/src/main/cpp/cpu/cpu.c` — Implementación C (sin mangling):
+  las 8 `mem_read/write 8/16/32/64` big-endian, `dolrecomp_call_depth`
+  (la única definición; `generated.h` la declara `extern`), y
+  todos los `ppc_*` que emiten los chunks: FP escalar
+  (`fadd(s)/fsub(s)/fmul(s)/fdiv(s)`, `fma`, `fctiw`, `fcmp`,
+  `fres`, `frsqrte`, `frsp`), paired-single (`ps_add/sub/mul/div/
+  madd/madds0/madds1/sum0/sum1/muls0/muls1/res/rsqrte`),
+  `psq_load/store` (GQR tipos 0/4/5/6/7), excepciones
+  (`program/system_call/dsi/alignment`, `rfi`, `trap_condition`,
+  `fallback_instruction`, `host_call`, `mftb`, `dcbz_l`,
+  `memory_fence`, `fpscr_updated`, …). Implementación propia
+  para este port a partir de la semántica PPC/Gekko y de las
+  firmas de DolRecomp (mismas firmas, no código copiado).
+- `app/src/main/cpp/gamecube_runtime/cpu_state.h` — Ya NO es un
+  segundo struct: es un alias (`sfa::CpuState = ::CPUState`).
+  La versión anterior tenía otro orden, `exception` como `int`,
+  `host_call` como `bool` y un `userdata` que nadie usaba; todo
+  eso desapareció. Un solo tipo, sin divergencia posible.
+- `app/src/main/cpp/gamecube_runtime/mem.cpp` — Los envoltorios
+  C++ `MemRead*/MemWrite*` ahora delegan en las `mem_*` C, en
+  vez de ser una segunda implementación. Semántica conservada
+  (hardware 0xCC000000–0xCC020000 a 0 sin exception, fuera de
+  rango con exception) más el alias sin cache 0xC0000000, que
+  la versión anterior no aceptaba.
+- `app/src/main/cpp/CMakeLists.txt` — `libstarfox.so` ya incluye
+  `cpu/cpu.c`, `codigo/generated/generated.c` y los 176 chunks
+  (GLOB con comprobación en configure: si no son 176, error
+  fatal), con `-I` a `app/src/main/cpp` (para `cpu/cpu.h`) y a
+  `codigo/generated` (para `generated.h` de `generated.c`).
+  Los chunks NO se copiaron a `app/`: siguen en `codigo/`.
+- `android-port-base/build-libstarfox-ndk.sh` — Build directo
+  con el NDK sin Gradle, reutilizable: compila todo lo anterior
+  y comprueba los undefined. Ojo, dos lecciones guardadas en el
+  propio script: (1) `cpu/cpu.c` y `gamecube_runtime/cpu.cpp`
+  NO pueden compartir `cpu.o` (el segundo sobrescribía al
+  primero y el .so quedaba sin `mem_*`/`ppc_*`; el shim se
+  llama `cpu_shim.o`); (2) la compilación C va en paralelo
+  (`JOBS`, por defecto 2) porque en serie tarda ~30 min.
+
+**Semántica de memoria (la del port, no la del ejemplo DolRecomp):**
+RAM 0x80000000–0x81800000, alias sin cache 0xC0000000–0xC1800000
+y forma física (offset < `ram_size`, la que `generated.h` aliasa
+a `GC_RAM_BASE`); hardware 0xCC000000–0xCC020000 lee 0 / ignora
+escrituras sin exception; fuera de rango lee 0 / ignora
+escrituras con `exception = 1`.
+
+**Cómo se compila (comando exacto usado en la verificación):**
+
+```
+./android-port-base/build-libstarfox-ndk.sh \
+  ~/workspace/starfoxadventures/work-port/fase1-ndk-build
+# = clang aarch64-linux-android26 (NDK r28c, API 26) -O2 -std=c11
+#   (C) / -std=c++17 (C++), -I app/src/main/cpp -I codigo/generated,
+#   enlace compartido con -landroid -llog -lEGL -lGLESv3 -lm
+```
+
+El `OUT` de la verificación vive en `work-port/fase1-ndk-build/`
+(fuera del repo, no se commitea; el repo solo guarda el script).
+Nota operativa: a mitad de este tramo `/tmp` se reinició y borró
+el primer build y sus logs; la verificación se repitió entera
+con `OUT` persistente y dio resultados idénticos.
+
+**Resultado del enlace (verificado, no estimado):**
+
+- `libstarfox.so`: 27.225.688 B, ELF64, `DYN`, `AArch64`,
+  SHA-256 `210bfc7570ba53bfe60e2eb8d4df208e74bc73a957090db99ec9c027e7d4eaf6`.
+- `android_main` en `T`, `dolrecomp_call_depth` en `B`,
+  `func_80003100` y `func_802BE6E0` en `T`, `mem_read32` y
+  `ppc_fadds` en `T`; **176 símbolos `func_*` en `T`**
+  (uno por chunk).
+- `nm -u` filtrado: **cero símbolos** que empiecen por
+  `mem_`/`ppc_`/`func_`/`dolrecomp_` sin resolver. Los 109
+  undefined restantes son solo de librerías del sistema:
+  `android`/`log` (AAssetManager, ALooper, `__android_log_print`),
+  EGL/GLESv3, libc/libm/pthread de bionic y runtime C++
+  (`__cxa_*`, `operator new/delete`, `std::string`), que en el
+  APK real aporta `libc++_shared`.
+- Errores de compilación NDK `-O2`: **0**. Warnings (pasada
+  aparte `-Wall -O0` sobre shim + generated + chunks + C++ de
+  la app, 0 errores): solo **3**, todos `-Wunused-label` en
+  código generado, inofensivos (labels `return_dispatch_*`
+  definidas pero no usadas en los chunks 800A66E0, 800AA6E0 y
+  800CE6E0); **0 warnings en `cpu/cpu.c` y 0 en el C++ de la app**.
+
+**Tests host previos, repetidos en este tramo (TODO OK):**
+
+- Test C (`work-port/fase1-tests/test_shim.c`, fuera del repo):
+  42 checks — roundtrip BE 8/16/32/64, alias sin cache y físico,
+  hardware a 0 sin exception, fuera de rango con exception,
+  `dolrecomp_find_original` en entry/primer/último chunk y NULL
+  en desconocida, `call_depth` inicial 0, `ppc_host_call` con y
+  sin hook, FP (`fadds/fsubs/fmuls/fdivs/fadd`, `fres(4)=0.25`,
+  `frsqrte(16)=0.25`, `fctiwz(3.75)=3`, `fcmp` LT/EQ, trap,
+  `mftb` TBL/TBU), paired-single y PSQ f32 (carga par, `w=1`,
+  almacén par, PSQ deshabilitado → programa ilegal) y
+  excepciones (`sc` → pc 0xC00, trap → pc 0x700). Sin llamar a
+  ninguna `func_*`: el juego NO se ejecutó.
+- Test C++ (`work-port/fase1-tests/test_host.cpp`): alias
+  `sfa::CpuState` idéntico a `::CPUState` (`static_assert` +
+  `sizeof`), C++ y C leyendo/escribiendo el mismo estado, y el
+  **cargador DOL previo sin cambios**: `main.dol` del repo
+  (solo lectura), entry 0x80003140, text 2 / 2.875.456 B, data
+  8 / 529.888 B, palabra en entry 0x48000139, BSS primero y
+  último a cero. RESULTADO: TODO OK.
+- **APK Fase 0 intacta:** este tramo no la reconstruye ni la
+  toca (su fichero no aparece modificado en `git status`); el
+  runtime que arranca la app sigue siendo el stub, así que su
+  comportamiento de arranque no cambia. La APK con chunks
+  llegará cuando haya dispatch real + HLE (Fase 2), no antes.
+
+**Fidelidad honesta de los `ppc_*` (límites de esta fase):**
+la aritmética FP es doble plana con redondeo a f32 en las
+instrucciones single (verificado: los `fpr` guardan dobles
+planos iguales al f32, salvo payload NaN); `fres`/`frsqrte`
+usan el recíproco exacto en vez de la estimación Gekko (el
+código guest que refina con Newton converge igual; la
+bit-exactitud de la estimación queda para la Fase 2). Nada de
+esto está validado ejecutando el juego: solo enlaza y pasa
+tests de unidad.
+
+**Qué bloquea la Fase 2 (dispatch real desde 0x80003140):**
+falta (1) conectar el runtime (`GameCubeRuntime::Frame`) a
+`dolrecomp_run_blocks()`/`dolrecomp_call()` con un `CPUState`
+cuya `ram` apunte a la `GCMemory` cargada con el DOL, y (2) el
+HLE mínimo de arranque en el orden de `init` (OS → DVD → VI →
+PAD → LC/DC → GXInit → audio → carga de ficheros), porque el
+primer bloque real llamará a esas familias y hoy devolvería
+`exception` o se quedaría sin respuesta. Sin eso, llamar a
+`__start` es correr a ciegas: enlazado sí, ejecutable todavía no.
 
 ## Orden que queda
 
-1. Shim global `cpu/cpu.h` + enlace de chunks + `ppc_host_call`.
-2. HLE mínimo de arranque (OS/GX/VI/DVD/SI) para que __start avance.
-3. GX real (primer frame) y luego DSP/MusyX e input.
-4. Paquete de datos + build APK + validación + test en Tab S8.
+1. Dispatch real desde `0x80003140` + HLE mínimo de arranque
+   (OS/GX/VI/DVD/SI) para que __start avance.
+2. GX real (primer frame) y luego DSP/MusyX e input.
+3. Paquete de datos + build APK + validación + test en Tab S8.

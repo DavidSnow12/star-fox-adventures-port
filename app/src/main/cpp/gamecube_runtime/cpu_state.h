@@ -1,58 +1,35 @@
 #pragma once
 
-// Estado de CPU Gekko para el código DolRecomp.
+// Estado de CPU Gekko para el codigo DolRecomp.
 //
-// Campos verificados por grep en los 176 chunks (no inventados):
+// DEFINICION UNICA: el tipo real vive en cpu/cpu.h (C, layout
+// canonico DolRecomp). Este fichero es solo un alias en el
+// namespace sfa, para que el C++ (mem.*, cargador, runtime) y los
+// chunks C operen sobre el MISMO struct, sin una segunda definicion
+// que pueda divergir en orden o tipos.
+//
+// Campos que usan los chunks (verificado por grep en los 176):
 //   gpr[32] (u32), fpr[32] (f64), ps1[32] (f64, paired-single),
-//   cr, xer, lr, ctr, pc (u32), gqr[8] (u32), msr, fpscr,
-//   srr0, srr1, sr[16], hid2, ear, downcount (s64), exception.
-// Funciones de memoria que los chunks llaman: mem_read/write
-// 8/16/32/64 (big-endian, ver mem.h).
+//   pc, lr, ctr, cr, xer, fpscr, msr, srr0, srr1, dar, dsisr, ear,
+//   hid2, timebase, sr[16], gqr[8], exception, program_exception,
+//   downcount (s64), host_call (puntero PPCHostCall, no bool: asi
+//   lo consulta generated.h en dolrecomp_call()), ram, ram_size.
+// La version anterior de este fichero tenia otro orden, exception
+// como int y host_call como bool, ademas de un campo userdata que
+// nadie usaba; eso ya no existe. Cualquier codigo que dependiera
+// de ese orden o de esos tipos debe actualizarse, no convivir
+// con el shim.
 //
-// NOTA DE INTEGRACIÓN: los chunks DolRecomp usan un CPUState
-// global en C (cabecera "cpu/cpu.h" de generated.h). Este struct
-// está en namespace sfa para la base y el cargador, sin incluir
-// generated.h todavía. Cuando los chunks se enlacen en la librería,
-// el shim global cpu/cpu.h deberá tener EXACTAMENTE este layout
-// (mismo orden y tipos) y las mem_* deberán operar sobre él;
-// hasta entonces, este struct es el contrato documentado, no una
-// segunda implementación divergente.
+// La RAM guest NO vive aqui: el runtime la reserva (GCMemory) y
+// apunta ram/ram_size a ella antes de llamar a los chunks. El
+// cargador DOL y los tests host no cambian de comportamiento por
+// este alias: solo cambia donde esta definido el tipo.
 
-#include <cstdint>
+#include "cpu/cpu.h"
 
 namespace sfa {
 
-struct CpuState {
-  uint32_t gpr[32] = {};
-  double fpr[32] = {};
-  double ps1[32] = {};
-  uint32_t cr = 0;
-  uint32_t xer = 0;
-  uint32_t lr = 0;
-  uint32_t ctr = 0;
-  uint32_t pc = 0;
-  uint32_t gqr[8] = {};
-  uint32_t msr = 0;
-  uint32_t fpscr = 0;
-  uint32_t srr0 = 0;
-  uint32_t srr1 = 0;
-  uint32_t sr[16] = {};
-  uint32_t hid2 = 0;
-  uint32_t ear = 0;
-  int64_t downcount = 0;
-  int exception = 0;
-  // Flag que generated.h consulta en dolrecomp_call():
-  //   if (ctx->host_call && ppc_host_call(ctx, address)) ...
-  // Es un flag, no el puntero a la función: ppc_host_call es una
-  // función externa del runtime. Sin este campo, el shim cpu/cpu.h
-  // no compila con generated.h (hallazgo del análisis GX/HLE).
-  bool host_call = false;
-  // Puntero al buffer host de la RAM guest (ver GCMemory).
-  // DolRecomp lo llama ram/ram_size en generated.h; aquí se guarda
-  // como referencia externa, no como copia.
-  uint8_t* ram = nullptr;
-  uint32_t ram_size = 0;
-  void* userdata = nullptr;
-};
+using CpuState = ::CPUState;
+using PpcHostCall = ::PPCHostCall;
 
 }  // namespace sfa

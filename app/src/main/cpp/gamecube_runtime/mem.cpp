@@ -1,135 +1,66 @@
 #include "gamecube_runtime/mem.h"
 
-#include "log.h"
+// Envoltorios C++ sobre las mem_* C del shim (cpu/cpu.c). Antes
+// esta era una segunda implementacion con su propia traduccion
+// guest->host; ahora delega, para que el C++ y los chunks vean
+// exactamente la misma memoria y la misma semantica:
+//   - RAM 0x80000000-0x81800000, alias sin cache 0xC0000000 (nuevo
+//     respecto a la version anterior, que no lo aceptaba) y forma
+//     fisica (offset < ram_size, la que generated.h aliasa).
+//   - Hardware 0xCC000000-0xCC020000: lectura 0, escritura
+//     ignorada, SIN exception.
+//   - Fuera de rango: lectura 0 / escritura ignorada, CON
+//     exception = 1.
+// Los envoltorios solo anaden la guarda de ctx nulo (las mem_* C
+// ya la tienen, pero el contrato C++ anterior la garantizaba y se
+// conserva para no cambiar el comportamiento de los llamadores).
+
+#include "cpu/cpu.h"
 
 namespace sfa {
-
-namespace {
-uint8_t* HostPtr(CpuState* ctx, uint32_t guest_address, uint32_t size,
-                 bool* is_hardware) {
-  *is_hardware = false;
-  if (ctx == nullptr || ctx->ram == nullptr) return nullptr;
-  if (IsHardwareRegister(guest_address)) {
-    *is_hardware = true;
-    return nullptr;
-  }
-  // RAM guest: 0x80000000 - 0x81800000 (24 MiB). También se acepta
-  // la forma física (offset < ram_size) que generated.h aliasa a
-  // GC_RAM_BASE, para compatibilidad con dolrecomp_physical_pc_alias.
-  uint32_t offset = 0;
-  if (guest_address >= 0x80000000u &&
-      guest_address < 0x80000000u + ctx->ram_size) {
-    offset = guest_address - 0x80000000u;
-  } else if (guest_address < ctx->ram_size) {
-    offset = guest_address;
-  } else {
-    return nullptr;
-  }
-  if (offset + size > ctx->ram_size) return nullptr;
-  return ctx->ram + offset;
-}
-}  // namespace
 
 bool IsHardwareRegister(uint32_t guest_address) {
   return guest_address >= 0xCC000000u && guest_address < 0xCC020000u;
 }
 
 uint8_t MemRead8(CpuState* ctx, uint32_t guest_address) {
-  bool hw = false;
-  uint8_t* p = HostPtr(ctx, guest_address, 1, &hw);
-  if (hw) return 0;
-  if (p == nullptr) {
-    if (ctx != nullptr) ctx->exception = 1;
-    return 0;
-  }
-  return p[0];
+  if (ctx == nullptr) return 0;
+  return ::mem_read8(ctx, guest_address);
 }
 
 uint16_t MemRead16(CpuState* ctx, uint32_t guest_address) {
-  bool hw = false;
-  uint8_t* p = HostPtr(ctx, guest_address, 2, &hw);
-  if (hw) return 0;
-  if (p == nullptr) {
-    if (ctx != nullptr) ctx->exception = 1;
-    return 0;
-  }
-  return (static_cast<uint16_t>(p[0]) << 8) | p[1];
+  if (ctx == nullptr) return 0;
+  return ::mem_read16(ctx, guest_address);
 }
 
 uint32_t MemRead32(CpuState* ctx, uint32_t guest_address) {
-  bool hw = false;
-  uint8_t* p = HostPtr(ctx, guest_address, 4, &hw);
-  if (hw) return 0;
-  if (p == nullptr) {
-    if (ctx != nullptr) ctx->exception = 1;
-    return 0;
-  }
-  return (static_cast<uint32_t>(p[0]) << 24) |
-         (static_cast<uint32_t>(p[1]) << 16) |
-         (static_cast<uint32_t>(p[2]) << 8) | p[3];
+  if (ctx == nullptr) return 0;
+  return ::mem_read32(ctx, guest_address);
 }
 
 uint64_t MemRead64(CpuState* ctx, uint32_t guest_address) {
-  bool hw = false;
-  uint8_t* p = HostPtr(ctx, guest_address, 8, &hw);
-  if (hw) return 0;
-  if (p == nullptr) {
-    if (ctx != nullptr) ctx->exception = 1;
-    return 0;
-  }
-  uint64_t v = 0;
-  for (int i = 0; i < 8; ++i) v = (v << 8) | p[i];
-  return v;
+  if (ctx == nullptr) return 0;
+  return ::mem_read64(ctx, guest_address);
 }
 
 void MemWrite8(CpuState* ctx, uint32_t guest_address, uint8_t value) {
-  bool hw = false;
-  uint8_t* p = HostPtr(ctx, guest_address, 1, &hw);
-  if (hw) return;
-  if (p == nullptr) {
-    if (ctx != nullptr) ctx->exception = 1;
-    return;
-  }
-  p[0] = value;
+  if (ctx == nullptr) return;
+  ::mem_write8(ctx, guest_address, value);
 }
 
 void MemWrite16(CpuState* ctx, uint32_t guest_address, uint16_t value) {
-  bool hw = false;
-  uint8_t* p = HostPtr(ctx, guest_address, 2, &hw);
-  if (hw) return;
-  if (p == nullptr) {
-    if (ctx != nullptr) ctx->exception = 1;
-    return;
-  }
-  p[0] = static_cast<uint8_t>(value >> 8);
-  p[1] = static_cast<uint8_t>(value);
+  if (ctx == nullptr) return;
+  ::mem_write16(ctx, guest_address, value);
 }
 
 void MemWrite32(CpuState* ctx, uint32_t guest_address, uint32_t value) {
-  bool hw = false;
-  uint8_t* p = HostPtr(ctx, guest_address, 4, &hw);
-  if (hw) return;
-  if (p == nullptr) {
-    if (ctx != nullptr) ctx->exception = 1;
-    return;
-  }
-  p[0] = static_cast<uint8_t>(value >> 24);
-  p[1] = static_cast<uint8_t>(value >> 16);
-  p[2] = static_cast<uint8_t>(value >> 8);
-  p[3] = static_cast<uint8_t>(value);
+  if (ctx == nullptr) return;
+  ::mem_write32(ctx, guest_address, value);
 }
 
 void MemWrite64(CpuState* ctx, uint32_t guest_address, uint64_t value) {
-  bool hw = false;
-  uint8_t* p = HostPtr(ctx, guest_address, 8, &hw);
-  if (hw) return;
-  if (p == nullptr) {
-    if (ctx != nullptr) ctx->exception = 1;
-    return;
-  }
-  for (int i = 0; i < 8; ++i) {
-    p[i] = static_cast<uint8_t>(value >> (56 - 8 * i));
-  }
+  if (ctx == nullptr) return;
+  ::mem_write64(ctx, guest_address, value);
 }
 
 }  // namespace sfa
