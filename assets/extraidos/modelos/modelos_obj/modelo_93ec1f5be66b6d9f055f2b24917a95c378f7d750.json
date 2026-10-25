@@ -1,0 +1,66 @@
+{
+  "n_vtx": 62,
+  "n_nrm": 74,
+  "n_col": 0,
+  "n_tex": 38,
+  "n_bones": 0,
+  "n_vtxgroups": 0,
+  "n_dlists": 2,
+  "n_dlists_shadow": 0,
+  "n_hitspheres": 0,
+  "n_shaders": 2,
+  "n_morph": 0,
+  "n_texmtx": 0,
+  "n_tex_entries": 2,
+  "flags24": 5,
+  "flags2": 0,
+  "nbt_normals": false,
+  "file_size_field": 1952,
+  "shaders": [
+    {
+      "attr": 5,
+      "layers": 1
+    },
+    {
+      "attr": 5,
+      "layers": 1
+    }
+  ],
+  "draws": 2,
+  "obj_vertices": 62,
+  "obj_texcoords": 38,
+  "obj_normals": 74,
+  "obj_faces": 120,
+  "direct_per_dlist": {
+    "0": 0,
+    "1": 0
+  },
+  "direct_ambiguous": [],
+  "direct_tiebreak": {
+    "0": "unique",
+    "1": "unique"
+  },
+  "direct_unresolved": [],
+  "dl_stats": {
+    "0": {
+      "strips": 18,
+      "prims": {
+        "tristrip": 17,
+        "triangles": 1
+      },
+      "vertices": 122,
+      "skipped_prims": 0
+    },
+    "1": {
+      "strips": 11,
+      "prims": {
+        "tristrip": 10,
+        "triangles": 1
+      },
+      "vertices": 68,
+      "skipped_prims": 0
+    }
+  },
+  "bones": [],
+  "hitspheres": []
+}

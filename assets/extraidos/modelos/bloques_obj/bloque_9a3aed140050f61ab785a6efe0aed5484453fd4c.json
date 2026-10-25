@@ -1,0 +1,128 @@
+{
+  "name": "mod61.25",
+  "n_vtx": 298,
+  "n_col": 12,
+  "n_tex": 346,
+  "n_polygons": 494,
+  "n_polygroups": 5,
+  "n_dlists": 2,
+  "n_shaders": 2,
+  "n_textures": 2,
+  "y_min": -520,
+  "y_max": 876,
+  "y_offset": 178,
+  "file_size_field": 12128,
+  "shaders": [
+    {
+      "attr": 6,
+      "layers": 1
+    },
+    {
+      "attr": 6,
+      "layers": 1
+    }
+  ],
+  "streams": {
+    "main": 2,
+    "transp": 0,
+    "water": 0
+  },
+  "obj_vertices": 298,
+  "obj_texcoords": 346,
+  "obj_faces": 494,
+  "direct_per_dlist": {
+    "main:0": 0,
+    "main:1": 0
+  },
+  "direct_ambiguous": [],
+  "dl_stats": {
+    "main:0": {
+      "strips": 117,
+      "prims": {
+        "tristrip": 116,
+        "triangles": 1
+      },
+      "vertices": 778
+    },
+    "main:1": {
+      "strips": 6,
+      "prims": {
+        "tristrip": 6
+      },
+      "vertices": 30
+    }
+  },
+  "collision_triangles": 494,
+  "polygroups": [
+    {
+      "index": 0,
+      "first_polygon": 0,
+      "bbox_raw": [
+        0,
+        30,
+        -37,
+        98,
+        465,
+        508
+      ],
+      "surface_type": 0,
+      "flags": 0
+    },
+    {
+      "index": 1,
+      "first_polygon": 4,
+      "bbox_raw": [
+        0,
+        67,
+        -77,
+        180,
+        465,
+        499
+      ],
+      "surface_type": 0,
+      "flags": 0
+    },
+    {
+      "index": 2,
+      "first_polygon": 8,
+      "bbox_raw": [
+        20,
+        115,
+        -37,
+        186,
+        396,
+        477
+      ],
+      "surface_type": 0,
+      "flags": 0
+    },
+    {
+      "index": 3,
+      "first_polygon": 11,
+      "bbox_raw": [
+        29,
+        640,
+        -340,
+        605,
+        298,
+        499
+      ],
+      "surface_type": 0,
+      "flags": 0
+    },
+    {
+      "index": 4,
+      "first_polygon": 476,
+      "bbox_raw": [
+        147,
+        640,
+        -698,
+        698,
+        301,
+        301
+      ],
+      "surface_type": 8,
+      "flags": 1
+    }
+  ]
+}

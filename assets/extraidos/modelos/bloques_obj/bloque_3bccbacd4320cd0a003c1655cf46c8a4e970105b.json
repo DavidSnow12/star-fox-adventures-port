@@ -1,0 +1,601 @@
+{
+  "name": "mod4.0",
+  "n_vtx": 704,
+  "n_col": 16,
+  "n_tex": 632,
+  "n_polygons": 1343,
+  "n_polygroups": 26,
+  "n_dlists": 16,
+  "n_shaders": 16,
+  "n_textures": 10,
+  "y_min": -1765,
+  "y_max": -1262,
+  "y_offset": -1513,
+  "file_size_field": 33184,
+  "shaders": [
+    {
+      "attr": 6,
+      "layers": 1
+    },
+    {
+      "attr": 6,
+      "layers": 1
+    },
+    {
+      "attr": 6,
+      "layers": 2
+    },
+    {
+      "attr": 6,
+      "layers": 1
+    },
+    {
+      "attr": 6,
+      "layers": 1
+    },
+    {
+      "attr": 6,
+      "layers": 1
+    },
+    {
+      "attr": 6,
+      "layers": 1
+    },
+    {
+      "attr": 6,
+      "layers": 1
+    },
+    {
+      "attr": 6,
+      "layers": 1
+    },
+    {
+      "attr": 6,
+      "layers": 1
+    },
+    {
+      "attr": 6,
+      "layers": 1
+    },
+    {
+      "attr": 6,
+      "layers": 2
+    },
+    {
+      "attr": 6,
+      "layers": 2
+    },
+    {
+      "attr": 6,
+      "layers": 1
+    },
+    {
+      "attr": 6,
+      "layers": 1
+    },
+    {
+      "attr": 6,
+      "layers": 1
+    }
+  ],
+  "streams": {
+    "main": 16,
+    "transp": 0,
+    "water": 0
+  },
+  "obj_vertices": 704,
+  "obj_texcoords": 617,
+  "obj_faces": 1343,
+  "direct_per_dlist": {
+    "main:0": 0,
+    "main:1": 0,
+    "main:2": 0,
+    "main:3": 0,
+    "main:4": 0,
+    "main:5": 0,
+    "main:6": 0,
+    "main:7": 0,
+    "main:8": 0,
+    "main:9": 0,
+    "main:10": 0,
+    "main:11": 0,
+    "main:12": 0,
+    "main:13": 0,
+    "main:14": 0,
+    "main:15": 0
+  },
+  "direct_ambiguous": [],
+  "dl_stats": {
+    "main:0": {
+      "strips": 20,
+      "prims": {
+        "tristrip": 19,
+        "triangles": 1
+      },
+      "vertices": 114
+    },
+    "main:1": {
+      "strips": 59,
+      "prims": {
+        "tristrip": 58,
+        "triangles": 1
+      },
+      "vertices": 388
+    },
+    "main:2": {
+      "strips": 5,
+      "prims": {
+        "tristrip": 4,
+        "triangles": 1
+      },
+      "vertices": 22
+    },
+    "main:3": {
+      "strips": 17,
+      "prims": {
+        "tristrip": 16,
+        "triangles": 1
+      },
+      "vertices": 105
+    },
+    "main:4": {
+      "strips": 56,
+      "prims": {
+        "tristrip": 55,
+        "triangles": 1
+      },
+      "vertices": 315
+    },
+    "main:5": {
+      "strips": 20,
+      "prims": {
+        "tristrip": 19,
+        "triangles": 1
+      },
+      "vertices": 130
+    },
+    "main:6": {
+      "strips": 7,
+      "prims": {
+        "tristrip": 6,
+        "triangles": 1
+      },
+      "vertices": 36
+    },
+    "main:7": {
+      "strips": 43,
+      "prims": {
+        "tristrip": 42,
+        "triangles": 1
+      },
+      "vertices": 239
+    },
+    "main:8": {
+      "strips": 54,
+      "prims": {
+        "tristrip": 53,
+        "triangles": 1
+      },
+      "vertices": 340
+    },
+    "main:9": {
+      "strips": 1,
+      "prims": {
+        "tristrip": 1
+      },
+      "vertices": 4
+    },
+    "main:10": {
+      "strips": 86,
+      "prims": {
+        "tristrip": 85,
+        "triangles": 1
+      },
+      "vertices": 453
+    },
+    "main:11": {
+      "strips": 2,
+      "prims": {
+        "tristrip": 1,
+        "triangles": 1
+      },
+      "vertices": 7
+    },
+    "main:12": {
+      "strips": 2,
+      "prims": {
+        "tristrip": 2
+      },
+      "vertices": 13
+    },
+    "main:13": {
+      "strips": 12,
+      "prims": {
+        "tristrip": 11,
+        "triangles": 1
+      },
+      "vertices": 118
+    },
+    "main:14": {
+      "strips": 4,
+      "prims": {
+        "tristrip": 4
+      },
+      "vertices": 17
+    },
+    "main:15": {
+      "strips": 8,
+      "prims": {
+        "tristrip": 8
+      },
+      "vertices": 34
+    }
+  },
+  "collision_triangles": 1343,
+  "polygroups": [
+    {
+      "index": 0,
+      "first_polygon": 0,
+      "bbox_raw": [
+        251,
+        431,
+        -252,
+        -252,
+        27,
+        52
+      ],
+      "surface_type": 2,
+      "flags": 36
+    },
+    {
+      "index": 1,
+      "first_polygon": 2,
+      "bbox_raw": [
+        156,
+        550,
+        -252,
+        143,
+        27,
+        54
+      ],
+      "surface_type": 25,
+      "flags": 0
+    },
+    {
+      "index": 2,
+      "first_polygon": 10,
+      "bbox_raw": [
+        539,
+        640,
+        -26,
+        251,
+        34,
+        50
+      ],
+      "surface_type": 34,
+      "flags": 4
+    },
+    {
+      "index": 3,
+      "first_polygon": 21,
+      "bbox_raw": [
+        156,
+        516,
+        -252,
+        -252,
+        27,
+        100
+      ],
+      "surface_type": 2,
+      "flags": 36
+    },
+    {
+      "index": 4,
+      "first_polygon": 25,
+      "bbox_raw": [
+        40,
+        550,
+        -252,
+        251,
+        27,
+        90
+      ],
+      "surface_type": 25,
+      "flags": 0
+    },
+    {
+      "index": 5,
+      "first_polygon": 40,
+      "bbox_raw": [
+        94,
+        640,
+        -252,
+        251,
+        34,
+        100
+      ],
+      "surface_type": 34,
+      "flags": 4
+    },
+    {
+      "index": 6,
+      "first_polygon": 53,
+      "bbox_raw": [
+        303,
+        640,
+        -252,
+        -26,
+        34,
+        65
+      ],
+      "surface_type": 34,
+      "flags": 36
+    },
+    {
+      "index": 7,
+      "first_polygon": 56,
+      "bbox_raw": [
+        9,
+        40,
+        -252,
+        221,
+        78,
+        610
+      ],
+      "surface_type": 25,
+      "flags": 0
+    },
+    {
+      "index": 8,
+      "first_polygon": 76,
+      "bbox_raw": [
+        9,
+        28,
+        143,
+        162,
+        132,
+        556
+      ],
+      "surface_type": 34,
+      "flags": 4
+    },
+    {
+      "index": 9,
+      "first_polygon": 78,
+      "bbox_raw": [
+        9,
+        42,
+        -252,
+        221,
+        78,
+        640
+      ],
+      "surface_type": 25,
+      "flags": 0
+    },
+    {
+      "index": 10,
+      "first_polygon": 114,
+      "bbox_raw": [
+        28,
+        54,
+        -207,
+        -202,
+        137,
+        596
+      ],
+      "surface_type": 34,
+      "flags": 0
+    },
+    {
+      "index": 11,
+      "first_polygon": 122,
+      "bbox_raw": [
+        9,
+        54,
+        -207,
+        162,
+        78,
+        640
+      ],
+      "surface_type": 34,
+      "flags": 4
+    },
+    {
+      "index": 12,
+      "first_polygon": 160,
+      "bbox_raw": [
+        35,
+        40,
+        -12,
+        2,
+        344,
+        351
+      ],
+      "surface_type": 34,
+      "flags": 16
+    },
+    {
+      "index": 13,
+      "first_polygon": 177,
+      "bbox_raw": [
+        14,
+        94,
+        -252,
+        -252,
+        249,
+        640
+      ],
+      "surface_type": 2,
+      "flags": 36
+    },
+    {
+      "index": 14,
+      "first_polygon": 181,
+      "bbox_raw": [
+        40,
+        94,
+        143,
+        221,
+        47,
+        78
+      ],
+      "surface_type": 25,
+      "flags": 0
+    },
+    {
+      "index": 15,
+      "first_polygon": 182,
+      "bbox_raw": [
+        28,
+        72,
+        -207,
+        -202,
+        92,
+        596
+      ],
+      "surface_type": 34,
+      "flags": 0
+    },
+    {
+      "index": 16,
+      "first_polygon": 206,
+      "bbox_raw": [
+        28,
+        94,
+        -252,
+        162,
+        92,
+        640
+      ],
+      "surface_type": 34,
+      "flags": 4
+    },
+    {
+      "index": 17,
+      "first_polygon": 264,
+      "bbox_raw": [
+        40,
+        40,
+        -4,
+        2,
+        344,
+        351
+      ],
+      "surface_type": 34,
+      "flags": 16
+    },
+    {
+      "index": 18,
+      "first_polygon": 266,
+      "bbox_raw": [
+        156,
+        516,
+        -252,
+        -246,
+        195,
+        640
+      ],
+      "surface_type": 2,
+      "flags": 4
+    },
+    {
+      "index": 19,
+      "first_polygon": 316,
+      "bbox_raw": [
+        40,
+        627,
+        -252,
+        -252,
+        32,
+        608
+      ],
+      "surface_type": 2,
+      "flags": 36
+    },
+    {
+      "index": 20,
+      "first_polygon": 339,
+      "bbox_raw": [
+        627,
+        640,
+        -252,
+        -252,
+        336,
+        608
+      ],
+      "surface_type": 18,
+      "flags": 36
+    },
+    {
+      "index": 21,
+      "first_polygon": 341,
+      "bbox_raw": [
+        156,
+        550,
+        30,
+        251,
+        34,
+        90
+      ],
+      "surface_type": 25,
+      "flags": 0
+    },
+    {
+      "index": 22,
+      "first_polygon": 345,
+      "bbox_raw": [
+        28,
+        640,
+        -207,
+        162,
+        66,
+        622
+      ],
+      "surface_type": 34,
+      "flags": 0
+    },
+    {
+      "index": 23,
+      "first_polygon": 641,
+      "bbox_raw": [
+        31,
+        640,
+        -252,
+        251,
+        37,
+        640
+      ],
+      "surface_type": 34,
+      "flags": 4
+    },
+    {
+      "index": 24,
+      "first_polygon": 1270,
+      "bbox_raw": [
+        147,
+        640,
+        -12,
+        73,
+        344,
+        477
+      ],
+      "surface_type": 34,
+      "flags": 16
+    },
+    {
+      "index": 25,
+      "first_polygon": 1308,
+      "bbox_raw": [
+        303,
+        640,
+        -252,
+        -1,
+        37,
+        640
+      ],
+      "surface_type": 34,
+      "flags": 36
+    }
+  ]
+}

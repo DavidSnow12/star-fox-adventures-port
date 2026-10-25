@@ -1,0 +1,23 @@
+# Star Fox Adventures map block model, block-local coordinates.
+# Blocks use VAT5: POS s16/8, TEX s16/256, v flipped. No normals.
+# Header yOffset NOT applied (see sidecar / RESUMEN.md).
+v 640 320 0
+v 640 -320 640
+v 640 -320 0
+v 0 -320 0
+v 0 320 0
+v 0 320 640
+v 0 -320 640
+v 640 320 640
+vt 0 1
+g main_dlist_0
+f 1/1 2/1 3/1
+f 3/1 2/1 4/1
+f 1/1 5/1 6/1
+f 6/1 5/1 4/1
+f 6/1 4/1 7/1
+f 7/1 4/1 2/1
+f 7/1 2/1 8/1
+f 8/1 2/1 1/1
+f 8/1 1/1 6/1
+f 8/1 6/1 7/1

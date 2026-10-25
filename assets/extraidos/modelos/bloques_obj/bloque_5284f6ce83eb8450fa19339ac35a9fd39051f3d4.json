@@ -1,0 +1,140 @@
+{
+  "name": "mod6.0",
+  "n_vtx": 8,
+  "n_col": 2,
+  "n_tex": 13,
+  "n_polygons": 7,
+  "n_polygroups": 3,
+  "n_dlists": 3,
+  "n_shaders": 3,
+  "n_textures": 3,
+  "y_min": -128,
+  "y_max": 44,
+  "y_offset": -42,
+  "file_size_field": 864,
+  "shaders": [
+    {
+      "attr": 6,
+      "layers": 1
+    },
+    {
+      "attr": 6,
+      "layers": 1
+    },
+    {
+      "attr": 6,
+      "layers": 1
+    }
+  ],
+  "streams": {
+    "main": 3,
+    "transp": 0,
+    "water": 0
+  },
+  "obj_vertices": 8,
+  "obj_texcoords": 13,
+  "obj_faces": 7,
+  "direct_per_dlist": {
+    "main:0": 0,
+    "main:1": 0,
+    "main:2": 0
+  },
+  "direct_ambiguous": [
+    {
+      "stream": "main",
+      "dlist": 0,
+      "passing_direct_counts": [
+        0,
+        1,
+        2,
+        3
+      ]
+    },
+    {
+      "stream": "main",
+      "dlist": 1,
+      "passing_direct_counts": [
+        0,
+        2,
+        3
+      ]
+    },
+    {
+      "stream": "main",
+      "dlist": 2,
+      "passing_direct_counts": [
+        0,
+        3
+      ]
+    }
+  ],
+  "dl_stats": {
+    "main:0": {
+      "strips": 1,
+      "prims": {
+        "tristrip": 1
+      },
+      "vertices": 4
+    },
+    "main:1": {
+      "strips": 1,
+      "prims": {
+        "tristrip": 1
+      },
+      "vertices": 4
+    },
+    "main:2": {
+      "strips": 2,
+      "prims": {
+        "tristrip": 1,
+        "triangles": 1
+      },
+      "vertices": 7
+    }
+  },
+  "collision_triangles": 7,
+  "polygroups": [
+    {
+      "index": 0,
+      "first_polygon": 0,
+      "bbox_raw": [
+        0,
+        640,
+        -86,
+        86,
+        0,
+        0
+      ],
+      "surface_type": 24,
+      "flags": 4
+    },
+    {
+      "index": 1,
+      "first_polygon": 2,
+      "bbox_raw": [
+        0,
+        0,
+        -86,
+        86,
+        0,
+        640
+      ],
+      "surface_type": 25,
+      "flags": 0
+    },
+    {
+      "index": 2,
+      "first_polygon": 4,
+      "bbox_raw": [
+        0,
+        640,
+        -86,
+        -86,
+        0,
+        640
+      ],
+      "surface_type": 0,
+      "flags": 4
+    }
+  ]
+}

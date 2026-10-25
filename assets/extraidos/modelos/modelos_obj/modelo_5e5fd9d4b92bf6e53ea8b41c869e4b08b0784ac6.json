@@ -1,0 +1,498 @@
+{
+  "n_vtx": 5903,
+  "n_nrm": 4026,
+  "n_col": 198,
+  "n_tex": 2615,
+  "n_bones": 0,
+  "n_vtxgroups": 0,
+  "n_dlists": 31,
+  "n_dlists_shadow": 0,
+  "n_hitspheres": 0,
+  "n_shaders": 31,
+  "n_morph": 0,
+  "n_texmtx": 0,
+  "n_tex_entries": 30,
+  "flags24": 7,
+  "flags2": 0,
+  "nbt_normals": false,
+  "file_size_field": 202432,
+  "shaders": [
+    {
+      "attr": 7,
+      "layers": 1
+    },
+    {
+      "attr": 7,
+      "layers": 1
+    },
+    {
+      "attr": 7,
+      "layers": 1
+    },
+    {
+      "attr": 7,
+      "layers": 1
+    },
+    {
+      "attr": 7,
+      "layers": 1
+    },
+    {
+      "attr": 7,
+      "layers": 1
+    },
+    {
+      "attr": 7,
+      "layers": 1
+    },
+    {
+      "attr": 7,
+      "layers": 1
+    },
+    {
+      "attr": 7,
+      "layers": 1
+    },
+    {
+      "attr": 7,
+      "layers": 1
+    },
+    {
+      "attr": 7,
+      "layers": 1
+    },
+    {
+      "attr": 7,
+      "layers": 1
+    },
+    {
+      "attr": 7,
+      "layers": 1
+    },
+    {
+      "attr": 7,
+      "layers": 1
+    },
+    {
+      "attr": 7,
+      "layers": 1
+    },
+    {
+      "attr": 7,
+      "layers": 1
+    },
+    {
+      "attr": 7,
+      "layers": 1
+    },
+    {
+      "attr": 7,
+      "layers": 1
+    },
+    {
+      "attr": 7,
+      "layers": 1
+    },
+    {
+      "attr": 7,
+      "layers": 1
+    },
+    {
+      "attr": 7,
+      "layers": 1
+    },
+    {
+      "attr": 7,
+      "layers": 1
+    },
+    {
+      "attr": 7,
+      "layers": 1
+    },
+    {
+      "attr": 7,
+      "layers": 1
+    },
+    {
+      "attr": 7,
+      "layers": 1
+    },
+    {
+      "attr": 7,
+      "layers": 1
+    },
+    {
+      "attr": 7,
+      "layers": 1
+    },
+    {
+      "attr": 7,
+      "layers": 1
+    },
+    {
+      "attr": 7,
+      "layers": 1
+    },
+    {
+      "attr": 7,
+      "layers": 1
+    },
+    {
+      "attr": 7,
+      "layers": 1
+    }
+  ],
+  "draws": 31,
+  "obj_vertices": 5903,
+  "obj_texcoords": 2615,
+  "obj_normals": 4026,
+  "obj_faces": 10017,
+  "direct_per_dlist": {
+    "0": 0,
+    "1": 0,
+    "2": 0,
+    "3": 0,
+    "4": 0,
+    "5": 0,
+    "6": 0,
+    "7": 0,
+    "8": 0,
+    "9": 0,
+    "10": 0,
+    "11": 0,
+    "12": 0,
+    "13": 0,
+    "14": 0,
+    "15": 0,
+    "16": 0,
+    "17": 0,
+    "18": 0,
+    "19": 0,
+    "20": 0,
+    "21": 0,
+    "22": 0,
+    "23": 0,
+    "24": 0,
+    "25": 0,
+    "26": 0,
+    "27": 0,
+    "28": 0,
+    "29": 0,
+    "30": 0
+  },
+  "direct_ambiguous": [],
+  "direct_tiebreak": {
+    "0": "unique",
+    "1": "unique",
+    "2": "unique",
+    "3": "unique",
+    "4": "unique",
+    "5": "unique",
+    "6": "unique",
+    "7": "unique",
+    "8": "unique",
+    "9": "unique",
+    "10": "unique",
+    "11": "unique",
+    "12": "unique",
+    "13": "unique",
+    "14": "unique",
+    "15": "unique",
+    "16": "unique",
+    "17": "unique",
+    "18": "unique",
+    "19": "unique",
+    "20": "unique",
+    "21": "unique",
+    "22": "unique",
+    "23": "unique",
+    "24": "unique",
+    "25": "unique",
+    "26": "unique",
+    "27": "unique",
+    "28": "unique",
+    "29": "unique",
+    "30": "unique"
+  },
+  "direct_unresolved": [],
+  "dl_stats": {
+    "0": {
+      "strips": 88,
+      "prims": {
+        "tristrip": 87,
+        "triangles": 1
+      },
+      "vertices": 458,
+      "skipped_prims": 0
+    },
+    "1": {
+      "strips": 74,
+      "prims": {
+        "tristrip": 73,
+        "triangles": 1
+      },
+      "vertices": 520,
+      "skipped_prims": 0
+    },
+    "2": {
+      "strips": 27,
+      "prims": {
+        "tristrip": 26,
+        "triangles": 1
+      },
+      "vertices": 149,
+      "skipped_prims": 0
+    },
+    "3": {
+      "strips": 22,
+      "prims": {
+        "tristrip": 21,
+        "triangles": 1
+      },
+      "vertices": 101,
+      "skipped_prims": 0
+    },
+    "4": {
+      "strips": 289,
+      "prims": {
+        "tristrip": 288,
+        "triangles": 1
+      },
+      "vertices": 1550,
+      "skipped_prims": 0
+    },
+    "5": {
+      "strips": 128,
+      "prims": {
+        "tristrip": 127,
+        "triangles": 1
+      },
+      "vertices": 856,
+      "skipped_prims": 0
+    },
+    "6": {
+      "strips": 3,
+      "prims": {
+        "tristrip": 2,
+        "triangles": 1
+      },
+      "vertices": 18,
+      "skipped_prims": 0
+    },
+    "7": {
+      "strips": 3,
+      "prims": {
+        "tristrip": 2,
+        "triangles": 1
+      },
+      "vertices": 14,
+      "skipped_prims": 0
+    },
+    "8": {
+      "strips": 4,
+      "prims": {
+        "tristrip": 3,
+        "triangles": 1
+      },
+      "vertices": 16,
+      "skipped_prims": 0
+    },
+    "9": {
+      "strips": 4,
+      "prims": {
+        "tristrip": 3,
+        "triangles": 1
+      },
+      "vertices": 16,
+      "skipped_prims": 0
+    },
+    "10": {
+      "strips": 2,
+      "prims": {
+        "tristrip": 2
+      },
+      "vertices": 8,
+      "skipped_prims": 0
+    },
+    "11": {
+      "strips": 4,
+      "prims": {
+        "tristrip": 4
+      },
+      "vertices": 16,
+      "skipped_prims": 0
+    },
+    "12": {
+      "strips": 3,
+      "prims": {
+        "tristrip": 2,
+        "triangles": 1
+      },
+      "vertices": 14,
+      "skipped_prims": 0
+    },
+    "13": {
+      "strips": 4,
+      "prims": {
+        "tristrip": 3,
+        "triangles": 1
+      },
+      "vertices": 26,
+      "skipped_prims": 0
+    },
+    "14": {
+      "strips": 32,
+      "prims": {
+        "tristrip": 31,
+        "triangles": 1
+      },
+      "vertices": 177,
+      "skipped_prims": 0
+    },
+    "15": {
+      "strips": 16,
+      "prims": {
+        "tristrip": 15,
+        "triangles": 1
+      },
+      "vertices": 92,
+      "skipped_prims": 0
+    },
+    "16": {
+      "strips": 681,
+      "prims": {
+        "tristrip": 680,
+        "triangles": 1
+      },
+      "vertices": 3572,
+      "skipped_prims": 0
+    },
+    "17": {
+      "strips": 35,
+      "prims": {
+        "tristrip": 34,
+        "triangles": 1
+      },
+      "vertices": 148,
+      "skipped_prims": 0
+    },
+    "18": {
+      "strips": 357,
+      "prims": {
+        "tristrip": 356,
+        "triangles": 1
+      },
+      "vertices": 2751,
+      "skipped_prims": 0
+    },
+    "19": {
+      "strips": 27,
+      "prims": {
+        "tristrip": 26,
+        "triangles": 1
+      },
+      "vertices": 190,
+      "skipped_prims": 0
+    },
+    "20": {
+      "strips": 30,
+      "prims": {
+        "tristrip": 29,
+        "triangles": 1
+      },
+      "vertices": 175,
+      "skipped_prims": 0
+    },
+    "21": {
+      "strips": 50,
+      "prims": {
+        "tristrip": 49,
+        "triangles": 1
+      },
+      "vertices": 220,
+      "skipped_prims": 0
+    },
+    "22": {
+      "strips": 14,
+      "prims": {
+        "tristrip": 13,
+        "triangles": 1
+      },
+      "vertices": 70,
+      "skipped_prims": 0
+    },
+    "23": {
+      "strips": 70,
+      "prims": {
+        "tristrip": 69,
+        "triangles": 1
+      },
+      "vertices": 448,
+      "skipped_prims": 0
+    },
+    "24": {
+      "strips": 824,
+      "prims": {
+        "tristrip": 823,
+        "triangles": 1
+      },
+      "vertices": 4101,
+      "skipped_prims": 0
+    },
+    "25": {
+      "strips": 121,
+      "prims": {
+        "tristrip": 120,
+        "triangles": 1
+      },
+      "vertices": 804,
+      "skipped_prims": 0
+    },
+    "26": {
+      "strips": 48,
+      "prims": {
+        "tristrip": 48
+      },
+      "vertices": 216,
+      "skipped_prims": 0
+    },
+    "27": {
+      "strips": 84,
+      "prims": {
+        "tristrip": 83,
+        "triangles": 1
+      },
+      "vertices": 439,
+      "skipped_prims": 0
+    },
+    "28": {
+      "strips": 50,
+      "prims": {
+        "tristrip": 49,
+        "triangles": 1
+      },
+      "vertices": 334,
+      "skipped_prims": 0
+    },
+    "29": {
+      "strips": 24,
+      "prims": {
+        "tristrip": 23,
+        "triangles": 1
+      },
+      "vertices": 117,
+      "skipped_prims": 0
+    },
+    "30": {
+      "strips": 168,
+      "prims": {
+        "tristrip": 167,
+        "triangles": 1
+      },
+      "vertices": 971,
+      "skipped_prims": 0
+    }
+  },
+  "bones": [],
+  "hitspheres": []
+}

@@ -1,0 +1,70 @@
+{
+  "name": "mod62.5",
+  "n_vtx": 4,
+  "n_col": 1,
+  "n_tex": 4,
+  "n_polygons": 2,
+  "n_polygroups": 1,
+  "n_dlists": 1,
+  "n_shaders": 1,
+  "n_textures": 1,
+  "y_min": -1191,
+  "y_max": -1191,
+  "y_offset": -1191,
+  "file_size_field": 448,
+  "shaders": [
+    {
+      "attr": 6,
+      "layers": 1
+    }
+  ],
+  "streams": {
+    "main": 1,
+    "transp": 0,
+    "water": 0
+  },
+  "obj_vertices": 4,
+  "obj_texcoords": 4,
+  "obj_faces": 2,
+  "direct_per_dlist": {
+    "main:0": 0
+  },
+  "direct_ambiguous": [
+    {
+      "stream": "main",
+      "dlist": 0,
+      "passing_direct_counts": [
+        0,
+        1,
+        2,
+        3
+      ]
+    }
+  ],
+  "dl_stats": {
+    "main:0": {
+      "strips": 1,
+      "prims": {
+        "tristrip": 1
+      },
+      "vertices": 4
+    }
+  },
+  "collision_triangles": 2,
+  "polygroups": [
+    {
+      "index": 0,
+      "first_polygon": 0,
+      "bbox_raw": [
+        0,
+        640,
+        0,
+        0,
+        0,
+        640
+      ],
+      "surface_type": 34,
+      "flags": 4
+    }
+  ]
+}

@@ -1,0 +1,160 @@
+{
+  "n_vtx": 56,
+  "n_nrm": 0,
+  "n_col": 0,
+  "n_tex": 41,
+  "n_bones": 6,
+  "n_vtxgroups": 0,
+  "n_dlists": 1,
+  "n_dlists_shadow": 0,
+  "n_hitspheres": 0,
+  "n_shaders": 1,
+  "n_morph": 0,
+  "n_texmtx": 0,
+  "n_tex_entries": 1,
+  "flags24": 4,
+  "flags2": 32768,
+  "nbt_normals": false,
+  "file_size_field": 1568,
+  "shaders": [
+    {
+      "attr": 4,
+      "layers": 1
+    }
+  ],
+  "draws": 1,
+  "obj_vertices": 56,
+  "obj_texcoords": 41,
+  "obj_normals": 0,
+  "obj_faces": 92,
+  "direct_per_dlist": {
+    "0": 1
+  },
+  "direct_ambiguous": [],
+  "direct_tiebreak": {
+    "0": "unique"
+  },
+  "direct_unresolved": [],
+  "dl_stats": {
+    "0": {
+      "strips": 13,
+      "prims": {
+        "tristrip": 12,
+        "triangles": 1
+      },
+      "vertices": 138,
+      "skipped_prims": 0
+    }
+  },
+  "bones": [
+    {
+      "parent": -1,
+      "idx_bytes": [
+        128,
+        0,
+        0
+      ],
+      "head": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "tail": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "parent": 0,
+      "idx_bytes": [
+        129,
+        1,
+        1
+      ],
+      "head": [
+        0.0,
+        -0.005497600417584181,
+        4.1750593185424805
+      ],
+      "tail": [
+        0.0,
+        -0.005497600417584181,
+        4.1750593185424805
+      ]
+    },
+    {
+      "parent": 1,
+      "idx_bytes": [
+        130,
+        2,
+        2
+      ],
+      "head": [
+        -0.0,
+        0.040716804563999176,
+        -1.5268161296844482
+      ],
+      "tail": [
+        -0.0,
+        0.03521920368075371,
+        2.6482431888580322
+      ]
+    },
+    {
+      "parent": 2,
+      "idx_bytes": [
+        131,
+        3,
+        3
+      ],
+      "head": [
+        0.0,
+        0.0,
+        -2.6464896202087402
+      ],
+      "tail": [
+        -0.0,
+        0.03521920368075371,
+        0.0017535999650135636
+      ]
+    },
+    {
+      "parent": 3,
+      "idx_bytes": [
+        132,
+        4,
+        4
+      ],
+      "head": [
+        0.0,
+        -0.020358402281999588,
+        -2.544703960418701
+      ],
+      "tail": [
+        -0.0,
+        0.014860800467431545,
+        -2.542950391769409
+      ]
+    },
+    {
+      "parent": 4,
+      "idx_bytes": [
+        133,
+        5,
+        5
+      ],
+      "head": [
+        0.0,
+        0.081427201628685,
+        -2.0764739513397217
+      ],
+      "tail": [
+        -0.0,
+        0.09628800302743912,
+        -4.619424343109131
+      ]
+    }
+  ],
+  "hitspheres": []
+}

@@ -1,0 +1,126 @@
+{
+  "name": "mod61.11",
+  "n_vtx": 86,
+  "n_col": 6,
+  "n_tex": 55,
+  "n_polygons": 127,
+  "n_polygroups": 3,
+  "n_dlists": 4,
+  "n_shaders": 4,
+  "n_textures": 4,
+  "y_min": 9,
+  "y_max": 362,
+  "y_offset": 185,
+  "file_size_field": 3264,
+  "shaders": [
+    {
+      "attr": 6,
+      "layers": 1
+    },
+    {
+      "attr": 6,
+      "layers": 1
+    },
+    {
+      "attr": 6,
+      "layers": 1
+    },
+    {
+      "attr": 6,
+      "layers": 1
+    }
+  ],
+  "streams": {
+    "main": 4,
+    "transp": 0,
+    "water": 0
+  },
+  "obj_vertices": 86,
+  "obj_texcoords": 55,
+  "obj_faces": 127,
+  "direct_per_dlist": {
+    "main:0": 0,
+    "main:1": 0,
+    "main:2": 0,
+    "main:3": 0
+  },
+  "direct_ambiguous": [],
+  "dl_stats": {
+    "main:0": {
+      "strips": 6,
+      "prims": {
+        "tristrip": 5,
+        "triangles": 1
+      },
+      "vertices": 28
+    },
+    "main:1": {
+      "strips": 8,
+      "prims": {
+        "tristrip": 7,
+        "triangles": 1
+      },
+      "vertices": 59
+    },
+    "main:2": {
+      "strips": 15,
+      "prims": {
+        "tristrip": 14,
+        "triangles": 1
+      },
+      "vertices": 95
+    },
+    "main:3": {
+      "strips": 3,
+      "prims": {
+        "tristrip": 3
+      },
+      "vertices": 15
+    }
+  },
+  "collision_triangles": 127,
+  "polygroups": [
+    {
+      "index": 0,
+      "first_polygon": 0,
+      "bbox_raw": [
+        362,
+        640,
+        -168,
+        177,
+        124,
+        640
+      ],
+      "surface_type": 0,
+      "flags": 2
+    },
+    {
+      "index": 1,
+      "first_polygon": 55,
+      "bbox_raw": [
+        485,
+        640,
+        -176,
+        -159,
+        259,
+        640
+      ],
+      "surface_type": 0,
+      "flags": 6
+    },
+    {
+      "index": 2,
+      "first_polygon": 64,
+      "bbox_raw": [
+        425,
+        640,
+        -172,
+        162,
+        124,
+        640
+      ],
+      "surface_type": 33,
+      "flags": 1
+    }
+  ]
+}

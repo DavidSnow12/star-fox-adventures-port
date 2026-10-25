@@ -1,0 +1,60 @@
+{
+  "name": "mod6.16",
+  "n_vtx": 8,
+  "n_col": 2,
+  "n_tex": 9,
+  "n_polygons": 7,
+  "n_polygroups": 1,
+  "n_dlists": 1,
+  "n_shaders": 1,
+  "n_textures": 1,
+  "y_min": -426,
+  "y_max": -235,
+  "y_offset": -330,
+  "file_size_field": 576,
+  "shaders": [
+    {
+      "attr": 6,
+      "layers": 1
+    }
+  ],
+  "streams": {
+    "main": 1,
+    "transp": 0,
+    "water": 0
+  },
+  "obj_vertices": 8,
+  "obj_texcoords": 9,
+  "obj_faces": 7,
+  "direct_per_dlist": {
+    "main:0": 0
+  },
+  "direct_ambiguous": [],
+  "dl_stats": {
+    "main:0": {
+      "strips": 4,
+      "prims": {
+        "tristrip": 3,
+        "triangles": 1
+      },
+      "vertices": 15
+    }
+  },
+  "collision_triangles": 7,
+  "polygroups": [
+    {
+      "index": 0,
+      "first_polygon": 0,
+      "bbox_raw": [
+        0,
+        232,
+        -96,
+        95,
+        283,
+        374
+      ],
+      "surface_type": 25,
+      "flags": 0
+    }
+  ]
+}

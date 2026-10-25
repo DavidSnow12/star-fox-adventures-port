@@ -1,0 +1,17 @@
+{
+  "romlists": 124,
+  "model_sources": 53,
+  "block_sources": 52,
+  "unique_models": 829,
+  "unique_blocks": 1215,
+  "model_stats": {
+    "modelo_obj_ok": 829,
+    "modelo_duplicado": 2496
+  },
+  "block_stats": {
+    "bloque_obj_ok": 1215
+  },
+  "fuentes_rows": 4540,
+  "failures": 0,
+  "artifacts": 5440
+}

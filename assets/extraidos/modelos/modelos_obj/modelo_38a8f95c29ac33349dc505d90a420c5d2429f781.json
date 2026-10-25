@@ -1,0 +1,120 @@
+{
+  "n_vtx": 343,
+  "n_nrm": 401,
+  "n_col": 0,
+  "n_tex": 233,
+  "n_bones": 3,
+  "n_vtxgroups": 0,
+  "n_dlists": 2,
+  "n_dlists_shadow": 0,
+  "n_hitspheres": 0,
+  "n_shaders": 2,
+  "n_morph": 0,
+  "n_texmtx": 0,
+  "n_tex_entries": 1,
+  "flags24": 5,
+  "flags2": 0,
+  "nbt_normals": false,
+  "file_size_field": 11712,
+  "shaders": [
+    {
+      "attr": 5,
+      "layers": 1
+    },
+    {
+      "attr": 5,
+      "layers": 1
+    }
+  ],
+  "draws": 2,
+  "obj_vertices": 343,
+  "obj_texcoords": 233,
+  "obj_normals": 401,
+  "obj_faces": 552,
+  "direct_per_dlist": {
+    "0": 2,
+    "1": 2
+  },
+  "direct_ambiguous": [],
+  "direct_tiebreak": {
+    "0": "unique",
+    "1": "unique"
+  },
+  "direct_unresolved": [],
+  "dl_stats": {
+    "0": {
+      "strips": 137,
+      "prims": {
+        "tristrip": 136,
+        "triangles": 1
+      },
+      "vertices": 918,
+      "skipped_prims": 0
+    },
+    "1": {
+      "strips": 2,
+      "prims": {
+        "tristrip": 2
+      },
+      "vertices": 8,
+      "skipped_prims": 0
+    }
+  },
+  "bones": [
+    {
+      "parent": -1,
+      "idx_bytes": [
+        128,
+        0,
+        0
+      ],
+      "head": [
+        0.0,
+        3.1700944900512695,
+        -0.7771462202072144
+      ],
+      "tail": [
+        0.0,
+        3.1700944900512695,
+        -0.7771462202072144
+      ]
+    },
+    {
+      "parent": 0,
+      "idx_bytes": [
+        129,
+        1,
+        1
+      ],
+      "head": [
+        0.0,
+        1.9349908828735352,
+        -0.9639551639556885
+      ],
+      "tail": [
+        0.0,
+        5.105085372924805,
+        -1.7411013841629028
+      ]
+    },
+    {
+      "parent": -1,
+      "idx_bytes": [
+        130,
+        2,
+        2
+      ],
+      "head": [
+        0.0,
+        0.007130239624530077,
+        0.017405441030859947
+      ],
+      "tail": [
+        0.0,
+        0.007130239624530077,
+        0.017405441030859947
+      ]
+    }
+  ],
+  "hitspheres": []
+}

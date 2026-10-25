@@ -1,0 +1,336 @@
+{
+  "n_vtx": 18,
+  "n_nrm": 0,
+  "n_col": 4,
+  "n_tex": 34,
+  "n_bones": 1,
+  "n_vtxgroups": 0,
+  "n_dlists": 2,
+  "n_dlists_shadow": 0,
+  "n_hitspheres": 21,
+  "n_shaders": 2,
+  "n_morph": 0,
+  "n_texmtx": 0,
+  "n_tex_entries": 2,
+  "flags24": 6,
+  "flags2": 1,
+  "nbt_normals": false,
+  "file_size_field": 1536,
+  "shaders": [
+    {
+      "attr": 6,
+      "layers": 1
+    },
+    {
+      "attr": 6,
+      "layers": 1
+    }
+  ],
+  "draws": 2,
+  "obj_vertices": 18,
+  "obj_texcoords": 34,
+  "obj_normals": 0,
+  "obj_faces": 32,
+  "direct_per_dlist": {
+    "0": 0,
+    "1": 0
+  },
+  "direct_ambiguous": [],
+  "direct_tiebreak": {
+    "0": "unique",
+    "1": "unique"
+  },
+  "direct_unresolved": [],
+  "dl_stats": {
+    "0": {
+      "strips": 5,
+      "prims": {
+        "tristrip": 5
+      },
+      "vertices": 24,
+      "skipped_prims": 0
+    },
+    "1": {
+      "strips": 7,
+      "prims": {
+        "tristrip": 7
+      },
+      "vertices": 32,
+      "skipped_prims": 0
+    }
+  },
+  "bones": [
+    {
+      "parent": -1,
+      "idx_bytes": [
+        128,
+        0,
+        0
+      ],
+      "head": [
+        -0.03370720148086548,
+        -0.04195398464798927,
+        0.0
+      ],
+      "tail": [
+        -0.03370720148086548,
+        -0.04195398464798927,
+        0.0
+      ]
+    }
+  ],
+  "hitspheres": [
+    {
+      "raw_hex": "0000000042a6666640775b2142335e29b7c8f83100000000",
+      "bone_wiki": 0,
+      "radius_wiki": 83.19999694824219,
+      "pos_wiki": [
+        3.8649370670318604,
+        44.84195327758789,
+        -2.3957431039889343e-05
+      ],
+      "linked_wiki": 0,
+      "sphere_index_wiki": 0
+    },
+    {
+      "raw_hex": "0000000042266666c1ffbaf841b3891f0000000000000101",
+      "bone_wiki": 0,
+      "radius_wiki": 41.599998474121094,
+      "pos_wiki": [
+        -31.966293334960938,
+        22.441953659057617,
+        0.0
+      ],
+      "linked_wiki": 0,
+      "sphere_index_wiki": 1
+    },
+    {
+      "raw_hex": "0000000041a8f5c3c14c42bc414d78a50000000000000202",
+      "bone_wiki": 0,
+      "radius_wiki": 21.1200008392334,
+      "pos_wiki": [
+        -12.766292572021484,
+        12.841954231262207,
+        0.0
+      ],
+      "linked_wiki": 0,
+      "sphere_index_wiki": 2
+    },
+    {
+      "raw_hex": "0000000041a8f5c3c24caa49414d78a50000000000000303",
+      "bone_wiki": 0,
+      "radius_wiki": 21.1200008392334,
+      "pos_wiki": [
+        -51.16629409790039,
+        12.841954231262207,
+        0.0
+      ],
+      "linked_wiki": 0,
+      "sphere_index_wiki": 3
+    },
+    {
+      "raw_hex": "0000000041a8f5c3c14c42bc4219c4900000000000000404",
+      "bone_wiki": 0,
+      "radius_wiki": 21.1200008392334,
+      "pos_wiki": [
+        -12.766292572021484,
+        38.44195556640625,
+        0.0
+      ],
+      "linked_wiki": 0,
+      "sphere_index_wiki": 4
+    },
+    {
+      "raw_hex": "0000000041a8f5c3c24caa494219c4900000000000000505",
+      "bone_wiki": 0,
+      "radius_wiki": 21.1200008392334,
+      "pos_wiki": [
+        -51.16629409790039,
+        38.44195556640625,
+        0.0
+      ],
+      "linked_wiki": 0,
+      "sphere_index_wiki": 5
+    },
+    {
+      "raw_hex": "00000000422666664219bc1e41b3891f0000000000000606",
+      "bone_wiki": 0,
+      "radius_wiki": 41.599998474121094,
+      "pos_wiki": [
+        38.43370819091797,
+        22.441953659057617,
+        0.0
+      ],
+      "linked_wiki": 0,
+      "sphere_index_wiki": 6
+    },
+    {
+      "raw_hex": "0000000041a8f5c3414d56de414d78a50000000000000707",
+      "bone_wiki": 0,
+      "radius_wiki": 21.1200008392334,
+      "pos_wiki": [
+        12.833707809448242,
+        12.841954231262207,
+        0.0
+      ],
+      "linked_wiki": 0,
+      "sphere_index_wiki": 7
+    },
+    {
+      "raw_hex": "0000000041a8f5c3424cef51414d78a50000000000000808",
+      "bone_wiki": 0,
+      "radius_wiki": 21.1200008392334,
+      "pos_wiki": [
+        51.233707427978516,
+        12.841954231262207,
+        0.0
+      ],
+      "linked_wiki": 0,
+      "sphere_index_wiki": 8
+    },
+    {
+      "raw_hex": "0000000041a8f5c34199dea24219c4900000000000000909",
+      "bone_wiki": 0,
+      "radius_wiki": 21.1200008392334,
+      "pos_wiki": [
+        19.233707427978516,
+        38.44195556640625,
+        0.0
+      ],
+      "linked_wiki": 0,
+      "sphere_index_wiki": 9
+    },
+    {
+      "raw_hex": "0000000041a8f5c3426688ea4219c4900000000000000a0a",
+      "bone_wiki": 0,
+      "radius_wiki": 21.1200008392334,
+      "pos_wiki": [
+        57.633705139160156,
+        38.44195556640625,
+        0.0
+      ],
+      "linked_wiki": 0,
+      "sphere_index_wiki": 10
+    },
+    {
+      "raw_hex": "0000000042333333c1cc87c5428ce2480000000000000b0b",
+      "bone_wiki": 0,
+      "radius_wiki": 44.79999923706055,
+      "pos_wiki": [
+        -25.566293716430664,
+        70.44195556640625,
+        0.0
+      ],
+      "linked_wiki": 0,
+      "sphere_index_wiki": 11
+    },
+    {
+      "raw_hex": "0000000041a8f5c3c24caa494280157b0000000000000c0c",
+      "bone_wiki": 0,
+      "radius_wiki": 21.1200008392334,
+      "pos_wiki": [
+        -51.16629409790039,
+        64.04195404052734,
+        0.0
+      ],
+      "linked_wiki": 0,
+      "sphere_index_wiki": 12
+    },
+    {
+      "raw_hex": "0000000041a8f5c3c14c42bc4280157b0000000000000d0d",
+      "bone_wiki": 0,
+      "radius_wiki": 21.1200008392334,
+      "pos_wiki": [
+        -12.766292572021484,
+        64.04195404052734,
+        0.0
+      ],
+      "linked_wiki": 0,
+      "sphere_index_wiki": 13
+    },
+    {
+      "raw_hex": "000000004199999ac20caa4942b348ae0000000000000e0e",
+      "bone_wiki": 0,
+      "radius_wiki": 19.200000762939453,
+      "pos_wiki": [
+        -35.16629409790039,
+        89.64195251464844,
+        0.0
+      ],
+      "linked_wiki": 0,
+      "sphere_index_wiki": 14
+    },
+    {
+      "raw_hex": "0000000041a8f5c3c14c42bc42b348ae0000000000000f0f",
+      "bone_wiki": 0,
+      "radius_wiki": 21.1200008392334,
+      "pos_wiki": [
+        -12.766292572021484,
+        89.64195251464844,
+        0.0
+      ],
+      "linked_wiki": 0,
+      "sphere_index_wiki": 15
+    },
+    {
+      "raw_hex": "000000004233333342002284428ce2480000000000001010",
+      "bone_wiki": 0,
+      "radius_wiki": 44.79999923706055,
+      "pos_wiki": [
+        32.03370666503906,
+        70.44195556640625,
+        0.0
+      ],
+      "linked_wiki": 0,
+      "sphere_index_wiki": 16
+    },
+    {
+      "raw_hex": "0000000041a8f5c3414d56de4280157b0000000000001111",
+      "bone_wiki": 0,
+      "radius_wiki": 21.1200008392334,
+      "pos_wiki": [
+        12.833707809448242,
+        64.04195404052734,
+        0.0
+      ],
+      "linked_wiki": 0,
+      "sphere_index_wiki": 17
+    },
+    {
+      "raw_hex": "0000000041a8f5c3424cef514280157b0000000000001212",
+      "bone_wiki": 0,
+      "radius_wiki": 21.1200008392334,
+      "pos_wiki": [
+        51.233707427978516,
+        64.04195404052734,
+        0.0
+      ],
+      "linked_wiki": 0,
+      "sphere_index_wiki": 18
+    },
+    {
+      "raw_hex": "0000000041a8f5c3414d56de42b348ae0000000000001313",
+      "bone_wiki": 0,
+      "radius_wiki": 21.1200008392334,
+      "pos_wiki": [
+        12.833707809448242,
+        89.64195251464844,
+        0.0
+      ],
+      "linked_wiki": 0,
+      "sphere_index_wiki": 19
+    },
+    {
+      "raw_hex": "0000000041a8f5c34219bc1e42ace2480000000000001414",
+      "bone_wiki": 0,
+      "radius_wiki": 21.1200008392334,
+      "pos_wiki": [
+        38.43370819091797,
+        86.44195556640625,
+        0.0
+      ],
+      "linked_wiki": 0,
+      "sphere_index_wiki": 20
+    }
+  ]
+}

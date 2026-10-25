@@ -1,0 +1,74 @@
+{
+  "name": "mod15.37",
+  "n_vtx": 15,
+  "n_col": 1,
+  "n_tex": 15,
+  "n_polygons": 16,
+  "n_polygroups": 2,
+  "n_dlists": 1,
+  "n_shaders": 1,
+  "n_textures": 1,
+  "y_min": -622,
+  "y_max": 22,
+  "y_offset": -300,
+  "file_size_field": 800,
+  "shaders": [
+    {
+      "attr": 6,
+      "layers": 1
+    }
+  ],
+  "streams": {
+    "main": 1,
+    "transp": 0,
+    "water": 0
+  },
+  "obj_vertices": 15,
+  "obj_texcoords": 15,
+  "obj_faces": 16,
+  "direct_per_dlist": {
+    "main:0": 0
+  },
+  "direct_ambiguous": [],
+  "dl_stats": {
+    "main:0": {
+      "strips": 5,
+      "prims": {
+        "tristrip": 4,
+        "triangles": 1
+      },
+      "vertices": 34
+    }
+  },
+  "collision_triangles": 16,
+  "polygroups": [
+    {
+      "index": 0,
+      "first_polygon": 0,
+      "bbox_raw": [
+        113,
+        256,
+        -322,
+        75,
+        0,
+        166
+      ],
+      "surface_type": 0,
+      "flags": 0
+    },
+    {
+      "index": 1,
+      "first_polygon": 2,
+      "bbox_raw": [
+        113,
+        640,
+        -322,
+        322,
+        0,
+        470
+      ],
+      "surface_type": 0,
+      "flags": 0
+    }
+  ]
+}

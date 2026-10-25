@@ -1,0 +1,59 @@
+{
+  "name": "mod21.0",
+  "n_vtx": 7,
+  "n_col": 2,
+  "n_tex": 7,
+  "n_polygons": 5,
+  "n_polygroups": 1,
+  "n_dlists": 1,
+  "n_shaders": 1,
+  "n_textures": 1,
+  "y_min": -495,
+  "y_max": -450,
+  "y_offset": -472,
+  "file_size_field": 544,
+  "shaders": [
+    {
+      "attr": 6,
+      "layers": 1
+    }
+  ],
+  "streams": {
+    "main": 1,
+    "transp": 0,
+    "water": 0
+  },
+  "obj_vertices": 7,
+  "obj_texcoords": 7,
+  "obj_faces": 5,
+  "direct_per_dlist": {
+    "main:0": 0
+  },
+  "direct_ambiguous": [],
+  "dl_stats": {
+    "main:0": {
+      "strips": 2,
+      "prims": {
+        "tristrip": 2
+      },
+      "vertices": 9
+    }
+  },
+  "collision_triangles": 5,
+  "polygroups": [
+    {
+      "index": 0,
+      "first_polygon": 0,
+      "bbox_raw": [
+        0,
+        210,
+        -23,
+        22,
+        405,
+        640
+      ],
+      "surface_type": 1,
+      "flags": 4
+    }
+  ]
+}

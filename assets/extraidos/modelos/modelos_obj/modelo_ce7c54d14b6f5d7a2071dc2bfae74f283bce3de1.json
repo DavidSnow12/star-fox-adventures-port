@@ -1,0 +1,73 @@
+{
+  "n_vtx": 8,
+  "n_nrm": 0,
+  "n_col": 0,
+  "n_tex": 18,
+  "n_bones": 0,
+  "n_vtxgroups": 0,
+  "n_dlists": 2,
+  "n_dlists_shadow": 0,
+  "n_hitspheres": 0,
+  "n_shaders": 2,
+  "n_morph": 0,
+  "n_texmtx": 0,
+  "n_tex_entries": 2,
+  "flags24": 4,
+  "flags2": 0,
+  "nbt_normals": false,
+  "file_size_field": 736,
+  "shaders": [
+    {
+      "attr": 4,
+      "layers": 1
+    },
+    {
+      "attr": 4,
+      "layers": 1
+    }
+  ],
+  "draws": 2,
+  "obj_vertices": 8,
+  "obj_texcoords": 18,
+  "obj_normals": 0,
+  "obj_faces": 12,
+  "direct_per_dlist": {
+    "0": 0,
+    "1": 0
+  },
+  "direct_ambiguous": [
+    {
+      "dlist": 0,
+      "passing_direct_counts": [
+        0,
+        4,
+        5
+      ]
+    }
+  ],
+  "direct_tiebreak": {
+    "0": "retail_formula",
+    "1": "unique"
+  },
+  "direct_unresolved": [],
+  "dl_stats": {
+    "0": {
+      "strips": 2,
+      "prims": {
+        "tristrip": 2
+      },
+      "vertices": 8,
+      "skipped_prims": 0
+    },
+    "1": {
+      "strips": 4,
+      "prims": {
+        "tristrip": 4
+      },
+      "vertices": 16,
+      "skipped_prims": 0
+    }
+  },
+  "bones": [],
+  "hitspheres": []
+}

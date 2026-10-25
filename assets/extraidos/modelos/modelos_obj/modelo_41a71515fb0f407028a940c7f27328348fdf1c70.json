@@ -1,0 +1,51 @@
+{
+  "n_vtx": 90,
+  "n_nrm": 90,
+  "n_col": 3,
+  "n_tex": 96,
+  "n_bones": 0,
+  "n_vtxgroups": 0,
+  "n_dlists": 1,
+  "n_dlists_shadow": 0,
+  "n_hitspheres": 0,
+  "n_shaders": 1,
+  "n_morph": 0,
+  "n_texmtx": 0,
+  "n_tex_entries": 2,
+  "flags24": 31,
+  "flags2": 32,
+  "nbt_normals": true,
+  "file_size_field": 3168,
+  "shaders": [
+    {
+      "attr": 31,
+      "layers": 1
+    }
+  ],
+  "draws": 1,
+  "obj_vertices": 90,
+  "obj_texcoords": 96,
+  "obj_normals": 90,
+  "obj_faces": 150,
+  "direct_per_dlist": {
+    "0": 0
+  },
+  "direct_ambiguous": [],
+  "direct_tiebreak": {
+    "0": "unique"
+  },
+  "direct_unresolved": [],
+  "dl_stats": {
+    "0": {
+      "strips": 31,
+      "prims": {
+        "tristrip": 30,
+        "triangles": 1
+      },
+      "vertices": 220,
+      "skipped_prims": 0
+    }
+  },
+  "bones": [],
+  "hitspheres": []
+}

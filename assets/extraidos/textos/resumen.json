@@ -1,0 +1,101 @@
+{
+ "juego": "Star Fox Adventures",
+ "version": "GSAP01 Rev 1 PAL",
+ "total_archivos_gametext": 1020,
+ "por_idioma": {
+  "English": {
+   "archivos": 204,
+   "textos": 5268,
+   "frases": 12084,
+   "ids_unicos": 1125,
+   "frases_con_control": 1826,
+   "frases_no_ascii": 144,
+   "fallos_frase": 0,
+   "json": "textos_English.json",
+   "json_tamano": 1829466,
+   "json_sha1": "2e48918e153c853e19e9cc003be8e50abe342641"
+  },
+  "French": {
+   "archivos": 204,
+   "textos": 5270,
+   "frases": 13038,
+   "ids_unicos": 1127,
+   "frases_con_control": 1896,
+   "frases_no_ascii": 5621,
+   "fallos_frase": 0,
+   "json": "textos_French.json",
+   "json_tamano": 1940072,
+   "json_sha1": "00e3b3762bb7d02dee547e23bfd72ae0b91b3c79"
+  },
+  "German": {
+   "archivos": 204,
+   "textos": 5267,
+   "frases": 12018,
+   "ids_unicos": 1125,
+   "frases_con_control": 1838,
+   "frases_no_ascii": 3564,
+   "fallos_frase": 0,
+   "json": "textos_German.json",
+   "json_tamano": 1878881,
+   "json_sha1": "9d31e1d18e3ecc4a3b91c338e44b59998c5fd500"
+  },
+  "Italian": {
+   "archivos": 204,
+   "textos": 5268,
+   "frases": 13329,
+   "ids_unicos": 1125,
+   "frases_con_control": 1864,
+   "frases_no_ascii": 2416,
+   "fallos_frase": 0,
+   "json": "textos_Italian.json",
+   "json_tamano": 1904852,
+   "json_sha1": "be0c74345a183fc0a3cf91dff0415d1d9462ddfd"
+  },
+  "Spanish": {
+   "archivos": 204,
+   "textos": 5265,
+   "frases": 12097,
+   "ids_unicos": 1123,
+   "frases_con_control": 1866,
+   "frases_no_ascii": 4749,
+   "fallos_frase": 0,
+   "json": "textos_Spanish.json",
+   "json_tamano": 1892060,
+   "json_sha1": "aa6266bc2e2d9216b85a3ffd6e9e1e79c8678026"
+  }
+ },
+ "total_textos": 26338,
+ "total_frases": 62566,
+ "fallos_archivo": [],
+ "legado_sin_parsear": [
+  {
+   "fichero": "GAMETEXT.bin",
+   "motivo": "version antigua sin uso; formato desconocido (wiki Gametext)",
+   "tamano": 69376,
+   "sha1": "782e18061ca1b04be06623779b88c8784d8205ff"
+  },
+  {
+   "fichero": "GAMETEXT.tab",
+   "motivo": "tabla de la version antigua sin uso",
+   "tamano": 20672,
+   "sha1": "d542570911227a55bfb436e0dac814823645a01c"
+  },
+  {
+   "fichero": "TEXTABLE.bin",
+   "motivo": "NO es texto: tabla u16 de remapeo de IDs de textura",
+   "tamano": 6496,
+   "sha1": "f0f267ebee99a656ad99f7f566bb42ce21e0536f"
+  }
+ ],
+ "codigos_control_observados": {
+  "F8F4": 510,
+  "F8F7": 4030,
+  "F8FF": 4669,
+  "E018": 4149,
+  "F8FA": 5,
+  "E020": 1250,
+  "F8F8": 30,
+  "F8F9": 30,
+  "E000": 610
+ }
+}

@@ -1,0 +1,181 @@
+{
+  "n_vtx": 635,
+  "n_nrm": 726,
+  "n_col": 0,
+  "n_tex": 361,
+  "n_bones": 3,
+  "n_vtxgroups": 0,
+  "n_dlists": 6,
+  "n_dlists_shadow": 0,
+  "n_hitspheres": 0,
+  "n_shaders": 6,
+  "n_morph": 0,
+  "n_texmtx": 0,
+  "n_tex_entries": 7,
+  "flags24": 5,
+  "flags2": 0,
+  "nbt_normals": false,
+  "file_size_field": 25824,
+  "shaders": [
+    {
+      "attr": 5,
+      "layers": 1
+    },
+    {
+      "attr": 5,
+      "layers": 2
+    },
+    {
+      "attr": 5,
+      "layers": 2
+    },
+    {
+      "attr": 5,
+      "layers": 1
+    },
+    {
+      "attr": 5,
+      "layers": 1
+    },
+    {
+      "attr": 5,
+      "layers": 1
+    }
+  ],
+  "draws": 6,
+  "obj_vertices": 629,
+  "obj_texcoords": 338,
+  "obj_normals": 712,
+  "obj_faces": 1174,
+  "direct_per_dlist": {
+    "0": 2,
+    "1": 2,
+    "2": 2,
+    "3": 2,
+    "4": 2,
+    "5": 2
+  },
+  "direct_ambiguous": [],
+  "direct_tiebreak": {
+    "0": "unique",
+    "1": "unique",
+    "2": "unique",
+    "3": "unique",
+    "4": "unique",
+    "5": "unique"
+  },
+  "direct_unresolved": [],
+  "dl_stats": {
+    "0": {
+      "strips": 165,
+      "prims": {
+        "tristrip": 164,
+        "triangles": 1
+      },
+      "vertices": 1248,
+      "skipped_prims": 0
+    },
+    "1": {
+      "strips": 10,
+      "prims": {
+        "tristrip": 9,
+        "triangles": 1
+      },
+      "vertices": 70,
+      "skipped_prims": 0
+    },
+    "2": {
+      "strips": 2,
+      "prims": {
+        "tristrip": 1,
+        "triangles": 1
+      },
+      "vertices": 34,
+      "skipped_prims": 0
+    },
+    "3": {
+      "strips": 65,
+      "prims": {
+        "tristrip": 64,
+        "triangles": 1
+      },
+      "vertices": 328,
+      "skipped_prims": 0
+    },
+    "4": {
+      "strips": 10,
+      "prims": {
+        "tristrip": 9,
+        "triangles": 1
+      },
+      "vertices": 42,
+      "skipped_prims": 0
+    },
+    "5": {
+      "strips": 22,
+      "prims": {
+        "tristrip": 21,
+        "triangles": 1
+      },
+      "vertices": 246,
+      "skipped_prims": 0
+    }
+  },
+  "bones": [
+    {
+      "parent": -1,
+      "idx_bytes": [
+        128,
+        0,
+        0
+      ],
+      "head": [
+        0.0,
+        -0.16352000832557678,
+        0.06945279985666275
+      ],
+      "tail": [
+        0.0,
+        -0.16352000832557678,
+        0.06945279985666275
+      ]
+    },
+    {
+      "parent": 0,
+      "idx_bytes": [
+        129,
+        1,
+        1
+      ],
+      "head": [
+        0.0,
+        0.0,
+        -16.8756103515625
+      ],
+      "tail": [
+        0.0,
+        -0.16352000832557678,
+        -16.8061580657959
+      ]
+    },
+    {
+      "parent": 1,
+      "idx_bytes": [
+        130,
+        2,
+        2
+      ],
+      "head": [
+        0.0,
+        -11.068954467773438,
+        -1.9960441589355469
+      ],
+      "tail": [
+        0.0,
+        -11.232474327087402,
+        -18.802202224731445
+      ]
+    }
+  ],
+  "hitspheres": []
+}

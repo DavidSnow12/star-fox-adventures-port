@@ -1,0 +1,28 @@
+# Star Fox Adventures (GameCube, GSAP01) character model, bind pose.
+# Positions: GX s16 scaled per primitive VAT (VAT5 /8, VAT6 /256).
+# Texcoords: GX s16 scaled per VAT (VAT5 /256, VAT6 /1024), v flipped.
+# Normals: s8 triplets /64 (9-byte NBT records: first triplet).
+# Bone matrices NOT applied; direct matrix indices ignored.
+v 6.53906 -11.3828 -1.28906
+v 0.582031 0.8125 -0.890625
+v -0.582031 -0.8125 0.890625
+v -0.457031 -1.16016 -0.792969
+v -7.9375 9.82031 -3.81641
+v -9.91797 4.80078 -7.25391
+v 0.457031 1.16016 0.792969
+v 1.30078 0 0
+v -2.78125 0 11.668
+v 2.78125 0 11.668
+v -1.30078 0 0
+v 9.33203 -7.49609 -5.53906
+vt 0 0.0185547
+vt 1 0.985352
+vt 0 0.985352
+vt 1 0.0185547
+g dlist_0
+f 1/1 2/2 3/3
+f 4/2 5/1 6/4
+f 5/1 4/2 7/3
+f 8/2 9/1 10/4
+f 9/1 8/2 11/3
+f 2/2 1/1 12/4

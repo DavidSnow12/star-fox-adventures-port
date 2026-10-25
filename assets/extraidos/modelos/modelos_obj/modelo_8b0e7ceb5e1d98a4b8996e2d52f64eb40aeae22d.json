@@ -1,0 +1,187 @@
+{
+  "n_vtx": 571,
+  "n_nrm": 598,
+  "n_col": 0,
+  "n_tex": 525,
+  "n_bones": 5,
+  "n_vtxgroups": 0,
+  "n_dlists": 4,
+  "n_dlists_shadow": 0,
+  "n_hitspheres": 0,
+  "n_shaders": 4,
+  "n_morph": 0,
+  "n_texmtx": 0,
+  "n_tex_entries": 5,
+  "flags24": 5,
+  "flags2": 0,
+  "nbt_normals": false,
+  "file_size_field": 21952,
+  "shaders": [
+    {
+      "attr": 5,
+      "layers": 1
+    },
+    {
+      "attr": 5,
+      "layers": 1
+    },
+    {
+      "attr": 5,
+      "layers": 1
+    },
+    {
+      "attr": 5,
+      "layers": 2
+    }
+  ],
+  "draws": 4,
+  "obj_vertices": 565,
+  "obj_texcoords": 491,
+  "obj_normals": 591,
+  "obj_faces": 988,
+  "direct_per_dlist": {
+    "0": 2,
+    "1": 2,
+    "2": 2,
+    "3": 2
+  },
+  "direct_ambiguous": [],
+  "direct_tiebreak": {
+    "0": "unique",
+    "1": "unique",
+    "2": "unique",
+    "3": "unique"
+  },
+  "direct_unresolved": [],
+  "dl_stats": {
+    "0": {
+      "strips": 144,
+      "prims": {
+        "tristrip": 143,
+        "triangles": 1
+      },
+      "vertices": 1059,
+      "skipped_prims": 0
+    },
+    "1": {
+      "strips": 32,
+      "prims": {
+        "tristrip": 31,
+        "triangles": 1
+      },
+      "vertices": 178,
+      "skipped_prims": 0
+    },
+    "2": {
+      "strips": 34,
+      "prims": {
+        "tristrip": 33,
+        "triangles": 1
+      },
+      "vertices": 211,
+      "skipped_prims": 0
+    },
+    "3": {
+      "strips": 13,
+      "prims": {
+        "tristrip": 12,
+        "triangles": 1
+      },
+      "vertices": 70,
+      "skipped_prims": 0
+    }
+  },
+  "bones": [
+    {
+      "parent": -1,
+      "idx_bytes": [
+        128,
+        0,
+        0
+      ],
+      "head": [
+        0.0,
+        -0.11632262170314789,
+        0.734038233757019
+      ],
+      "tail": [
+        0.0,
+        -0.11632262170314789,
+        0.734038233757019
+      ]
+    },
+    {
+      "parent": 0,
+      "idx_bytes": [
+        129,
+        1,
+        1
+      ],
+      "head": [
+        0.0,
+        1.1585946083068848,
+        -0.26194286346435547
+      ],
+      "tail": [
+        0.0,
+        1.0422719717025757,
+        0.4720953702926636
+      ]
+    },
+    {
+      "parent": 1,
+      "idx_bytes": [
+        130,
+        2,
+        2
+      ],
+      "head": [
+        -0.0,
+        0.5763859748840332,
+        -3.1673474311828613
+      ],
+      "tail": [
+        -0.0,
+        1.6186579465866089,
+        -2.695251941680908
+      ]
+    },
+    {
+      "parent": 1,
+      "idx_bytes": [
+        131,
+        3,
+        3
+      ],
+      "head": [
+        -3.0284242630004883,
+        5.290382385253906,
+        0.26566213369369507
+      ],
+      "tail": [
+        -3.0284242630004883,
+        6.3326544761657715,
+        0.7377575039863586
+      ]
+    },
+    {
+      "parent": 1,
+      "idx_bytes": [
+        132,
+        4,
+        4
+      ],
+      "head": [
+        2.965381145477295,
+        5.321904182434082,
+        0.26566213369369507
+      ],
+      "tail": [
+        2.965381145477295,
+        6.364176273345947,
+        0.7377575039863586
+      ]
+    }
+  ],
+  "hitspheres": []
+}

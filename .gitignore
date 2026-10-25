@@ -1,0 +1,13 @@
+# Solo se excluye la imagen ISO/disco y los intermedios regenerables.
+# Todo lo demás del proyecto va al repo, por decisión del usuario.
+*.iso
+*.xiso
+disc/
+sfa-disco.zip*
+sfa-assets.zip*
+parts-disco/
+parts-assets/
+*.o
+__pycache__/
+*.pyc
+.DS_Store

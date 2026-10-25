@@ -1,0 +1,218 @@
+{
+  "n_vtx": 195,
+  "n_nrm": 319,
+  "n_col": 0,
+  "n_tex": 176,
+  "n_bones": 5,
+  "n_vtxgroups": 0,
+  "n_dlists": 2,
+  "n_dlists_shadow": 0,
+  "n_hitspheres": 5,
+  "n_shaders": 2,
+  "n_morph": 0,
+  "n_texmtx": 0,
+  "n_tex_entries": 2,
+  "flags24": 13,
+  "flags2": 32,
+  "nbt_normals": true,
+  "file_size_field": 11296,
+  "shaders": [
+    {
+      "attr": 13,
+      "layers": 1
+    },
+    {
+      "attr": 13,
+      "layers": 1
+    }
+  ],
+  "draws": 2,
+  "obj_vertices": 195,
+  "obj_texcoords": 176,
+  "obj_normals": 319,
+  "obj_faces": 378,
+  "direct_per_dlist": {
+    "0": 4,
+    "1": 1
+  },
+  "direct_ambiguous": [],
+  "direct_tiebreak": {
+    "0": "unique",
+    "1": "unique"
+  },
+  "direct_unresolved": [],
+  "dl_stats": {
+    "0": {
+      "strips": 92,
+      "prims": {
+        "tristrip": 91,
+        "triangles": 1
+      },
+      "vertices": 592,
+      "skipped_prims": 0
+    },
+    "1": {
+      "strips": 25,
+      "prims": {
+        "tristrip": 24,
+        "triangles": 1
+      },
+      "vertices": 128,
+      "skipped_prims": 0
+    }
+  },
+  "bones": [
+    {
+      "parent": -1,
+      "idx_bytes": [
+        128,
+        0,
+        0
+      ],
+      "head": [
+        0.0,
+        -0.057340800762176514,
+        -0.0036495360545814037
+      ],
+      "tail": [
+        0.0,
+        -0.057340800762176514,
+        -0.0036495360545814037
+      ]
+    },
+    {
+      "parent": 0,
+      "idx_bytes": [
+        129,
+        1,
+        1
+      ],
+      "head": [
+        0.0,
+        14.37910270690918,
+        6.6913228034973145
+      ],
+      "tail": [
+        0.0,
+        14.321762084960938,
+        6.687673091888428
+      ]
+    },
+    {
+      "parent": 0,
+      "idx_bytes": [
+        130,
+        2,
+        2
+      ],
+      "head": [
+        0.0,
+        19.641599655151367,
+        13.460135459899902
+      ],
+      "tail": [
+        0.0,
+        19.584259033203125,
+        13.456485748291016
+      ]
+    },
+    {
+      "parent": 0,
+      "idx_bytes": [
+        131,
+        3,
+        3
+      ],
+      "head": [
+        0.0,
+        9.762635231018066,
+        -3.854708433151245
+      ],
+      "tail": [
+        0.0,
+        9.705294609069824,
+        -3.8583579063415527
+      ]
+    },
+    {
+      "parent": 3,
+      "idx_bytes": [
+        132,
+        4,
+        4
+      ],
+      "head": [
+        0.0,
+        -0.8320808410644531,
+        -2.9857006072998047
+      ],
+      "tail": [
+        0.0,
+        8.873213768005371,
+        -6.844058513641357
+      ]
+    }
+  ],
+  "hitspheres": [
+    {
+      "raw_hex": "0000000041f71d7234f72c23409199c7bf8a778123400000",
+      "bone_wiki": 0,
+      "radius_wiki": 30.88937759399414,
+      "pos_wiki": [
+        4.603944887549005e-07,
+        4.550021648406982,
+        -1.081771969795227
+      ],
+      "linked_wiki": 9024,
+      "sphere_index_wiki": 0
+    },
+    {
+      "raw_hex": "00000000411379cf318d3dcb40a22c9d40be1aee00000101",
+      "bone_wiki": 0,
+      "radius_wiki": 9.217238426208496,
+      "pos_wiki": [
+        4.11066514161007e-09,
+        5.067945957183838,
+        5.940787315368652
+      ],
+      "linked_wiki": 0,
+      "sphere_index_wiki": 1
+    },
+    {
+      "raw_hex": "00000000411ee52632b08d3e40a9609fc105d33c00000000",
+      "bone_wiki": 0,
+      "radius_wiki": 9.930944442749023,
+      "pos_wiki": [
+        2.055332615213956e-08,
+        5.293044567108154,
+        -8.364070892333984
+      ],
+      "linked_wiki": 0,
+      "sphere_index_wiki": 0
+    },
+    {
+      "raw_hex": "000000004105a81d34ae5847404dc237c1b6cb7600000000",
+      "bone_wiki": 0,
+      "radius_wiki": 8.353543281555176,
+      "pos_wiki": [
+        3.247425581776042e-07,
+        3.2149789333343506,
+        -22.849346160888672
+      ],
+      "linked_wiki": 0,
+      "sphere_index_wiki": 0
+    },
+    {
+      "raw_hex": "00000000412b0c213439611a4091a49d419181e900000000",
+      "bone_wiki": 0,
+      "radius_wiki": 10.690461158752441,
+      "pos_wiki": [
+        1.7264792973037402e-07,
+        4.551344394683838,
+        18.188432693481445
+      ],
+      "linked_wiki": 0,
+      "sphere_index_wiki": 0
+    }
+  ]
+}
