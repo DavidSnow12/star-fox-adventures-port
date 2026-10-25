@@ -107,6 +107,62 @@ Cuando se publique una APK de prueba, aquí aparecerá:
   ese log se ve hasta qué fase llegó (ventana, renderer, DOL,
   dispatch, primer bloque).
 
+## Referencia Foxhollow / Aurora (licencia, verificada con reserva)
+
+- Foxhollow oficial: `JackPriceBurns/foxhollow`, port nativo sobre
+  SFA-Decomp + Aurora. Licencia en metadato GitHub: **CC0-1.0**,
+  pero el texto íntegro de su `LICENSE` NO se leyó: **no copiar
+  código suyo hasta leerlo**. SFA-Decomp también CC0 en metadato
+  (misma reserva). Aurora es **MIT** (conservar su aviso si se copia
+  algo de ella); SDL3/Dawn/nod/ImGui/RmlUi tienen licencias propias
+  sin revisar.
+- **No decir "Foxhollow soporta Android":** Aurora como framework
+  sí declara Android (y tiene `platforms/android/`), pero Foxhollow
+  como producto dice explícitamente que no hay planes de release
+  para iOS/Android y solo está probado en Mac/Windows/Linux.
+- Recomendación adoptada: Foxhollow/Aurora como **referencia de
+  diseño**, no copia masiva. Este proyecto es DolRecomp, no
+  decompilación SFA: el código no es intercambiable por copiar-pegar.
+  Detalle en `work-port/apk-data/FOXHOLLOW-LICENCIA.md` (fuera del
+  repo, trabajo local).
+
+## Paquete de datos (vía decidida, tamaños reales)
+
+- **APK pequeña (solo código) + paquete aparte, nunca 2 GB en el
+  APK ni en Git.** El runtime debe leer el árbol nativo del disco,
+  no los convertidos: `disc/files/` mide 785.986.556 B (786 MB,
+  3.879 ficheros); sin `streams/` (546.308.096 B) queda **Pack B =
+  239.678.460 B (240 MB)**. Los convertidos inflan ~3x
+  (`assets/extraidos/` 2.327.541.630 B): audio WAV 1.984.462.826 B,
+  texturas 148.137.941 B, modelos 131.000.028 B, vídeo 54.385.833 B,
+  textos 9.555.002 B. No existe todavía una lista mínima verificada
+  de ficheros para arrancar: se medirá cuando el runtime registre
+  qué abre (Pack A -> Pack B -> recorte medido).
+- Instalación en Tab S8 cuando el runtime exista: descarga del
+  paquete desde su Drive a Descargas, selector SAF en primer arranque
+  y copia a la carpeta privada de la app (`getExternalFilesDir()`).
+  `adb push` directo a `Android/data/` puede no funcionar en
+  Android 11+. Permisos: ninguno para carpeta privada ni SAF;
+  "Instalar apps desconocidas" solo una vez para la app instaladora;
+  NO `MANAGE_EXTERNAL_STORAGE`, NO `READ_MEDIA_*`.
+- `boot.log` en debug se lee con
+  `adb shell run-as com.starfox.port cat files/boot.log`; en release
+  `run-as` falla, por eso las pruebas serán con build debug.
+
+## Build APK (procedimiento, sin SDK todavía en este tramo)
+
+- Sin SDK aquí: sin `aapt2/d8/apksigner/zipalign/gradle`, Java
+  OpenJDK 21, NDK r28c ya presente (no reinstalar).
+- Procedimiento documentado (ver `work-port/apk-data/APK-BUILD.md`):
+  cmdline-tools en `~/tools/android-sdk/cmdline-tools/latest`,
+  `sdkmanager "platform-tools" "platforms;android-34"
+  "build-tools;34.0.0" "cmake;3.22.1"`, NDK r28c fijado
+  (`ndkVersion "28.2.13676358"`), `./gradlew assembleDebug` ->
+  `app/build/outputs/apk/debug/app-debug.apk`, firma debug
+  automática. Riesgo sin probar: JDK 21 frente a AGP 8.3.2
+  (documentado para JDK 17); si el primer build falla por JDK,
+  opciones: JDK 17 con `org.gradle.java.home`, o subir AGP.
+
 ## Orden que queda
 
 1. Shim global `cpu/cpu.h` + enlace de chunks + `ppc_host_call`.
