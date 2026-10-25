@@ -12,6 +12,10 @@ bool GameCubeRuntime::Init() {
   audio_.Init();
   audio_.Start();
   input_.Reset();
+  // Fase 6b: el estado PAD que escribe Input (eventos Android)
+  // es el que lee PADRead en el HLE. Sin este cable, Input y
+  // HLE vivirian desconectados (el fallo de la base).
+  hle_.SetPadState(input_.StatePtr());
   game_loaded_ = false;
   boot_finished_ = false;
   boot_reached_main_ = false;

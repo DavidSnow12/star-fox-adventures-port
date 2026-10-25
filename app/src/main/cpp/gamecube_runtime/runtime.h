@@ -48,6 +48,7 @@ class GameCubeRuntime {
   SymbolDispatch* Dispatch() { return &dispatch_; }
   SmcTable* Smc() { return &smc_; }
   Hle* HleState() { return &hle_; }
+  Input* InputState() { return &input_; }
   CpuState* Cpu() { return &cpu_state_; }
   bool IsRunning() const { return running_; }
   bool IsGameLoaded() const { return game_loaded_; }

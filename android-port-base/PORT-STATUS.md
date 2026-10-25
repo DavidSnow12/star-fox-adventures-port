@@ -16,6 +16,20 @@ texturas reales), pero todavía no está en la APK. Cuando haya
 APK jugable, se anunciará aquí con su commit, tamaño y SHA, y
 solo entonces merece la pena descargarla para probar el juego.
 
+**Fases 6–7 (2026-10-25, este tramo):** el juego ya NO se queda
+en el logo Dolby retenido: con el `DVDFileInfo` real, el
+callback async de DVD y los drenajes ARQ (ver «Fases 6–7»
+abajo), en host avanza por toda la init de audio (12 ficheros,
+16,8 MB), el desbloqueo ARAM por callback y la carga del
+frontal (98 ficheros, 20,1 MB, 2 `GXLoadTexObj`, textos del
+frontal en inglés), hasta un **nuevo bloqueador honesto**: una
+excepción por escritura fuera de rango en
+`updateHeavyFogTexture` (0x8006A0E0) porque el puntero de la
+caché de texturas es NULL tras
+`n_attractmode_releaseMovieBuffers` (ver «Fases 6–7», punto 5).
+Sigue sin ser jugable, y la APK Fase 0 sigue siendo solo
+arranque.
+
 ## Qué funciona (verificado)
 
 - Base Android: NativeActivity, `android_main`, loop, ciclo de vida
@@ -56,9 +70,26 @@ solo entonces merece la pena descargarla para probar el juego.
   sola dirección, rangos inclusivos), con `IsInSmcRange` verificado
   en 0x80003390 y en 0x8024B670. Apply sigue siendo solo registro,
   sin modificar código ejecutado ni flush de caché todavía.
-- Renderer EGL/GLES3: clear + `DrawQuad` stub. Audio: API limpia
-  (Start/Stop/SubmitBuffer/SetMasterVolume) sin sonido. Input: primer
-  evento táctil registrado, sin mapeo a mando todavía.
+- Renderer EGL/GLES3: clear + `DrawQuad` stub.
+- **Fase 6a — DVDFileInfo real + callback async (NUEVO,
+  verificado):** `DVDOpen` escribe +12/+48/+52/+56 con el tamaño
+  real del fichero y el offset FST; `DVDReadAsyncPrio` lee en
+  síncrono y despacha el callback del juego como código huésped
+  (r3 = bytes, r4 = fileInfo); VI retrace por modelo de frontera
+  de frame (`OSSleepThread`/`VIWaitForRetrace`); drenajes ARQ de
+  subida, de sync y de callback por petición (ver «Fases 6–7»).
+- **Fase 6b — Input HLE completo (NUEVO, verificado):**
+  `PADStatus` real (12 B/mando), `PADRead` escribe los 4 mandos
+  y pone el flag de muestra fresca (0x803DE65D) que `padUpdate`
+  exige, `HandleEvent` mapeado a `PadState` (stick, A/B/X/Y/Z,
+  L/R todo o nada, D-pad, Start, C-stick 0, rumble no-op) y
+  conectado al runtime. Test host `start`: Held0 = 0x1000.
+- **Fase 7 — Audio por WAV (NUEVO, verificado en host):**
+  backend AAudio en Android (48 kHz estéreo, `-laaudio`),
+  backend nulo contable en host; WAV PCM16 mono/estéreo con
+  resampleo lineal a 48 kHz y anillo de 262.144 frames;
+  `PlayWavFile` probado con dos IDs reales del inventario
+  (ver «Fases 6–7»). En dispositivo, sonido todavía sin probar.
 - **Fase 5 — Bucle de juego en host (NUEVO, verificado):**
   desbloqueos AR/AI/DSP/ARAM/hilos (ver sección «Fase 5»),
   carga DVD completa (89 ficheros) y bucle de frames estable
@@ -67,34 +98,56 @@ solo entonces merece la pena descargarla para probar el juego.
 
 ## Qué NO funciona todavía (bloqueadores, sin maquillar)
 
-1. **~~Dispatch real y HLE pendientes (bloqueador actual nº 1):~~
-   HECHO en Fases 2–5:** el juego ejecuta su arranque completo
-   y su bucle de frames en host (ver «Fase 5»). **~~Renderer GX
-   + texturas (bloqueador nº 1 tras Fase 5):~~ HECHO en host
-   en Fase 5b** (máquina GX, conversiones verificadas y
-   renderer host con frame real); falta el mismo camino en
-   la APK (ver «Fase 5b»).
-2. **HLE completo pendiente:** GX (máquina de estado y
-   display lists), callback async de DVD, struct PADStatus,
-   audio DSP real, planificador de hilos real. El HLE actual
-   cubre arranque + eventos DSP/ARQ + sueño instantáneo.
-3. **GX real en APK pendiente:** la máquina de estado GX,
+1. **Bloqueador actual nº 1 (NUEVO, tras Fases 6–7): excepción
+   por caché de texturas NULL en la transición attract-mode.**
+   `updateHeavyFogTexture` (0x8006A0E0) escribe con `stbx` en
+   `getCache()` = 0x00000000: `n_attractmode_releaseMovieBuffers`
+   (0x80116548) liberó los búferes de la caché (estado 4,
+   puntero [r13-23404] = 0) y ni `newshadows_beginFrame` ni
+   `allocLotsOfTextures` la re-inicializan antes de usarla.
+   Hipótesis (sin evidencia aún para decidir): re-init en un
+   hilo que el chassis monohilo no ejecuta (`OSCreateThread`
+   solo registra), o en el callback de fin de película THP
+   (jugador THP pendiente). NO se parchea con un búfer falso:
+   escribir la niebla en un sitio inventado corrompería el
+   estado de render. Siguiente paso: identificar el re-init
+   (quién escribe [r13-23404] fuera del free) y su condición
+   de disparo. Ver «Fases 6–7», punto 5.
+2. **~~Dispatch real y HLE pendientes:~~ HECHO en Fases 2–6:**
+   el juego ejecuta su arranque completo, toda la init de
+   audio y la carga del frontal en host (ver «Fases 6–7»).
+   **~~Renderer GX + texturas:~~ HECHO en host en Fase 5b**
+   (máquina GX, conversiones verificadas y renderer host con
+   frame real); falta el mismo camino en la APK (ver «Fase 5b»).
+3. **HLE completo pendiente:** GX (máquina de estado y
+   display lists) en APK, callbacks VI pre/post retrace, audio
+   DSP real, planificador de hilos real, CARD. El HLE actual
+   cubre arranque + eventos DSP/ARQ + callback DVD + PAD +
+   sueño instantáneo.
+4. **GX real en APK pendiente:** la máquina de estado GX,
    display lists y texturas convertidas ya existen y están
    verificadas en host (Fase 5b); falta el mismo camino en
    la APK (GLES3) para un frame real en dispositivo.
-4. **Audio MusyX/DSP pendiente:** backend AAudio/OpenSL sin
-   implementar, sin mezcla ni streams.
-5. **Input pendiente:** sin mapeo táctil a stick/botones/gatillos ni
-   gamepad.
-6. **Datos sin empaquetar:** no hay paquete de datos para el test.
+5. **Audio MusyX/DSP pendiente:** backend AAudio implementado
+   (sin probar en dispositivo) y WAV probados en host; falta
+   el mapeo ID de sonido del juego → WAV (tablas
+   `Streams.bin`/`Sfx.bin`/`.sdi` sin parsear), las secuencias
+   MusyX (`.pro`/`.poo`/`midi.wad`) y la emulación DSP.
+6. **Input pendiente (parcial):** mando/teclado/táctil-stick
+   mapeados; faltan botones táctiles en pantalla (sin layout
+   definido, no inventado), rumble (`PADControlMotor` sin HLE)
+   y el flanco JustPressed con una pulsación real (el test
+   actual mantiene Start desde el arranque: Held = 0x1000,
+   Just = 0, correcto para un botón mantenido).
+7. **Datos sin empaquetar:** no hay paquete de datos para el test.
    La APK no meterá 2 GB; la vía (APK pequeña + datos aparte) está
    por decidir con tamaños reales y pasos de instalación.
-7. **Sin Android SDK aquí:** no hay `aapt2/d8/apksigner/zipalign` ni
+8. **Sin Android SDK aquí:** no hay `aapt2/d8/apksigner/zipalign` ni
    Gradle en este entorno. La APK de este tramo no se ha construido;
    su build y validación (`apksigner verify`, `zipalign`, manifiesto
    con `apktool`) quedan pendientes de instalar cmdline-tools o de
    la vía manual de la skill local.
-8. **Sin ejecución en dispositivo:** no hay runtime Android aquí.
+9. **Sin ejecución en dispositivo:** no hay runtime Android aquí.
    Todo lo anterior es validación en host/NDK, no una prueba de
    juego en la Tab S8.
 
@@ -1227,16 +1280,371 @@ completo.
 1. Renderer en APK (GLES3): el camino host funciona; falta
    el mismo camino en la APK (quads texturados desde el
    parser + texturas decodificadas) cuando haya SDK.
-2. Callback async de DVD + struct `DVDFileInfo` (candidato
-   principal al atasco tras el logo Dolby, junto al
-   contador de retraces VI por interrupción).
-3. Input: PADStatus real + mapeo táctil/mando (la vía
-   `PADRead` con Start no produce efecto observable; el
-   poke directo queda invalidado por el recompute de
-   `padUpdate`).
+2. ~~Callback async de DVD + struct `DVDFileInfo`:~~ HECHO
+   en Fases 6–7 (ver sección «Fases 6–7»); queda el contador
+   de retraces VI por interrupción (callbacks pre/post).
+3. ~~Input: PADStatus real + mapeo táctil/mando:~~ HECHO en
+   Fase 6b salvo botones táctiles en pantalla, rumble y el
+   flanco JustPressed con pulsación real (ver «Fases 6–7»).
 4. Mecanismo de clear EFB entre fases (copia PE) y fórmula
    exacta de escala de posiciones / semántica de BP 0x00
    (pendientes, no bloquean el render diagnóstico).
-5. Audio DSP real + backend de audio.
+5. ~~Audio DSP real + backend de audio:~~ backend AAudio
+   HECHO en Fase 7 (sin probar en dispositivo); quedan DSP
+   real, secuencias MusyX y el mapeo ID → WAV.
+6. Paquete de datos Pack B, APK jugable y test en Tab S8.
+   La APK Fase 0 sigue siendo solo arranque (ver abajo).
+
+## Fases 6–7 (2026-10-25, este tramo): desbloqueo post-Dolby, input y audio
+
+### 1. Fase 6a — DVDFileInfo real y callback async de DVD
+
+Layout verificado contra el propio código SDK del DOL (no un
+manual externo): `DVDOpen` (0x80249548) escribe +48 = offset
+de disco de la entrada FST, +52 = longitud de la entrada FST,
++56 = 0, +12 = 0; `DVDReadAsyncPrio` (0x80249858) lee +52,
+guarda el callback en +56 y llama a `DVDReadAbsAsyncPrio`;
+`cbForReadAsync` (0x80249918) invoca +56 con r3 = resultado,
+r4 = fileInfo. El código del juego confirma +52:
+`loadFileByPathAsync` (0x80015A38, `lwz r29,52(r30)`) y el
+cargador de romlists (0x800485E4) reservan por esa longitud.
+
+**Bug previo encontrado:** el HLE anterior no escribía +52,
+así que ambos reservaban 0 y las 82 lecturas async de run20
+eran de 0 B (la init de audio «rápida» era falsa: no cargaba
+nada). `DvdOpen` ahora escribe +12 = 0, +48 = offset FST
+(o 0 sin FST), +52 = tamaño real del fichero host, +56 = 0;
+si la escritura guest falla, el open devuelve 0 (un struct a
+medias es peor que un fallo visible). FST: candidatos
+`SetFstPath`, `<disc_root>/../sys/fst.bin`,
+`<disc_root>/sys/fst.bin`; formato: nº de entradas en +8,
+entradas de 12 B, tabla de nombres tras `12*count`;
+directorios abren rangos `[i+1, length)`; nombres con una
+`/` inicial quitada; fallback por basename solo si es único
+en el FST (3.874 ficheros parseados en el test).
+
+`DVDReadAsyncPrio` ahora lee en síncrono y **despacha el
+callback del juego como código huésped**: lr intacto (retorno
+del llamador), r3 = bytes leídos, r4 = fileInfo, pc =
+callback; el `blr` del callback vuelve al llamador original.
+r3 debe ser bytes, no 0 de «éxito»: el wrapper `DVDRead`
+(0x80015888) guarda r3 en `[r13-26664]` y solo sale del bucle
+si no es 0/-1/-3. Callbacks del juego verificados:
+`DvdRead_Callback` (0x8001598C), `initLoadFileReadCb`
+(0x80041EC4), `romListReadCb` (0x8004276C),
+`animCurvReadCb` (0x800423D4) y los de audio (0x8000975C,
+0x800096AC, 0x80009594, 0x800094E4, 0x80009434, 0x80009384,
+0x800092D4, 0x80009224, y más tarde 0x80009174, 0x800090C4,
+0x80009014). Aviso documentado: una lectura async de 0 B se
+registra como advertencia, porque el wrapper la trata como
+«pendiente» (hay ficheros vacíos en disco, p. ej. varios
+`VOXMAP.bin`, sin evidencia aún de que el juego los lea por
+async).
+
+**VI retrace (modelo de frontera de frame):** `OSSleepThread`
+(desde `waitNextFrame` 0x8004ABE0) incrementa el contador:
+cada sueño completado esperando el siguiente retrace ES un
+retrace entregado (uno por frame dormido, la cadencia que el
+juego espera). `VIWaitForRetrace` avanza al siguiente retrace
+(+1, retorno inmediato, nunca bloquea); solo se llama en
+`tvInit` (×2 en run20), sin doble conteo en el bucle. NO se
+deriva del timebase del chassis (+200/despacho, ~40k/frame):
+un contador a 50 Hz sobre él solo marcaría cada ~243 frames
+del bucle, una escala falsa. Pendiente: los callbacks VI
+pre/post retrace que registra el juego
+(`VISetPreRetraceCallback` 0x8024CB14,
+`VISetPostRetraceCallback` 0x8024CB58, desde 0x80049F48/54 y
+el reproductor THP) todavía NO se entregan; sus punteros
+viven en el estado VI del SDK (código huésped, sin HLE) y
+localizar ese estado es el siguiente paso.
+
+**Drenajes ARQ (tres, todos por evidencia de ejecución):**
+
+1. `aramUploadData` (0x802849EC): el contador de su cola
+   ([r31+641]) se drena con los pendientes SDK (patrón
+   aramInit). Desbloqueó run21 (contador en 16).
+2. `aramSyncTransferQueue` (0x80284B84): la última subida de
+   una serie no tiene un wait-head posterior que la drene;
+   el sync completa una DMA por cesión (contador −1; si
+   quedan pendientes SDK, también −1). Desbloqueó run23
+   (50M despachos en el mismo estado que run22: contador
+   0x803D5B41 = 1, índice 3, slots con +28 =
+   `aramQueueCallback` 0x80284910 y +32 = 0).
+3. `AudioAramWriteSync` (0x80008FDC, este tramo): el juego
+   postea con `ARQPostRequest` (0x802516D4, código huésped:
+   struct en 0x803372A0+slot*48, +28 = callback, +0 =
+   siguiente de la lista de la cola 1, head/tail en
+   [r13-20816]/[r13-20812]) y gira hasta que
+   `AudioAramWriteCompleteCallback` (0x80009008: stw 1 en
+   [r13-27076]; blr) ponga el flag. run25b (50M despachos)
+   quedó ahí con el flag a 0 y un elemento en la cola 1
+   (slot 0: +28 = 0x80009008, src 0x8054C700, dst ARAM
+   0x00EC93E0, len 1272864). El HLE entrega ahora ese
+   callback como código huésped (lr = el propio spin head,
+   para volver al giro y salir por el epílogo normal, con
+   registros restaurados; r3 = la petición) y desenlaza la
+   petición antes de despachar. Limitación heredada: los
+   callbacks +32/+36 de los slots del array ARQ
+   (`aramQueueCallback`) siguen sin invocarse en los
+   drenajes por contador; si el juego espera uno, el
+   siguiente atasco lo dirá con su PC y su flag.
+
+**Diagnóstico mm no fatal (registrado, no un fallo):** tras
+los callbacks de audio, el juego imprime `5: *** mm Error
+*** ---> Can't free ram at this location: 81205e00`
+(`mmFree` sobre el fileInfo 0x81205E00) y CONTINÚA cargando
+el siguiente fichero (run22/run24/run25: mismo patrón). Solo
+aparece cuando las lecturas tienen éxito (el camino correcto);
+las escrituras HLE replican exactamente las del SDK, así que
+no es corrupción nuestra. No bloquea.
+
+### 2. Fase 6b — PADStatus real e input
+
+`PADStatus` (12 B/mando, libogc, verificado en `padUpdate`
+0x80014F6C): +0 botón u16 BE, +2 stickX s8, +3 stickY s8,
++4 substickX s8, +5 substickY s8 (se comprueba contra ±40),
++6 triggerL u8, +7 triggerR u8, +8 analogA u8, +9 analogB u8,
++10 err s8, +11 reservado 0. `PADClamp` (0x8024E458) no toca
+botones (solo sticks/gatillos, y retorna pronto si err != 0).
+
+**El misterio Start, resuelto desde el código del juego:**
+`padUpdate` usa dos slots de 48 B (0x8033B250/0x8033B280) y
+globales de 4 palabras (Previous 0x8033B210+4i, Held
+0x8033B220+4i, Released 0x8033B230+4i, JustPressed
+0x8033B240+4i). Tras `PADRead` y `PADClamp`, lee un flag de
+«muestra fresca» en [r13-25827] = 0x803DE65D: si es 0,
+descarta el `PADRead` y copia el slot anterior (ceros en el
+primer frame); si no es cero, usa el dato fresco y lo limpia
+al final. El único escritor observado además del clear de
+`padUpdate` es `gpuErrorHandler` (0x80049810); en hardware
+real el evento de muestreo SI lo pondría entre frames. Esto
+explica run16 exactamente: la inyección escribía Start en el
+búfer, pero el flag era 0 y `padUpdate` copiaba el slot
+anterior (cero). **Corrección HLE:** `PADRead` escribe
+siempre los 48 B (mando 0 desde el `PadState` actual, mandos
+1–3 con err = −1 = 0xFF, sin mando, como el SDK) y pone el
+flag 0x803DE65D = 1 antes de que `padUpdate` lo lea (el mismo
+punto lógico que la muestra SI en hardware). El retorno
+sigue siendo 0, que el chequeo de `padUpdate` en 0x80014FC0
+acepta. El poke directo en `OSSleepThread` sobre Held/
+JustPressed se ELIMINÓ: `padUpdate` recomputa esos globales
+desde el búfer, así que el poke se borraba antes de leerse.
+
+`PadState` (`input/pad_state.h`, sin dependencias Android):
+bits libogc (D-pad LEFT 0x0001, RIGHT 0x0002, DOWN 0x0004, UP
+0x0008, Z 0x0010, R 0x0020, L 0x0040, A 0x0100, B 0x0200,
+X 0x0400, Y 0x0800, START 0x1000); `SyncAnalogFromButtons()`
+(L/R todo o nada: bit → gatillo 255; A/B igual para
+analogA/B). `Input::HandleEvent` mapea y devuelve true solo
+si cambió el estado (consumido): gamepad (A/B/X/Y, L1/R1/
+L2/R2 → L/R, START, DPAD, Z), teclado (flechas = D-pad,
+Enter = Start, Z = botón Z), joystick (AXIS_X/Y → stick
+izquierdo, Y invertida; LTRIGGER/RTRIGGER > 0,5 → L/R bit +
+255; AXIS_Z/RZ deliberadamente ignorados: C-stick = 0 en
+esta fase), táctil (primer dedo, arrastre desde el anclaje →
+stick, 100 px = deflexión total, ±127). Botones táctiles en
+pantalla NO mapeados todavía: no hay layout definido y un
+layout inventado por cuadrantes sería peor que la ausencia.
+Rumble no-op en esta fase (`PADControlMotor` sin HLE; el
+juego no lo ha llamado en los runs). Cableado:
+`GameCubeRuntime::Init` llama `hle_.SetPadState(input_.StatePtr())`;
+`native-lib.cpp` `HandleInput` reenvía al Input del runtime
+y devuelve 1 solo si se consumió (antes devolvía 0 y nunca
+reviaba).
+
+### 3. Fase 7 — Audio por WAV extraídos
+
+API sin cambios (Init/Shutdown/Pump/Start/Stop/SubmitBuffer/
+SetMasterVolume); `SubmitBuffer` toma frames estéreo s16 a
+la frecuencia de salida. **Decisión de backend, documentada:**
+AAudio en Android. OpenSL ES deliberadamente NO
+implementado: minSdk es 26 y AAudio existe desde API 26, así
+que el caso «AAudio no disponible» no puede darse en esta
+app, y un segundo backend sería improbable aquí. Si AAudio
+falla al abrir en un dispositivo concreto, `BackendOk()` =
+false, `SubmitBuffer` sigue encolando sin crashear y el log
+lo reporta. Implementación (guardada por `__ANDROID__`):
+builder, 48.000 Hz, estéreo, PCM16, modo baja latencia,
+callback de datos que drena el anillo; `EXCLUSIVE` primero,
+`SHARED` si falla. Enlace con `-laaudio` (CMakeLists y
+`build-libstarfox-ndk.sh`; NDK r28c provee `libaaudio.so` y
+`aaudio/AAudio.h` para API 26). En host, backend nulo
+contable: `Pump()` drena el anillo y cuenta frames
+entregados (en Android `Pump()` es no-op: drena el callback
+AAudio). Anillo productor/consumidor único de 262.144
+frames estéreo (~5,5 s a 48 kHz), índices atómicos; si se
+llena, se descartan los frames más antiguos y
+`DroppedFrames()` los cuenta (el audio del juego nunca debe
+bloquear un frame). Volumen maestro 0–1 aplicado al enviar.
+
+Cargador WAV (`LoadWavFile`): RIFF/WAVE, PCM formato 1,
+PCM16, 1–2 canales, cualquier frecuencia; resto de chunks
+saltados con padding par. Todos los WAV del inventario son
+PCM16, suficiente para esta fase. Resampleo
+(`ResampleToStereo`): interpolación lineal a estéreo 48.000
+Hz; mono duplicado a ambos canales; frames de salida =
+`floor(in_frames * 48000 / in_rate)` (mínimo 1). HLE de alto
+nivel por fichero (`PlayWavFile`): carga un WAV real
+extraído, resamplea a 48 kHz estéreo y lo envía; devuelve
+frames enviados o −1 si no se puede leer. Límite
+documentado: para ficheros largos, el llamador debe drenar
+entre trozos (el test host lo hace); `PlayWavFile` solo sobre
+un fichero mayor que el anillo descarta los más antiguos y
+los cuenta. Es directo para muestras MusyX cortas (< 1 s).
+**NO hecho en Fase 7:** mapeo ID de sonido del juego → ruta
+WAV (tablas `Streams.bin`/`Sfx.bin`/`.sdi` sin parsear),
+secuencias MusyX (`.pro`/`.poo`/`midi.wad`), emulación DSP.
+La fase prueba que un ID real (una ruta real del inventario)
+produce salida; el cableado a los `snd*` del juego es el
+siguiente paso.
+
+### 4. Verificación host (runs, sin regresión enmascarada)
+
+Test `work-port/fase2-tests/test_phase6.cpp` (fuera del
+repo, no se commitea): modos `unit` (chequeos HLE/audio
+directos), `baseline` (bucle sin inyección) y `start` (Start
+0x1000 vía `PADRead`).
+
+- **Unit (run21-unit): todo PASS.** `DvdOpen MAPS.bin` = 1,
+  +52 = 111.648, +48 = 0x7C79600, +12 = 0, +56 = 0 tras open,
+  FST cargado, 0 fallos de escritura fileInfo. Con `/` inicial:
+  `DvdOpen /audio/data/Music.bin` = 1, +52 = 2.544. Callback
+  async sin ejecutar el chunk: `DVDReadAsyncPrio` con
+  fileInfo MAPS.bin, 1.024 B, callback 0x8001598C, lr
+  0x80015AA4 → pc = 0x8001598C, r3 = 1.024, r4 = fileInfo,
+  lr intacto, 1 callback, 1.024 B async, +56 = callback.
+  PAD: `PADRead` con Start y stick (40, −30) → mando 0
+  botones 0x1000, stickX 40, stickY −30, err mando 0 = 0,
+  err mando 1 = 0xFF, flag 0x803DE65D = 1. Audio: stream
+  `assets/extraidos/audio/streams/AN/an1301.wav` (32.000 Hz
+  estéreo) → 1.892.352 frames a 48 kHz (exacto:
+  frames*48000/32000), no silencioso, entrega chunked
+  (8.192 frames con Pump entre medias) exacta con 0
+  descartados. MusyX
+  `assets/extraidos/audio/musyx/starfoxm/0000_SFXdn_boar1_c.wav`
+  (22.050 Hz mono, 3.477 frames) → `PlayWavFile` 7.568
+  frames a 48 kHz, entregados > 0.
+- **run21 (5M): REGRESIÓN diagnosticada.** Solo 198 HLE,
+  DVDOpen ×7, async ×7, 5.500.544 B async, 7 callbacks (solo
+  audio), FIFO 828 B (SHA-256
+  `60451a6e775565276c630eb1ecda553120e371cbc8a6112c227b4bb00cf6c07f`,
+  distinto de run20), PC final 0x802849EC, PADRead ×1,
+  retrace 2, exception 0. Causa: los callbacks DVD síncronos
+  dispararon subidas ARAM de audio, pero las completaciones
+  ARQ solo se drenaban en el spin de aramInit, así que
+  `aramUploadData` giraba con su contador en 16. Fix: drenaje
+  del wait-head de subida (punto 1 arriba).
+- **run22 (5M, 24,560 s) y run23 (50M, 477,137 s): segundo
+  atasco, real (no lentitud).** Estado idéntico: PC
+  0x80284B84 (`aramSyncTransferQueue`), HLE 775, drenajes de
+  subida 593, PADRead ×1, FIFO 828 B mismo SHA. Fix: drenaje
+  del sync-wait (punto 2 arriba).
+- **run24 (5M, 62,542 s): AVANCE.** HLE 1.669, DVDOpen ×12,
+  async ×12, close ×12, 16.855.828 B async, 12 callbacks en 8
+  callbacks distintos (los 7 anteriores + 0x80009224),
+  drenajes de subida 1.425, de sync 47, PC final 0x80008FDC
+  (código del juego, ya no un spin del SDK), exception 0,
+  PADRead ×1 (bucle aún no alcanzado: sigue en init/carga,
+  ahora cargando más datos), FIFO aún 828 B (el stream
+  pre-logo, no el frame run20). Cada megabyte por esta
+  emulación cuesta muchos despachos, así que 5M ya no llegan
+  al bucle (en run20 la init era «rápida» justo porque no
+  cargaba nada).
+- **run25b (50M, 276,531 s): tercer atasco, real.** Estado
+  idéntico a run24 (PC 0x80008FDC, HLE 1.669, 12 opens) con
+  45M despachos más: la prueba de que no era lentitud. Fix:
+  entrega del callback ARQ por petición (punto 3 arriba).
+  (run25, el intento anterior a 50M, murió sin resumen por
+  limpieza del lanzamiento detached del proceso; se
+  relanzó como run25b en primer plano y completó.)
+- **run26 baseline (5M, 24,078 s): AVANCE HASTA EL FRONTAL,
+  luego excepción (ver punto 5).** 1.849.789 despachos,
+  motivo `exception`, HLE 1.982, DVDOpen ×98, async ×98,
+  close ×96, 20.083.124 B async, 98 callbacks, drenajes de
+  subida 1.425, de sync 47, callbacks ARQ 1, GXLoadTexObj ×2
+  (¡nuevos draws!), FIFO 2.100 B, PADRead ×2, OSReport ×4,
+  exception 0x00000001 en PC final 0x8006A0E0. El juego
+  cargó `PREANIM.tab`, `ENVFXACT.bin`, `animtest/TEX0.bin`,
+  `gametext/Link/English.bin` y
+  `gametext/FrontEnd/English.bin`, creó un hilo
+  (`OSCreateThread`, registrado, sin ejecución real) y
+  llegó a procesar frames (`newshadows_beginFrame`).
+- **run26-start (5M, 23,310 s): INPUT VERIFICADO.** Idéntico
+  a run26 salvo el input: PADRead #1 y #2 con botones
+  0x1000 (Start vía `PADRead`, relectura 0x10000000),
+  Held0 = 0x00001000, Prev0 = 0x00001000, Just0 = 0x00000000
+  (correcto: Start mantenido desde el arranque no tiene
+  flanco; una pulsación real posterior daría JustPressed).
+  Mismos despachos (1.849.789), mismos HLE, misma excepción:
+  el flujo no cambia porque la excepción del punto 5 precede
+  a cualquier lógica de título que lea Held. La vía PADRead
+  queda probada; el efecto en el flujo queda pendiente de
+  superar el punto 5. El test de `start` en run20 (sin el
+  flag de muestra fresca) daba FIFO byte-idéntico: ese
+  diagnóstico queda invalidado por el flag, no por el poke.
+
+### 5. Bloqueador siguiente: excepción por caché NULL (sin maquillar)
+
+`updateHeavyFogTexture` (0x8006A09C) llama a `getCache`
+(0x80022BB0), que devuelve [r13-23404] cuando el estado
+[r13-23424] es 0 o 4, y 0xE0000000 en otro caso. En run26,
+el estado final es 0 y el puntero es 0x00000000: el bucle
+escribe con `stbx r0, r4, r3` en r4 = 0 → fuera de rango →
+exception 1 (la semántica documentada de `mem.*`: fuera de
+rango = lectura 0 / escritura ignorada + exception = 1).
+El PC reportado (0x8006A0E0) es el inicio del bloque del
+bucle, no la instrucción `stbx` exacta. Llamadores de
+`updateHeavyFogTexture`: `newshadows_beginFrame`
+(0x8006CB00, desde 0x8006CC84) y `allocLotsOfTextures`
+(0x8006D7CC, desde 0x8006E794). La función que deja el
+puntero a 0 es `n_attractmode_releaseMovieBuffers`
+(0x80116548): si el estado != 2, libera todos los búferes
+de la caché con `mm_free` (0x80023968) — incluido
+[r13-23404] — y pone el estado a 4. Es decir: tras liberar
+los búferes de la película del attract-mode, el juego
+empieza frames (sombras/niebla) sin haber re-inicializado
+la caché. Hipótesis abiertas, sin evidencia aún para
+decidir: (a) el re-init vive en un hilo que el chassis
+monohilo no ejecuta (`OSCreateThread` solo registra; en
+run26 se creó un hilo en 0x801383AC sin ejecución real);
+(b) el re-init cuelga del callback de fin de película THP
+(jugador THP pendiente, como CARD). Siguiente paso:
+localizar quién escribe [r13-23404] fuera del free
+(0x80116620/0x8011678C/0x801168A4 son escrituras dentro
+del propio free) y su condición de disparo; NO parchear
+con un búfer falso.
+
+### 6. Build NDK (verificación Fase 6–7)
+
+Build `ndk-fase6b`, JOBS=4 (directorio nuevo, 178 C + C++
+desde cero; el intento anterior `ndk-fase6` con JOBS=2 se
+perdió al limpiarse su sesión, sin riesgo porque el script
+escribe `.o.tmp` y solo renombra al terminar): PASS, **0
+errores**, exit 0. `libstarfox.so` **27.326.912 B**, ELF64
+`DYN` AArch64, SHA-256
+`9d00fe0a94487f61655d34bfe6ea2f63f557b6516eccf9ffc6a1e904074a7410`
+(Fase 5b: 27.300.944 B,
+`ea78bc86240727d77709f777cf8e6e3ac931b45fcdf2cfb045bb40e9bfe80084`),
+comprobación del script «OK: ningún símbolo
+mem_/ppc_/func_/dolrecomp_ sin resolver», 151 undefined
+totales (solo libs del sistema; 124 en Fase 5b: el delta
+incluye las nuevas referencias `AAudio*` del backend de
+audio y símbolos de runtime C++ del código nuevo).
+`android_main` en `T`, `AAudioStreamBuilder_*` en `U`
+(sistema, esperado). APK Fase 0 intacta: SHA-256
+`b07a6af555246d442808208563efa8b0d423c7bd916aa9fc8938b1484bbf07d1`
+(57.916 B, sin reconstruir en este tramo).
+
+### 7. Qué queda (tras Fases 6–7, en orden)
+
+1. Bloqueador nº 1: re-init de la caché de texturas tras el
+   attract-mode (punto 5 arriba).
+2. Callbacks VI pre/post retrace (el estado VI del SDK).
+3. Mapeo ID de sonido del juego → WAV; secuencias MusyX;
+   DSP real.
+4. Botones táctiles en pantalla (layout por definir),
+   rumble, flanco JustPressed con pulsación real.
+5. Renderer GX en APK (GLES3) con el camino ya verificado
+   en host; THP; CARD; hilos reales.
 6. Paquete de datos Pack B, APK jugable y test en Tab S8.
    La APK Fase 0 sigue siendo solo arranque (ver abajo).

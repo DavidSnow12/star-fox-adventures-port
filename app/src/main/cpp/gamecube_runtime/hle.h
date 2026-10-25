@@ -21,22 +21,23 @@
 //     PADInit, LCEnable; luego videoInit -> GXInit (stub).
 //   Soporte en esa ruta: VIConfigure, VIFlush, VIWaitForRetrace
 //     (retrace simulado: incrementa un contador y vuelve; NUNCA
-//     espera), PADRecalibrate, PADReset, PADRead (estado a 0),
-//     DC* (no-op salvo DCZeroRange, que pone a cero de verdad),
+//     espera), PADRecalibrate, PADReset, PADRead (PADStatus
+//     real desde PadState, Fase 6b), DC* (no-op salvo
+//     DCZeroRange, que pone a cero de verdad),
 //     OSGetArenaLo/Hi, OSInitAlloc, hilos/alarmas como no-op
 //     con log, GXInitFifo* / GXSet*Fifo como stubs con log.
 //   Fase 5b: OSReport (captura de texto, el stub huesped no
 //     imprime en retail) y PADRead con inyeccion opcional solo
-//     para diagnostico host (SetPadInject; por defecto sigue
-//     sin escribir y el estado neutro viene del BSS a cero).
+//     para diagnostico host (SetPadInject).
 //   DVD (datos del arbol ya extraido, nunca de un DVD fisico):
-//     DVDInit, DVDOpen, DVDReadPrio, DVDReadAsyncPrio (sincrono
-//     en esta fase; el callback async queda pendiente),
-//     DVDClose. DVDOpen NO escribe aun los campos del struct
-//     DVDFileInfo (su layout exacto esta pendiente de verificar
-//     contra el uso del juego en initLoadFiles): guarda la
-//     entrada en una tabla HLE indexada por la direccion guest
-//     del fileInfo, y DVDRead la resuelve por esa direccion.
+//     DVDInit, DVDOpen, DVDReadPrio, DVDReadAsyncPrio,
+//     DVDClose. Fase 6a: DVDOpen escribe el DVDFileInfo real
+//     (+12=0, +48 offset FST, +52 longitud, +56=0) y
+//     DVDReadAsyncPrio lee en sincrono y DESPACHA el callback
+//     del juego (r3 = bytes, r4 = fileInfo) antes de volver
+//     al llamador, como haria la interrupcion DI en hardware.
+//     DVDRead se resuelve por la direccion guest del fileInfo
+//     en la tabla HLE, como antes.
 //   DSP (Fase 5): DSPAddTask corre como codigo huesped; el HLE
 //     solo entrega el evento de init de la tarea (el callback
 //     que el DSP real dispararia por interrupcion) al llegar
@@ -53,8 +54,49 @@
 #include <vector>
 
 #include "gamecube_runtime/cpu_state.h"
+#include "input/pad_state.h"
 
 namespace sfa {
+
+// Layout DVDFileInfo del SDK de este DOL, verificado contra el
+// propio codigo SDK (no contra un manual externo):
+//   DVDOpen 0x80249548 escribe: +48 = entrada FST +4 (offset en
+//     disco), +52 = entrada FST +8 (longitud), +56 = 0,
+//     +12 = 0.
+//   DVDReadAsyncPrio 0x80249858 lee +52 (longitud, para validar
+//     offset+longitud), guarda el callback (r7) en +56 y llama
+//     a DVDReadAbsAsyncPrio con la direccion de disco
+//     +48+offset.
+//   cbForReadAsync 0x80249918 invoca el puntero en +56
+//     (si != 0) con r3 = resultado y r4 = fileInfo.
+// El juego tambien lee +52 directamente: loadFileByPathAsync
+// 0x80015A38 (lwz r29,52(r30)) reserva segun esa longitud, y
+// el cargador de romlists 0x800485E4 hace lo mismo. Sin +52,
+// ambos reservaban 0 y los 82 reads async de run20 eran de 0 B.
+// El offset +48 sale de fst.bin (sys/) cuando esta disponible;
+// sin FST se escribe 0 (el HLE no lo usa: lee por offset de
+// fichero host, no por direccion de disco) y +52 es siempre el
+// tamano real del fichero host, que coincide con la longitud
+// FST cuando hay FST (verificado en los 4 ficheros de prueba).
+//
+// Layout PADStatus (12 B/pad, libogc, verificado contra
+// padUpdate 0x80014F6C: botones lhz en +0, sub-stick Y lbz en
+// +5, err lbz en +10; PADClamp 0x8024E458 solo ajusta sticks):
+//   +0 button u16 BE, +2 stickX s8, +3 stickY s8,
+//   +4 substickX s8, +5 substickY s8, +6 triggerL u8,
+//   +7 triggerR u8, +8 analogA u8, +9 analogB u8, +10 err s8,
+//   +11 (reservado, 0).
+// padUpdate ademas lee un flag de "muestra nueva" en
+// [r13-25827] (absoluto 0x803DE65D, r13 = 0x803E4B40 fijado por
+// __init_registers): si es 0, descarta el PADRead fresco y
+// copia el slot anterior (por eso la inyeccion Start de run16
+// no dejaba Held = 0x1000); si es != 0, usa el fresco y lo
+// pone a 0 al final. El unico escritor observado en el DOL,
+// ademas del propio padUpdate (que lo limpia), es
+// gpuErrorHandler 0x80049810 (lo pone a 1). En hardware real
+// ese flag lo pondria el muestreo SI entre frames; aqui lo
+// pone PADRead (HLE) justo antes de que padUpdate lo lea,
+// que es el mismo punto logico: muestra nueva disponible.
 
 struct HleCall {
   const char* name = nullptr;
@@ -64,6 +106,7 @@ struct HleCall {
   uint32_t r4 = 0;
   uint32_t r5 = 0;
   uint32_t r6 = 0;
+  uint32_t r7 = 0;
 };
 
 class Hle {
@@ -105,6 +148,61 @@ class Hle {
   // en el bucle de espera de aramInit (ver HandleHostCall).
   static constexpr uint32_t kArqPostRequest = 0x802516D4u;
   static constexpr uint32_t kAramInitSpinHead = 0x80284D58u;
+  // ARQ (Fase 6a): segundo punto de espera. aramUploadData
+  // 0x802849A8 espera a que el contador de su cola
+  // [r31+641] baje de 16 (0x802849EC: lbz contador; si >= 16,
+  // 0x80284B5C duerme y vuelve a 0x802849E8). El drenaje de
+  // aramInit no cubre este punto: tras los callbacks DVD de
+  // audio (Fase 6a), las subidas de muestras se atascaban
+  // aqui con el contador en 16 y sin drenaje (run21). El
+  // contador se drena igual que en aramInit (pendientes SDK
+  // aplicados, con clamp al contador). LIMITACION heredada:
+  // los callbacks por peticion de la cola del juego
+  // (aramQueueCallback 0x80284910: +32 callback, +36 arg)
+  // no se invocan en el drenaje; si el juego espera uno,
+  // el siguiente atasco lo dira con su PC y su flag, y se
+  // implementara la entrega con la cola (base r31, indice
+  // en [r31+640]) en vez de solo el contador.
+  static constexpr uint32_t kAramUploadWaitHead = 0x802849ECu;
+  // ARQ (Fase 6a, segundo drenaje): aramSyncTransferQueue
+  // 0x80284B7C gira (lbz contador en 0x80284B84, base fija
+  // 0x803D58C0 en r3) hasta que el contador [r3+641] sea 0.
+  // La ultima subida de una serie no tiene un wait-head
+  // posterior que la drene: el llamador postea y espera en
+  // sync, y el contador queda en 1 con 0 pendientes SDK
+  // (run23: 50M despachos, mismo estado que run22, contador
+  // 0x803D5B41 = 1, indice 3, slots con callback +32 = 0).
+  // En este punto se completa una DMA por cesion del chunk
+  // (contador -1; si hay pendientes SDK, tambien -1): con
+  // cola maxima 16, el sync termina en pocas cesiones. Los
+  // slots observados tienen +32 = 0, asi que no se pierde
+  // ningun callback del juego en este drenaje.
+  static constexpr uint32_t kAramSyncWaitHead = 0x80284B84u;
+  // ARQ (Fase 6a, tercer drenaje: callbacks por peticion).
+  // AudioAramWriteSync 0x80008F38 postea una escritura ARAM
+  // con ARQPostRequest (0x802516D4, codigo huesped: la
+  // peticion es un struct del juego en 0x803372A0+slot*48,
+  // +28 = callback, +0 = siguiente de la lista enlazada
+  // de la cola 1, head/tail en [r13-20816]/[r13-20812]) y
+  // luego gira en 0x80008FDC (lwz flag [r13-27076]; cmpwi
+  // 0; bc si ==0) hasta que el callback de escritura
+  // (AudioAramWriteCompleteCallback 0x80009008: stw 1 en el
+  // flag; blr) lo ponga a 1. Sin interrupcion ARQ, ese
+  // callback nunca corre (run25b: 50M despachos, PC final
+  // 0x80008FDC, flag 0, cola 1 con un elemento: slot 0 con
+  // +28 = 0x80009008, src 0x8054C700, dst ARAM 0x00EC93E0,
+  // len 1272864). En este punto se entrega el callback de
+  // la cabeza de la cola 1 como codigo huesped (lr = el
+  // propio spin head, para que el blr del callback vuelva
+  // al giro, relea el flag ya a 1 y salga por el epilogo
+  // normal de la funcion, con sus registros restaurados)
+  // y se desenlaza la peticion antes de despachar, para
+  // no re-entregarla en la siguiente escritura. r3 = la
+  // peticion, por convencion de callback ARQ. Si el flag
+  // ya es 1 o la cola esta vacia, no se hace nada (el
+  // giro sale solo o el siguiente atasco dira por que).
+  static constexpr uint32_t kAudioAramWriteSyncWaitHead = 0x80008FDCu;
+  static constexpr uint32_t kAudioAramWriteCompleteCb = 0x80009008u;
   static constexpr uint32_t kDcInvalidateRange = 0x802422F8u;
   static constexpr uint32_t kDcFlushRange = 0x80242328u;
   static constexpr uint32_t kDcStoreRange = 0x8024235Cu;
@@ -219,16 +317,51 @@ class Hle {
               uint32_t dest_guest, uint32_t length, uint32_t offset);
   bool DvdClose(CpuState* cpu, uint32_t fileinfo_guest);
 
-  // Inyeccion PAD solo para diagnostico host (Fase 5b): el test
-  // la activa y PADRead escribe ese estado en el PADStatus del
-  // pad 0; padUpdate (codigo huesped) calcula Held/JustPressed
-  // desde ahi, igual que con un mando real. Por defecto
-  // desactivada: PADRead conserva su comportamiento anterior
-  // (retorno 0 sin escribir). NO es el mapeo tactil (fase
-  // siguiente) y nunca se activa en la APK desde aqui.
+  // Inyeccion PAD solo para diagnostico host (Fase 5b, ahora
+  // sobre PadState, Fase 6b): el test la activa y PADRead
+  // escribe ese estado en el PADStatus del pad 0; padUpdate
+  // (codigo huesped) calcula Held/JustPressed desde ahi,
+  // igual que con un mando real. Por defecto desactivada:
+  // PADRead escribe el PadState vigente (cero si nadie lo
+  // puso). NO es el mapeo tactil (ese vive en Input y llega
+  // por SetPadState) y nunca se activa en la APK desde aqui.
   void SetPadInject(bool enabled, uint16_t buttons, int8_t stick_x,
                     int8_t stick_y);
   bool PadInjectEnabled() const { return pad_inject_; }
+  // Estado PAD vigente (Fase 6b): si se fija un estado externo
+  // (Input, no propio), PADRead lo lee de ahi; si no, usa el
+  // estado interno (inyeccion de test o cero). El puntero no
+  // se posee: debe vivir mas que el Hle (en el runtime, Input
+  // vive en el mismo objeto que Hle).
+  void SetPadState(const PadState* state) { pad_state_ext_ = state; }
+  const PadState* PadStatePtr() const { return pad_state_ext_; }
+  // Flag de muestra PAD nueva (0x803DE65D, ver cabecera).
+  static constexpr uint32_t kPadFreshFlag = 0x803DE65Du;
+  // FST del disco (Fase 6a): ruta explicita opcional; si no se
+  // fija, SetDiscRoot prueba disc_root/../sys/fst.bin y
+  // disc_root/sys/fst.bin. Sin FST, +48 se escribe 0.
+  void SetFstPath(const char* path);
+  bool FstLoaded() const { return fst_loaded_; }
+  uint64_t DvdCallbacksInvoked() const { return dvd_callbacks_; }
+  uint64_t ArqDrainedUpload() const { return arq_drained_upload_; }
+  uint64_t ArqDrainedSync() const { return arq_drained_sync_; }
+  uint64_t ArqCallbacksDelivered() const { return arq_callbacks_; }
+  uint64_t DvdAsyncBytes() const { return dvd_async_bytes_; }
+  uint64_t DvdFileInfoWriteFailures() const {
+    return dvd_fileinfo_failures_;
+  }
+  // Eventos async completados (fileInfo, callback, bytes) para
+  // tests host; el callback se registra aqui ANTES de
+  // despacharlo como codigo huesped, asi que el test puede
+  // contar entregas aunque el callback cierre el fichero.
+  struct DvdAsyncEvent {
+    uint32_t fileinfo = 0;
+    uint32_t callback = 0;
+    int32_t bytes = 0;
+  };
+  const std::vector<DvdAsyncEvent>& DvdAsyncEvents() const {
+    return dvd_async_events_;
+  }
 
   // Lineas OSReport capturadas (formato ya expandido) y cargas
   // GXLoadTexObj con su offset en el stream FIFO capturado, para
@@ -295,6 +428,49 @@ class Hle {
   std::vector<DvdEntry> dvd_;
   std::vector<ThreadEntry> threads_;
   uint64_t retrace_count_ = 0;
+  // Fase 6a: retrace por interrupcion de frame. El chassis no
+  // tiene interrupciones reales; el punto logico donde el
+  // juego espera un retrace es OSSleepThread desde
+  // waitNextFrame (0x8004ABE0): cada sueno completado ES un
+  // retrace entregado. VIWaitForRetrace tambien avanza al
+  // siguiente retrace (solo se llama en tvInit, x2 en run20,
+  // asi que no hay doble conteo en el bucle). NO se deriva
+  // del timebase del chassis: ese timebase es simulado
+  // (+200/despacho, ~40k/frame) y un contador a 50 Hz sobre
+  // el daria un retrace cada ~243 frames, escala falsa.
+  // Los callbacks pre/post retrace que el juego registra
+  // (VISetPreRetraceCallback 0x8024CB14, Post 0x8024CB58,
+  // desde 0x80049F48/54 y el reproductor THP) NO se entregan
+  // todavia: sus punteros viven en el estado VI del SDK
+  // (codigo huesped, sin HLE) y leerlos exige localizar ese
+  // estado; queda documentado como siguiente paso, no como
+  // hecho.
+  // Fase 6a/b: estado PAD y FST (ver hle.cpp).
+  PadState pad_state_;
+  const PadState* pad_state_ext_ = nullptr;
+  std::string fst_path_;
+  bool fst_loaded_ = false;
+  bool fst_load_attempted_ = false;
+  // nombre normalizado (sin '/' inicial) -> (offset disco, len)
+  std::vector<std::pair<std::string, std::pair<uint32_t, uint32_t>>>
+      fst_entries_;
+  uint64_t dvd_callbacks_ = 0;
+  uint64_t dvd_async_bytes_ = 0;
+  uint64_t dvd_fileinfo_failures_ = 0;
+  uint64_t arq_drained_upload_ = 0;
+  uint64_t arq_drained_sync_ = 0;
+  uint64_t arq_callbacks_ = 0;
+  std::vector<DvdAsyncEvent> dvd_async_events_;
+  void TryLoadFst();
+  bool LookupFst(const std::string& name, uint32_t* disc_offset,
+                 uint32_t* length) const;
+  static std::string NormalizeDvdName(const std::string& name);
+  bool WriteDvdFileInfo(CpuState* cpu, uint32_t fileinfo,
+                        uint32_t disc_offset, uint32_t length);
+  // Aplica las peticiones ARQ pendientes como decrementos del
+  // contador de cola del juego en count_addr (Fase 5/6a).
+  void DrainArqCompletions(CpuState* cpu, uint32_t count_addr,
+                           const char* where);
   uint64_t fallback_cache_ = 0;
   uint64_t fallback_unknown_ = 0;
   bool os_init_done_ = false;

@@ -61,12 +61,13 @@ void HandleCmd(struct android_app* app, int32_t cmd) {
   }
 }
 
-int32_t HandleInput(struct android_app* /*app*/, AInputEvent* event) {
-  // El Input real vive en el runtime; en esta base el evento se
-  // registra y no se consume, para no ocultar eventos al sistema.
-  // (El módulo Input se conectará al runtime en la integración.)
-  (void)event;
-  return 0;
+int32_t HandleInput(struct android_app* app, AInputEvent* event) {
+  // Fase 6b: los eventos llegan al Input del runtime (que
+  // escribe el PadState que PADRead vuelca al juego). Se
+  // devuelve 1 solo si Input lo consumio (cambio el estado).
+  auto* state = static_cast<AppState*>(app->userData);
+  if (state == nullptr) return 0;
+  return state->runtime.InputState()->HandleEvent(event) ? 1 : 0;
 }
 
 }  // namespace

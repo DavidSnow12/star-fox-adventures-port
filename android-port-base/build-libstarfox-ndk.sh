@@ -84,7 +84,7 @@ for f in $(find "$CPP" -name '*.cpp'); do
 done
 # shellcheck disable=SC2086
 $CXX -shared -o "$OUT/libstarfox.so" $OBJS \
-  -landroid -llog -lEGL -lGLESv3 -lm
+  -landroid -llog -lEGL -lGLESv3 -laaudio -lm
 echo "OK: $OUT/libstarfox.so"
 echo "--- simbolos sin resolver (nm -u, sin filtrar) ---"
 $NM -u "$OUT/libstarfox.so" | sort

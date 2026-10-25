@@ -65,4 +65,5 @@ target_link_libraries(starfox
     log
     EGL
     GLESv3
+    aaudio
     m)

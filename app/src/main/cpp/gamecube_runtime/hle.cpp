@@ -1,6 +1,7 @@
 #include "gamecube_runtime/hle.h"
 
 #include <cstring>
+#include <utility>
 
 #include <dirent.h>
 #include <strings.h>
@@ -113,12 +114,180 @@ void Hle::SetDiscRoot(const char* root) {
   disc_root_ = root != nullptr ? root : "";
 }
 
+void Hle::SetFstPath(const char* path) {
+  fst_path_ = path != nullptr ? path : "";
+  fst_loaded_ = false;
+  fst_load_attempted_ = false;
+  fst_entries_.clear();
+}
+
 void Hle::SetPadInject(bool enabled, uint16_t buttons, int8_t stick_x,
                        int8_t stick_y) {
   pad_inject_ = enabled;
   pad_inject_buttons_ = buttons;
   pad_inject_stick_x_ = stick_x;
   pad_inject_stick_y_ = stick_y;
+  pad_state_.buttons = buttons;
+  pad_state_.stick_x = stick_x;
+  pad_state_.stick_y = stick_y;
+  pad_state_.SyncAnalogFromButtons();
+}
+
+std::string Hle::NormalizeDvdName(const std::string& name) {
+  // El juego pide '/audio/data/Music.bin' (con barra) y
+  // 'GAMETEXT.bin' (plano); el FST guarda rutas relativas sin
+  // barra inicial ('audio/data/Music.bin'). Normalizar es solo
+  // quitar la barra inicial; no se inventan rutas.
+  if (!name.empty() && name[0] == '/') return name.substr(1);
+  return name;
+}
+
+void Hle::TryLoadFst() {
+  if (fst_load_attempted_) return;
+  fst_load_attempted_ = true;
+  std::string candidates[3];
+  int n = 0;
+  if (!fst_path_.empty()) candidates[n++] = fst_path_;
+  if (!disc_root_.empty()) {
+    candidates[n++] = disc_root_ + "/../sys/fst.bin";
+    candidates[n++] = disc_root_ + "/sys/fst.bin";
+  }
+  std::FILE* file = nullptr;
+  std::string used;
+  for (int i = 0; i < n && file == nullptr; ++i) {
+    file = std::fopen(candidates[i].c_str(), "rb");
+    if (file != nullptr) used = candidates[i];
+  }
+  if (file == nullptr) {
+    SFA_LOGI("hle: FST no encontrado (sin +48 real; +52 seguira "
+             "siendo el tamano host)");
+    return;
+  }
+  std::fseek(file, 0, SEEK_END);
+  long size = std::ftell(file);
+  std::fseek(file, 0, SEEK_SET);
+  if (size < 12) {
+    std::fclose(file);
+    return;
+  }
+  std::vector<uint8_t> data(static_cast<size_t>(size));
+  if (std::fread(data.data(), 1, data.size(), file) != data.size()) {
+    std::fclose(file);
+    return;
+  }
+  std::fclose(file);
+  auto be32 = [&data](size_t off) -> uint32_t {
+    return (static_cast<uint32_t>(data[off]) << 24) |
+           (static_cast<uint32_t>(data[off + 1]) << 16) |
+           (static_cast<uint32_t>(data[off + 2]) << 8) |
+           static_cast<uint32_t>(data[off + 3]);
+  };
+  uint32_t count = be32(8);
+  if (count == 0 || 12u * count > data.size()) {
+    SFA_LOGE("hle: FST '%s' con cabecera incoherente (entradas %u)",
+             used.c_str(), count);
+    return;
+  }
+  size_t strtab = 12u * count;
+  auto entry_name = [&data, strtab](uint32_t name_off) -> std::string {
+    std::string out;
+    for (size_t i = strtab + name_off; i < data.size(); ++i) {
+      if (data[i] == 0) break;
+      out.push_back(static_cast<char>(data[i]));
+    }
+    return out;
+  };
+  // Recorrido FST: la entrada raiz (0) es directorio con
+  // longitud = n. de entradas; cada directorio abre un rango
+  // [i+1, longitud) con su prefijo. Los ficheros no guardan
+  // padre: el prefijo vigente lo da el rango que los contiene.
+  std::vector<std::pair<uint32_t, std::string>> stack;
+  // (fin_de_rango, prefijo). Se procesa en orden de entrada.
+  fst_entries_.clear();
+  std::string prefix;
+  uint32_t range_end = count;
+  // Pila explicita para no depender de recursion: se recorren
+  // las entradas y se mantiene el prefijo segun el rango.
+  // Implementacion iterativa con pila de (fin, prefijo).
+  struct Frame {
+    uint32_t end;
+    std::string prefix;
+  };
+  std::vector<Frame> frames;
+  frames.push_back(Frame{count, ""});
+  for (uint32_t i = 1; i < count; ++i) {
+    while (!frames.empty() && i >= frames.back().end) {
+      frames.pop_back();
+    }
+    if (frames.empty()) break;
+    uint32_t raw = be32(12u * i);
+    uint32_t type = raw >> 24;
+    uint32_t name_off = raw & 0xFFFFFFu;
+    uint32_t off = be32(12u * i + 4);
+    uint32_t len = be32(12u * i + 8);
+    std::string name = entry_name(name_off);
+    if (type == 1) {
+      frames.push_back(Frame{len, frames.back().prefix + name + "/"});
+    } else if (type == 0) {
+      fst_entries_.push_back(
+          {frames.back().prefix + name, {off, len}});
+    }
+  }
+  (void)prefix;
+  (void)range_end;
+  (void)stack;
+  fst_loaded_ = true;
+  SFA_LOGI("hle: FST cargado '%s': %zu ficheros", used.c_str(),
+           fst_entries_.size());
+}
+
+bool Hle::LookupFst(const std::string& name, uint32_t* disc_offset,
+                    uint32_t* length) const {
+  if (!fst_loaded_ || disc_offset == nullptr || length == nullptr) {
+    return false;
+  }
+  std::string norm = NormalizeDvdName(name);
+  const std::pair<std::string, std::pair<uint32_t, uint32_t>>* base =
+      nullptr;
+  for (const auto& e : fst_entries_) {
+    if (e.first == norm) {
+      *disc_offset = e.second.first;
+      *length = e.second.second;
+      return true;
+    }
+    // Respaldo solo si el nombre base es unico en el FST (el
+    // juego a veces pide un nombre plano que en disco vive en
+    // un subdirectorio; si hay varios, no se adivina).
+    size_t slash = e.first.rfind('/');
+    std::string leaf =
+        slash == std::string::npos ? e.first : e.first.substr(slash + 1);
+    if (leaf == norm) {
+      if (base != nullptr) return false;
+      base = &e;
+    }
+  }
+  if (base != nullptr) {
+    *disc_offset = base->second.first;
+    *length = base->second.second;
+    return true;
+  }
+  return false;
+}
+
+bool Hle::WriteDvdFileInfo(CpuState* cpu, uint32_t fileinfo,
+                           uint32_t disc_offset, uint32_t length) {
+  if (cpu == nullptr) return false;
+  cpu->exception = 0;
+  ::mem_write32(cpu, fileinfo + 12u, 0u);
+  ::mem_write32(cpu, fileinfo + 48u, disc_offset);
+  ::mem_write32(cpu, fileinfo + 52u, length);
+  ::mem_write32(cpu, fileinfo + 56u, 0u);
+  if (cpu->exception != 0) {
+    cpu->exception = 0;
+    ++dvd_fileinfo_failures_;
+    return false;
+  }
+  return true;
 }
 
 bool Hle::FormatOsReport(CpuState* cpu, std::string* out) {
@@ -336,6 +505,7 @@ void Hle::LogCall(CpuState* cpu, const char* name, uint32_t address) {
   call.r4 = cpu != nullptr ? cpu->gpr[4] : 0;
   call.r5 = cpu != nullptr ? cpu->gpr[5] : 0;
   call.r6 = cpu != nullptr ? cpu->gpr[6] : 0;
+  call.r7 = cpu != nullptr ? cpu->gpr[7] : 0;
   if (calls_.size() < 1000000) calls_.push_back(call);
   // Log en texto solo las 20 primeras por nombre. El indice es
   // la posicion en kHleTable (mismo puntero de literal).
@@ -480,8 +650,34 @@ int Hle::DvdOpen(CpuState* cpu, uint32_t filename_guest,
     e.host_path = used;
     dvd_.push_back(e);
   }
-  SFA_LOGI("hle: DVDOpen '%s' -> '%s' (%ld B, fileInfo guest 0x%08X)",
-           name.c_str(), used.c_str(), size, fileinfo_guest);
+  // Fase 6a: DVDFileInfo real (ver hle.h). +52 es el tamano
+  // host (== longitud FST cuando hay FST); +48 el offset de
+  // disco FST o 0 sin FST. Si la escritura guest falla, la
+  // apertura se da por fallida: el juego lee +52 para
+  // reservar, y un struct a medias es peor que un 0 (el
+  // llamador reintentara o registrara el fallo, no leera 0 B
+  // en silencio como en run20).
+  TryLoadFst();
+  uint32_t disc_offset = 0;
+  uint32_t fst_length = 0;
+  bool fst_hit = LookupFst(name, &disc_offset, &fst_length);
+  if (fst_hit && fst_length != static_cast<uint32_t>(size)) {
+    SFA_LOGE("hle: DVDOpen '%s': FST dice %u B pero el fichero "
+             "host mide %ld B (se usa el host)",
+             name.c_str(), fst_length, size);
+  }
+  if (!WriteDvdFileInfo(cpu, fileinfo_guest, disc_offset,
+                        static_cast<uint32_t>(size))) {
+    SFA_LOGE("hle: DVDOpen '%s': fileInfo guest 0x%08X no "
+             "escribible (apertura fallida)",
+             name.c_str(), fileinfo_guest);
+    DvdClose(cpu, fileinfo_guest);
+    return 0;
+  }
+  SFA_LOGI("hle: DVDOpen '%s' -> '%s' (%ld B, fileInfo guest 0x%08X, "
+           "FST %s, disc_off 0x%08X)",
+           name.c_str(), used.c_str(), size, fileinfo_guest,
+           fst_hit ? "si" : "no", disc_offset);
   return 1;
 }
 
@@ -520,6 +716,24 @@ bool Hle::DvdClose(CpuState* cpu, uint32_t fileinfo_guest) {
     }
   }
   return false;
+}
+
+void Hle::DrainArqCompletions(CpuState* cpu, uint32_t count_addr,
+                              const char* where) {
+  if (cpu == nullptr) return;
+  uint32_t count = ::mem_read8(cpu, count_addr);
+  if (cpu->exception != 0) {
+    cpu->exception = 0;
+    return;
+  }
+  uint32_t applied =
+      pending_arq_completions_ < count ? pending_arq_completions_ : count;
+  ::mem_write8(cpu, count_addr, static_cast<uint8_t>(count - applied));
+  pending_arq_completions_ -= applied;
+  SFA_LOGI("hle: ARQ drenado en %s (contador 0x%08X: %u -> %u, "
+           "pendientes restantes %u)",
+           where, count_addr, count, count - applied,
+           pending_arq_completions_);
 }
 
 bool Hle::HandleHostCall(CpuState* cpu, uint32_t address) {
@@ -593,17 +807,66 @@ bool Hle::HandleHostCall(CpuState* cpu, uint32_t address) {
   if (address == kArqPostRequest) {
     ++pending_arq_completions_;
   } else if (address == kAramInitSpinHead && pending_arq_completions_ != 0) {
-    uint32_t count_addr = cpu->gpr[30];
+    DrainArqCompletions(cpu, cpu->gpr[30], "aramInit");
+  } else if (address == kAramUploadWaitHead &&
+             pending_arq_completions_ != 0) {
+    // Contador de la cola de aramUploadData: base en r31,
+    // contador en +641 (ver hle.h). El drenaje es el mismo
+    // que en aramInit; solo cambia el puntero del contador.
+    DrainArqCompletions(cpu, cpu->gpr[31] + 641u, "aramUploadData");
+    ++arq_drained_upload_;
+  } else if (address == kAudioAramWriteSyncWaitHead) {
+    // Tercer drenaje ARQ (ver hle.h): entrega del callback
+    // por peticion de la cola 1. Solo si el flag sigue a 0
+    // y hay peticion en la cola; en otro caso, no tocar
+    // nada (el giro sale solo). lr = el spin head: el blr
+    // del callback vuelve al giro, que relee el flag a 1.
+    uint32_t r13 = cpu->gpr[13];
+    uint32_t flag = ::mem_read32(cpu, r13 - 27076u);
+    uint32_t head_addr = r13 - 20816u;
+    uint32_t tail_addr = r13 - 20812u;
+    uint32_t req = ::mem_read32(cpu, head_addr);
+    if (cpu->exception == 0 && flag == 0 && req != 0) {
+      uint32_t cb = ::mem_read32(cpu, req + 28u);
+      uint32_t next = ::mem_read32(cpu, req + 0u);
+      if (cpu->exception == 0 && cb != 0) {
+        ::mem_write32(cpu, head_addr, next);
+        if (next == 0) ::mem_write32(cpu, tail_addr, 0);
+        ++arq_callbacks_;
+        SFA_LOGI("hle: ARQ callback entregado en "
+                 "AudioAramWriteSync (peticion 0x%08X, "
+                 "callback 0x%08X, siguiente 0x%08X)",
+                 req, cb, next);
+        cpu->exception = 0;
+        cpu->gpr[3] = req;
+        cpu->lr = kAudioAramWriteSyncWaitHead;
+        cpu->pc = cb;
+        return true;
+      }
+    } else if (cpu->exception != 0) {
+      cpu->exception = 0;
+    }
+  } else if (address == kAramSyncWaitHead) {
+    // Drenaje del sync-wait (ver hle.h): una DMA completada
+    // por cesion. No depende de pendientes SDK: el contador
+    // del juego y el contador SDK se desincronizan justo en
+    // la ultima subida (el post ya se conto y se dreno en
+    // un wait-head anterior, pero el juego incremento el
+    // contador despues). Si quedan pendientes SDK, tambien
+    // baja uno (esa DMA es una de ellas).
+    uint32_t count_addr = cpu->gpr[3] + 641u;
     uint32_t count = ::mem_read8(cpu, count_addr);
-    if (cpu->exception == 0) {
-      uint32_t applied =
-          pending_arq_completions_ < count ? pending_arq_completions_ : count;
-      ::mem_write8(cpu, count_addr, (uint8_t)(count - applied));
-      pending_arq_completions_ -= applied;
-      SFA_LOGI("hle: ARQ drenado en aramInit (contador "
-               "0x%08X: %u -> %u, pendientes restantes %u)",
-               count_addr, count, count - applied,
-               pending_arq_completions_);
+    if (cpu->exception == 0 && count > 0) {
+      ::mem_write8(cpu, count_addr, static_cast<uint8_t>(count - 1));
+      if (pending_arq_completions_ > 0) --pending_arq_completions_;
+      ++arq_drained_sync_;
+      if (arq_drained_sync_ <= 20) {
+        SFA_LOGI("hle: ARQ sync drenado (contador 0x%08X: %u -> "
+                 "%u, pendientes SDK %u)",
+                 count_addr, count, count - 1, pending_arq_completions_);
+      }
+    } else if (cpu->exception != 0) {
+      cpu->exception = 0;
     }
   }
   const char* name = FindHleName(address);
@@ -731,14 +994,56 @@ bool Hle::HandleHostCall(CpuState* cpu, uint32_t address) {
       return Return(cpu, static_cast<uint32_t>(got));
     }
     case kDvdReadAsyncPrio: {
-      // Sincrono en esta fase: se lee ahora y se devuelve 1.
-      // El callback (r7) NO se invoca todavia: pendiente para
-      // cuando una ruta async real lo exija (ver PORT-STATUS).
+      // Fase 6a: lectura sincrona + callback despachado como
+      // codigo huesped, en el punto que el juego espera.
+      // Mecanica: el handler HLE corre dentro de
+      // dolrecomp_call(cpu, async_addr) con lr = retorno del
+      // llamador. Si hay callback, se deja lr intacto, se
+      // ponen r3 = bytes leidos y r4 = fileInfo (convencion
+      // de cbForReadAsync 0x80249918: r3 resultado, r4
+      // fileInfo) y pc = callback, y se devuelve true: el
+      // chassis despacha el callback a continuacion y su blr
+      // vuelve al retorno del llamador original. Si el
+      // callback es 0, comportamiento anterior (retorno 1/0).
+      // El wrapper del juego (DVDRead 0x80015888) guarda r3
+      // en su global [r13-26664] y solo sale del bucle si el
+      // valor no es 0/-1/-3: por eso el callback debe llevar
+      // los bytes leidos, no un 0 de "exito". Los callbacks
+      // de carga (initLoadFileReadCb 0x80041EC4, romListReadCb
+      // 0x8004276C) cierran el fichero (DVDClose HLE) y bajan
+      // su contador/flag de pendiente: sin esta entrega, la
+      // carga de romlists nunca se daba por terminada.
+      uint32_t fileinfo = cpu->gpr[3];
+      uint32_t callback = cpu->gpr[7];
       int got = DvdRead(cpu, cpu->gpr[3], cpu->gpr[4], cpu->gpr[5],
                         cpu->gpr[6]);
+      if (got == 0) {
+        SFA_LOGI("hle: DVDReadAsyncPrio: 0 B (fichero vacio o "
+                 "offset al final; el wrapper del juego "
+                 "tratara 0 como pendiente)");
+      }
+      if (callback != 0) {
+        cpu->exception = 0;
+        ::mem_write32(cpu, fileinfo + 56u, callback);
+        if (cpu->exception != 0) cpu->exception = 0;
+        DvdAsyncEvent ev;
+        ev.fileinfo = fileinfo;
+        ev.callback = callback;
+        ev.bytes = got;
+        dvd_async_events_.push_back(ev);
+        ++dvd_callbacks_;
+        if (got > 0) dvd_async_bytes_ += static_cast<uint64_t>(got);
+        SFA_LOGI("hle: DVDReadAsyncPrio: %d B, callback "
+                 "0x%08X despachado (fileInfo 0x%08X)",
+                 got, callback, fileinfo);
+        cpu->gpr[3] = static_cast<uint32_t>(got);
+        cpu->gpr[4] = fileinfo;
+        cpu->pc = callback;
+        return true;
+      }
       SFA_LOGI("hle: DVDReadAsyncPrio sincrono: %d B, callback "
-               "0x%08X no invocado (pendiente)",
-               got, cpu->gpr[7]);
+               "nulo (sin despacho)",
+               got);
       return Return(cpu, got >= 0 ? 1u : 0u);
     }
     case kViInit:
@@ -752,10 +1057,13 @@ bool Hle::HandleHostCall(CpuState* cpu, uint32_t address) {
     case kViFlush:
       return Return(cpu, 0);
     case kViWaitForRetrace: {
-      // Retrace simulado: un tick por llamada, vuelta inmediata.
-      // NUNCA espera: un bucle de espera real aqui colgaria el
-      // chassis, y el juego en bucle espera retrace leyendo el
-      // contador, no bloqueando el hilo.
+      // Retrace simulado, Fase 6a: esperar al siguiente
+      // retrace = avanzar el contador en 1 y volver al
+      // instante (nunca bloquea: un wait real colgaria el
+      // chassis). El contador tambien avanza en cada
+      // OSSleepThread (un retrace por frame dormido); esta
+      // llamada solo ocurre en tvInit (x2 en run20), asi que
+      // ambos caminos no se duplican en el bucle.
       ++retrace_count_;
       return Return(cpu, 0);
     }
@@ -763,43 +1071,60 @@ bool Hle::HandleHostCall(CpuState* cpu, uint32_t address) {
       pad_init_done_ = true;
       return Return(cpu, 0);
     case kPadRead: {
-      // Sin inyeccion: comportamiento anterior (retorno 0 sin
-      // escribir; la RAM del buffer ya es cero tras el BSS, asi
-      // que padUpdate lee el estado neutro).
-      // Con inyeccion (solo test host Fase 5b): se escribe el
-      // PADStatus SDK (12 B/pad, 4 pads = 48 B en r3) del pad 0
-      // — button u16 BE en +0, stickX/stickY s8 en +2/+3,
-      // sub-stick/gatillos/analogicos a 0, err en +10 a 0 — y
-      // los pads 1-3 a cero. padUpdate (huesped) lee ese buffer
-      // y calcula Held/JustPressed desde ahi; el layout se
-      // verifica en el test comparando los globales
-      // 0x8033B210-0x8033B240 tras la inyeccion.
-      if (pad_inject_) {
-        uint8_t status[48];
-        std::memset(status, 0, sizeof(status));
-        status[0] = static_cast<uint8_t>(pad_inject_buttons_ >> 8);
-        status[1] = static_cast<uint8_t>(pad_inject_buttons_);
-        status[2] = static_cast<uint8_t>(pad_inject_stick_x_);
-        status[3] = static_cast<uint8_t>(pad_inject_stick_y_);
-        status[10] = 0;
-        bool ok = WriteGuestBytes(cpu, cpu->gpr[3], status, sizeof(status));
-        // Diagnostico Fase 5b: confirmar que la escritura llega
-        // (primeras 5 inyecciones) y relectura inmediata.
-        static int inject_logs = 0;
-        if (inject_logs < 5) {
-          ++inject_logs;
-          uint8_t* host = nullptr;
-          uint32_t back = 0;
-          if (GuestRangeHostPtr(cpu, cpu->gpr[3], 4, &host)) {
-            back = (static_cast<uint32_t>(host[0]) << 24) |
-                   (static_cast<uint32_t>(host[1]) << 16) |
-                   (static_cast<uint32_t>(host[2]) << 8) |
-                   static_cast<uint32_t>(host[3]);
-          }
-          SFA_LOGI("hle: PADRead inject #%d buf=0x%08X ok=%d "
-                   "relectura=0x%08X",
-                   inject_logs, cpu->gpr[3], ok ? 1 : 0, back);
+      // Fase 6b: PADStatus real (12 B/pad, 4 pads = 48 B en
+      // r3) desde el PadState vigente: externo (Input) si lo
+      // hay, si no el interno (inyeccion de test o cero).
+      // Pad 0 conectado (err = 0); pads 1-3 sin mando
+      // (err = -1, como el SDK: padUpdate pone a cero sus
+      // globales y no los usa). Retorno 0: el chequeo de
+      // padUpdate (0x80014FC0) lo acepta y sigue a PADClamp.
+      // Ademas se pone a 1 el flag de muestra nueva
+      // (0x803DE65D, ver hle.h): padUpdate lo lee DESPUES de
+      // PADRead y solo entonces usa el fresco; sin el, la
+      // inyeccion de run16 se perdia (copia del slot
+      // anterior, siempre a cero). Esto modela el muestreo
+      // SI que en hardware pondria ese flag entre frames.
+      const PadState* state =
+          pad_state_ext_ != nullptr ? pad_state_ext_ : &pad_state_;
+      PadState effective = *state;
+      effective.SyncAnalogFromButtons();
+      uint8_t status[48];
+      std::memset(status, 0, sizeof(status));
+      status[0] = static_cast<uint8_t>(effective.buttons >> 8);
+      status[1] = static_cast<uint8_t>(effective.buttons);
+      status[2] = static_cast<uint8_t>(effective.stick_x);
+      status[3] = static_cast<uint8_t>(effective.stick_y);
+      status[4] = static_cast<uint8_t>(effective.substick_x);
+      status[5] = static_cast<uint8_t>(effective.substick_y);
+      status[6] = effective.trigger_l;
+      status[7] = effective.trigger_r;
+      status[8] = effective.analog_a;
+      status[9] = effective.analog_b;
+      status[10] = 0;
+      for (int pad = 1; pad < 4; ++pad) {
+        status[pad * 12 + 10] = 0xFF;  // err = -1: sin mando
+      }
+      bool ok = WriteGuestBytes(cpu, cpu->gpr[3], status, sizeof(status));
+      cpu->exception = 0;
+      ::mem_write8(cpu, kPadFreshFlag, 1u);
+      if (cpu->exception != 0) cpu->exception = 0;
+      // Diagnostico: primeras 5 escrituras con relectura.
+      static int pad_logs = 0;
+      if (pad_logs < 5) {
+        ++pad_logs;
+        uint8_t* host = nullptr;
+        uint32_t back = 0;
+        if (GuestRangeHostPtr(cpu, cpu->gpr[3], 4, &host)) {
+          back = (static_cast<uint32_t>(host[0]) << 24) |
+                 (static_cast<uint32_t>(host[1]) << 16) |
+                 (static_cast<uint32_t>(host[2]) << 8) |
+                 static_cast<uint32_t>(host[3]);
         }
+        SFA_LOGI("hle: PADRead #%d buf=0x%08X ok=%d relectura="
+                 "0x%08X botones=0x%04X stick=(%d,%d)",
+                 pad_logs, cpu->gpr[3], ok ? 1 : 0, back,
+                 effective.buttons, effective.stick_x,
+                 effective.stick_y);
       }
       return Return(cpu, 0);
     }
@@ -848,20 +1173,18 @@ bool Hle::HandleHostCall(CpuState* cpu, uint32_t address) {
       return true;
     }
     case kOsSleepThread:
-      // Sueno instantaneo (ver kOsSleepThread en hle.h).
-      // Diagnostico Fase 5b (solo con inyeccion PAD activa):
-      // ademas de la inyeccion por PADRead, se pokear los
-      // globales Held (0x8033B220) y JustPressed (0x8033B240)
-      // del pad 0 con Start, una vez por frame. Si ni asi el
-      // juego avanza, la pantalla no esta leyendo estos
-      // globales (o no esta esperando input): es el
-      // discriminador, no un mapeo de input.
-      if (pad_inject_) {
-        ::mem_write32(cpu, 0x8033B220u,
-                      static_cast<uint32_t>(pad_inject_buttons_));
-        ::mem_write32(cpu, 0x8033B240u,
-                      static_cast<uint32_t>(pad_inject_buttons_));
-      }
+      // Sueno instantaneo (ver kOsSleepThread en hle.h) y, en
+      // Fase 6a, un retrace entregado: waitNextFrame duerme
+      // aqui esperando el siguiente retrace, asi que cada
+      // sueno completado incrementa el contador VI (un
+      // retrace por frame dormido, la cadencia que el juego
+      // espera; VIWaitForRetrace hace lo propio cuando se
+      // le llama). El poke directo de globales PAD de la
+      // Fase 5b se elimina: padUpdate recomputa los globales
+      // desde el buffer PADRead, asi que ese poke se borraba
+      // antes de leerse y solo ensuciaba el diagnostico; la
+      // via valida es PADRead (Fase 6b).
+      ++retrace_count_;
       return Return(cpu, 0);
     case kGxInitFifoBase:
     case kGxInitFifoPtrs:
