@@ -76,17 +76,53 @@ la pena descargarla para probar el juego.
    Todo lo anterior es validación en host/NDK, no una prueba de
    juego en la Tab S8.
 
-## Descarga e instalación (CUANDO haya APK jugable)
+## APK de prueba de arranque (Fase 0) — NO JUGABLE, solo arranque
 
-Todavía no aplica. No descargues la base como si fuera el juego:
-abrirá una pantalla de color fijo y se quedará ahí, porque no hay
-código del juego ejecutándose.
+**Fichero en esta rama:** `android-port-base/app-debug-boot-test.apk`
+**Tamaño:** 57.916 bytes
+**SHA-256:** `b07a6af555246d442808208563efa8b0d423c7bd916aa9fc8938b1484bbf07d1`
+**SHA-1:** `a2983836700f14a06f78d53e69e54aa186135f6a`
+**Paquete:** `com.starfox.port`, versión 1 / `0.1.0-base`,
+minSdk 26, targetSdk 34, actividad `MainActivity`,
+`lib/arm64-v8a/libstarfox.so` (AArch64, 147.784 B).
+**Validación:** `aapt2 dump badging` correcto,
+`apksigner verify` OK (v2 y v3, 1 firmante),
+`zipalign -c` OK. Construida por vía manual (javac/d8/aapt2/
+apksigner/zipalign) porque Gradle falla en este entorno con
+"Could not receive a message from the daemon" (daemon arranca y
+queda en espera, el cliente no lee su mensaje; causa de entorno,
+no del código). El build Gradle queda pendiente de resolver ese
+fallo de daemon o de usar la vía manual documentada.
+**Firma:** keystore de depuración generado para esta prueba
+(autofirmada, no es una firma de release; al instalar pedirá
+"Instalar apps desconocidas" una sola vez para la app instaladora).
 
-Cuando se publique una APK de prueba, aquí aparecerá:
-- Rama y commit exactos, nombre del fichero, tamaño y SHA-256.
-- Dónde descargarla (repo, rama `android-port-base`, o release).
-- Pasos: instalar APK, conceder permisos, copiar el paquete de
-  datos a la carpeta indicada, abrir la app.
+**Qué hace al abrirla:** arranca NativeActivity, inicializa EGL/GLES3
+y dibuja una pantalla de color fijo, escribe `boot.log` y registra
+en logcat con la etiqueta `StarFoxPort`. **No hay juego:** no carga
+DOL, no hay GX real, no hay sonido, no hay datos. Si se abre y se
+queda en color fijo, ESO ES LO ESPERADO en esta fase, no un fallo
+del juego.
+
+**Instalación y prueba (Tab S8, Android 16):**
+1. Descargar `app-debug-boot-test.apk` de esta rama (no de `main`).
+2. Instalarla (permitir "Instalar apps desconocidas" solo para la
+   app que instala, una vez).
+3. Abrirla una vez, esperar unos segundos en la pantalla de color.
+4. Leer el arranque:
+   `adb shell run-as com.starfox.port cat files/boot.log`
+   (funciona porque esta APK es debuggable) o
+   `adb logcat -s StarFoxPort`.
+5. Reportar: si abrió y qué color/pantalla se vio, las últimas
+   líneas de `boot.log` / logcat, y si se cerró sola (con el log,
+   no sin él).
+
+**Qué NO es esta APK:** no es la APK jugable que el usuario
+probará cuando el port esté al 100%. Esa APK todavía no existe y
+se anunciará aquí, con su propio commit y SHA, cuando el runtime
+integrado (chunks + HLE + GX + audio + datos) esté listo. No
+confundir ambas: esta es solo la prueba de que la base arranca en
+un dispositivo real.
 
 ## Permisos en Android 16 (para cuando llegue el test)
 

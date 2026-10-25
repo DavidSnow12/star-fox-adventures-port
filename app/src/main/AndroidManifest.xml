@@ -7,8 +7,12 @@
         android:required="false" />
     <uses-feature android:name="android.hardware.screen.landscape" />
 
+    <!-- android:debuggable="true" SOLO para la APK de prueba de
+         arranque (Fase 0): permite leer boot.log con run-as.
+         Quitar para cualquier build de release. -->
     <application
         android:allowBackup="false"
+        android:debuggable="true"
         android:label="@string/app_name"
         android:theme="@android:style/Theme.NoTitleBar.Fullscreen">
 
