@@ -67,6 +67,7 @@ constexpr HleEntry kHleTable[] = {
     {Hle::kGxLoadTexObj, "GXLoadTexObj"},
     {Hle::kOsSleepThread, "OSSleepThread"},
     {Hle::kPpcSync, "PPCSync"},
+    {Hle::kOsReport, "OSReport"},
 };
 
 const char* FindHleName(uint32_t address) {
@@ -110,6 +111,209 @@ Hle::~Hle() {
 
 void Hle::SetDiscRoot(const char* root) {
   disc_root_ = root != nullptr ? root : "";
+}
+
+void Hle::SetPadInject(bool enabled, uint16_t buttons, int8_t stick_x,
+                       int8_t stick_y) {
+  pad_inject_ = enabled;
+  pad_inject_buttons_ = buttons;
+  pad_inject_stick_x_ = stick_x;
+  pad_inject_stick_y_ = stick_y;
+}
+
+bool Hle::FormatOsReport(CpuState* cpu, std::string* out) {
+  if (cpu == nullptr || out == nullptr) return false;
+  std::string fmt;
+  if (!ReadGuestString(cpu, cpu->gpr[3], &fmt)) return false;
+  // Args varargs PPC: enteros en r4-r10, flotantes en f1-f8.
+  // Mas alla de los registros, los enteros se leen del area de
+  // parametros del llamador (sp+8 + 4*k), layout verificado en
+  // run16 con la linea "mem" de 16 args (7 en registros, 9 en
+  // pila: los 9 valores a sp+8..sp+40 son plausibles y el
+  // siguiente, sp+44, ya es un puntero de frame ajeno). Los
+  // flotantes en pila no se expanden (ninguna linea observada
+  // los usa): se marcan, no se inventan.
+  auto stack_int_arg = [&](int vararg_index, uint32_t* v) -> bool {
+    if (vararg_index < 7) return false;
+    uint32_t a = cpu->gpr[1] + 8u +
+                 4u * static_cast<uint32_t>(vararg_index - 7);
+    uint8_t* host = nullptr;
+    if (!GuestRangeHostPtr(cpu, a, 4, &host)) return false;
+    *v = (static_cast<uint32_t>(host[0]) << 24) |
+         (static_cast<uint32_t>(host[1]) << 16) |
+         (static_cast<uint32_t>(host[2]) << 8) |
+         static_cast<uint32_t>(host[3]);
+    return true;
+  };
+  size_t gpr = 4;
+  size_t fpr = 1;
+  int int_arg = 0;  // n. de args enteros consumidos (r4 = 0)
+  bool stack_float = false;
+  out->clear();
+  char num[64];
+  // Lee el siguiente arg entero (registro o pila).
+  auto next_int = [&](uint32_t* v) -> bool {
+    if (gpr <= 10) {
+      *v = cpu->gpr[gpr++];
+      ++int_arg;
+      return true;
+    }
+    if (stack_int_arg(int_arg, v)) {
+      ++int_arg;
+      return true;
+    }
+    return false;
+  };
+  for (size_t i = 0; i < fmt.size(); ++i) {
+    char c = fmt[i];
+    if (c != '%') {
+      out->push_back(c);
+      continue;
+    }
+    if (i + 1 >= fmt.size()) {
+      out->push_back('%');
+      break;
+    }
+    size_t j = i + 1;
+    if (fmt[j] == '%') {
+      out->push_back('%');
+      i = j;
+      continue;
+    }
+    // Flags / ancho / precision (se ignoran en la salida, pero
+    // '*' consume un entero, como en printf).
+    while (j < fmt.size() &&
+           (fmt[j] == '-' || fmt[j] == '+' || fmt[j] == ' ' ||
+            fmt[j] == '#' || fmt[j] == '0')) {
+      ++j;
+    }
+    while (j < fmt.size() && fmt[j] == '*') {
+      uint32_t dummy = 0;
+      (void)next_int(&dummy);
+      ++j;
+    }
+    while (j < fmt.size() && fmt[j] >= '0' && fmt[j] <= '9') ++j;
+    if (j < fmt.size() && fmt[j] == '.') {
+      ++j;
+      if (j < fmt.size() && fmt[j] == '*') {
+        uint32_t dummy = 0;
+        (void)next_int(&dummy);
+        ++j;
+      }
+      while (j < fmt.size() && fmt[j] >= '0' && fmt[j] <= '9') ++j;
+    }
+    while (j < fmt.size() &&
+           (fmt[j] == 'h' || fmt[j] == 'l' || fmt[j] == 'L' ||
+            fmt[j] == 'j' || fmt[j] == 'z' || fmt[j] == 't')) {
+      ++j;
+    }
+    if (j >= fmt.size()) {
+      out->append("[fmt truncado]");
+      break;
+    }
+    char conv = fmt[j];
+    i = j;
+    uint32_t v = 0;
+    switch (conv) {
+      case 'd':
+      case 'i':
+        if (next_int(&v)) {
+          std::snprintf(num, sizeof(num), "%d",
+                        static_cast<int32_t>(v));
+          out->append(num);
+        } else {
+          out->append("[pila?]");
+        }
+        break;
+      case 'u':
+        if (next_int(&v)) {
+          std::snprintf(num, sizeof(num), "%u", v);
+          out->append(num);
+        } else {
+          out->append("[pila?]");
+        }
+        break;
+      case 'x':
+      case 'X':
+        if (next_int(&v)) {
+          std::snprintf(num, sizeof(num),
+                        conv == 'x' ? "%x" : "%X", v);
+          out->append(num);
+        } else {
+          out->append("[pila?]");
+        }
+        break;
+      case 'o':
+        if (next_int(&v)) {
+          std::snprintf(num, sizeof(num), "%o", v);
+          out->append(num);
+        } else {
+          out->append("[pila?]");
+        }
+        break;
+      case 'c':
+        if (next_int(&v)) {
+          out->push_back(static_cast<char>(v & 0xFF));
+        } else {
+          out->append("[pila?]");
+        }
+        break;
+      case 's': {
+        if (next_int(&v)) {
+          std::string s;
+          if (ReadGuestString(cpu, v, &s)) {
+            out->append(s);
+          } else {
+            std::snprintf(num, sizeof(num), "(str? 0x%08X)", v);
+            out->append(num);
+          }
+        } else {
+          out->append("[pila?]");
+        }
+        break;
+      }
+      case 'p':
+        if (next_int(&v)) {
+          std::snprintf(num, sizeof(num), "0x%08X", v);
+          out->append(num);
+        } else {
+          out->append("[pila?]");
+        }
+        break;
+      case 'f':
+      case 'F':
+      case 'e':
+      case 'E':
+      case 'g':
+      case 'G':
+        if (fpr > 8) {
+          stack_float = true;
+          out->append("[pila-f]");
+        } else {
+          std::snprintf(num, sizeof(num), "%g", cpu->fpr[fpr++]);
+          out->append(num);
+        }
+        break;
+      case 'n': {
+        // %n escribe: aqui no se escribe nada (no hay efecto
+        // observable en retail) y se consume el puntero.
+        uint32_t dummy = 0;
+        (void)next_int(&dummy);
+        break;
+      }
+      default:
+        out->push_back('%');
+        out->push_back(conv);
+        out->append("[?]");
+        {
+          uint32_t dummy = 0;
+          (void)next_int(&dummy);
+        }
+        break;
+    }
+  }
+  if (stack_float) out->append(" [float en pila sin expandir]");
+  return true;
 }
 
 void Hle::Install(CpuState* cpu) {
@@ -558,12 +762,47 @@ bool Hle::HandleHostCall(CpuState* cpu, uint32_t address) {
     case kPadInit:
       pad_init_done_ = true;
       return Return(cpu, 0);
-    case kPadRead:
-      // Estado a 0: no se escribe el struct PADStatus todavia
-      // (su layout esta pendiente de verificar); la RAM de ese
-      // buffer ya esta a cero tras el BSS, asi que padUpdate
-      // lee ceros, que es el estado neutro pedido.
+    case kPadRead: {
+      // Sin inyeccion: comportamiento anterior (retorno 0 sin
+      // escribir; la RAM del buffer ya es cero tras el BSS, asi
+      // que padUpdate lee el estado neutro).
+      // Con inyeccion (solo test host Fase 5b): se escribe el
+      // PADStatus SDK (12 B/pad, 4 pads = 48 B en r3) del pad 0
+      // — button u16 BE en +0, stickX/stickY s8 en +2/+3,
+      // sub-stick/gatillos/analogicos a 0, err en +10 a 0 — y
+      // los pads 1-3 a cero. padUpdate (huesped) lee ese buffer
+      // y calcula Held/JustPressed desde ahi; el layout se
+      // verifica en el test comparando los globales
+      // 0x8033B210-0x8033B240 tras la inyeccion.
+      if (pad_inject_) {
+        uint8_t status[48];
+        std::memset(status, 0, sizeof(status));
+        status[0] = static_cast<uint8_t>(pad_inject_buttons_ >> 8);
+        status[1] = static_cast<uint8_t>(pad_inject_buttons_);
+        status[2] = static_cast<uint8_t>(pad_inject_stick_x_);
+        status[3] = static_cast<uint8_t>(pad_inject_stick_y_);
+        status[10] = 0;
+        bool ok = WriteGuestBytes(cpu, cpu->gpr[3], status, sizeof(status));
+        // Diagnostico Fase 5b: confirmar que la escritura llega
+        // (primeras 5 inyecciones) y relectura inmediata.
+        static int inject_logs = 0;
+        if (inject_logs < 5) {
+          ++inject_logs;
+          uint8_t* host = nullptr;
+          uint32_t back = 0;
+          if (GuestRangeHostPtr(cpu, cpu->gpr[3], 4, &host)) {
+            back = (static_cast<uint32_t>(host[0]) << 24) |
+                   (static_cast<uint32_t>(host[1]) << 16) |
+                   (static_cast<uint32_t>(host[2]) << 8) |
+                   static_cast<uint32_t>(host[3]);
+          }
+          SFA_LOGI("hle: PADRead inject #%d buf=0x%08X ok=%d "
+                   "relectura=0x%08X",
+                   inject_logs, cpu->gpr[3], ok ? 1 : 0, back);
+        }
+      }
       return Return(cpu, 0);
+    }
     case kPadReset:
     case kPadRecalibrate:
       return Return(cpu, 0);
@@ -573,15 +812,56 @@ bool Hle::HandleHostCall(CpuState* cpu, uint32_t address) {
                "devuelve; el estado GX se construye funcion a "
                "funcion, sin GPU todavia");
       return Return(cpu, 0);
-    case kGxLoadTexObj:
+    case kGxLoadTexObj: {
       // Sin GPU: registrar (texObj=r3, mapa=r4) en Calls() y
-      // devolver. Ver kGxLoadTexObj en hle.h.
+      // en TexLoads() con el offset FIFO vigente, y devolver.
+      // Ver kGxLoadTexObj en hle.h.
+      TexLoad load;
+      load.fifo_offset = sfa_fifo_capture_count();
+      load.tex_obj = cpu->gpr[3];
+      load.map = cpu->gpr[4];
+      tex_loads_.push_back(load);
       SFA_LOGI("hle: GXLoadTexObj HLE: texObj 0x%08X mapa %u "
                "(registrado, sin GPU)",
                cpu->gpr[3], cpu->gpr[4]);
       return Return(cpu, 0);
+    }
+    case kOsReport: {
+      // Observacion, no sustitucion de logica: el stub huesped
+      // solo vuelca registros y retorna, asi que capturar el
+      // texto y retornar sin tocar r3 (el stub tampoco lo
+      // tocaba) conserva el comportamiento. Las lineas quedan
+      // en OsReportLines() para el test; en log solo las 500
+      // primeras para no inundar logcat en el bucle.
+      std::string line;
+      if (FormatOsReport(cpu, &line)) {
+        if (osreport_lines_.size() < 500) {
+          SFA_LOGI("osreport: %s", line.c_str());
+        }
+        if (osreport_lines_.size() < 200000) {
+          osreport_lines_.push_back(line);
+        }
+      } else {
+        SFA_LOGI("osreport: (formato 0x%08X ilegible)", cpu->gpr[3]);
+      }
+      cpu->pc = cpu->lr;
+      return true;
+    }
     case kOsSleepThread:
       // Sueno instantaneo (ver kOsSleepThread en hle.h).
+      // Diagnostico Fase 5b (solo con inyeccion PAD activa):
+      // ademas de la inyeccion por PADRead, se pokear los
+      // globales Held (0x8033B220) y JustPressed (0x8033B240)
+      // del pad 0 con Start, una vez por frame. Si ni asi el
+      // juego avanza, la pantalla no esta leyendo estos
+      // globales (o no esta esperando input): es el
+      // discriminador, no un mapeo de input.
+      if (pad_inject_) {
+        ::mem_write32(cpu, 0x8033B220u,
+                      static_cast<uint32_t>(pad_inject_buttons_));
+        ::mem_write32(cpu, 0x8033B240u,
+                      static_cast<uint32_t>(pad_inject_buttons_));
+      }
       return Return(cpu, 0);
     case kGxInitFifoBase:
     case kGxInitFifoPtrs:

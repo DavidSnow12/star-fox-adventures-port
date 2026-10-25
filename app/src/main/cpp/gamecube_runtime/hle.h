@@ -25,6 +25,10 @@
 //     DC* (no-op salvo DCZeroRange, que pone a cero de verdad),
 //     OSGetArenaLo/Hi, OSInitAlloc, hilos/alarmas como no-op
 //     con log, GXInitFifo* / GXSet*Fifo como stubs con log.
+//   Fase 5b: OSReport (captura de texto, el stub huesped no
+//     imprime en retail) y PADRead con inyeccion opcional solo
+//     para diagnostico host (SetPadInject; por defecto sigue
+//     sin escribir y el estado neutro viene del BSS a cero).
 //   DVD (datos del arbol ya extraido, nunca de un DVD fisico):
 //     DVDInit, DVDOpen, DVDReadPrio, DVDReadAsyncPrio (sincrono
 //     en esta fase; el callback async queda pendiente),
@@ -153,6 +157,20 @@ class Hle {
   // leen de vuelta en la ruta observada. Si una lectura
   // posterior del estado GX lo exigiera, se rellenaria aqui.
   static constexpr uint32_t kGxLoadTexObj = 0x8025B260u;
+  // OSReport (Fase 5b, diagnostico): en este binario es un stub
+  // de 0x50 B (0x8007D8C0-0x8007D910: vuelca r3-r10 y f1-f8 a
+  // la pila y retorna, sin imprimir nada en retail). HLEarlo
+  // para capturar formato+args es, por tanto, un cambio de
+  // observacion, no de logica: el bucle debe dar los mismos
+  // conteos HLE/DVD/PAD que sin el (verificado en run15).
+  // El formato llega en r3 y los args en r4-r10 (enteros) y
+  // f1-f8 (flotantes), convencion varargs PPC; el formateador
+  // es propio y conservador (ver hle.cpp): %d/%u/%x/%s/%c/%p
+  // desde GPR, %f/%g desde FPR, resto literal con marca. Los
+  // enteros mas alla de r10 se leen del area de parametros del
+  // llamador (sp+8 + 4*k, verificado en run16 con la linea
+  // "mem" de 16 args); los flotantes en pila se marcan.
+  static constexpr uint32_t kOsReport = 0x8007D8C0u;
   // Barrera PPCSync (Fase 5, desbloqueo AR): su cuerpo en este
   // binario es un unico `sc` (ver chunk_0143, 0x80240CBC) seguido
   // de blr; el SDK lo usa como barrera de pipeline y el manejador
@@ -201,6 +219,30 @@ class Hle {
               uint32_t dest_guest, uint32_t length, uint32_t offset);
   bool DvdClose(CpuState* cpu, uint32_t fileinfo_guest);
 
+  // Inyeccion PAD solo para diagnostico host (Fase 5b): el test
+  // la activa y PADRead escribe ese estado en el PADStatus del
+  // pad 0; padUpdate (codigo huesped) calcula Held/JustPressed
+  // desde ahi, igual que con un mando real. Por defecto
+  // desactivada: PADRead conserva su comportamiento anterior
+  // (retorno 0 sin escribir). NO es el mapeo tactil (fase
+  // siguiente) y nunca se activa en la APK desde aqui.
+  void SetPadInject(bool enabled, uint16_t buttons, int8_t stick_x,
+                    int8_t stick_y);
+  bool PadInjectEnabled() const { return pad_inject_; }
+
+  // Lineas OSReport capturadas (formato ya expandido) y cargas
+  // GXLoadTexObj con su offset en el stream FIFO capturado, para
+  // asociar cada draw con la textura vigente en ese punto.
+  struct TexLoad {
+    uint64_t fifo_offset = 0;
+    uint32_t tex_obj = 0;
+    uint32_t map = 0;
+  };
+  const std::vector<std::string>& OsReportLines() const {
+    return osreport_lines_;
+  }
+  const std::vector<TexLoad>& TexLoads() const { return tex_loads_; }
+
   const std::vector<HleCall>& Calls() const { return calls_; }
   uint64_t CallCountFor(const char* name) const;
   uint64_t RetraceCount() const { return retrace_count_; }
@@ -236,6 +278,16 @@ class Hle {
 
   std::string disc_root_;
   std::vector<HleCall> calls_;
+  // Fase 5b (ver SetPadInject / OsReportLines / TexLoads).
+  bool pad_inject_ = false;
+  uint16_t pad_inject_buttons_ = 0;
+  int8_t pad_inject_stick_x_ = 0;
+  int8_t pad_inject_stick_y_ = 0;
+  std::vector<std::string> osreport_lines_;
+  std::vector<TexLoad> tex_loads_;
+  // Formatea un OSReport huesped (formato en r3, args en
+  // r4-r10/f1-f8). Devuelve false si el formato es ilegible.
+  bool FormatOsReport(CpuState* cpu, std::string* out);
   // Contador por nombre para el tope de log (20 por nombre), sin
   // recorrer calls_ en cada llamada (seria O(n^2) en bucles).
   // Indice = posicion en kHleTable de hle.cpp (maximo 64).

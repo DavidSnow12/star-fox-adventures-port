@@ -288,6 +288,93 @@ int sfa_hw_trace_write_csv(const char *path) {
     return 0;
 }
 
+/* ---------------- captura FIFO GX (Fase 5b) ---------------- */
+
+#define SFA_FIFO_CAPTURE_CAP (32u * 1024u * 1024u)
+#define SFA_FIFO_ADDR 0xCC008000u
+/* Ventana del write-gather pipe del GP (32 B): el SDK escribe
+ * la matriz con psq_st, cuyo segundo float va a 0xCC008004, y
+ * el pipe acumula los stores en orden dentro de la ventana
+ * (verificado en run15: solo 0xCC008000/0xCC008004 aparecen y
+ * los 18 writes a +4 son los segundos floats de 3 matrices).
+ * Capturar solo la direccion exacta pierde esos bytes y
+ * desincroniza el parser GX. */
+#define SFA_FIFO_WINDOW 32u
+static int sfa_fifo_addr_in_window(u32 addr) {
+    return addr >= SFA_FIFO_ADDR &&
+           addr < SFA_FIFO_ADDR + SFA_FIFO_WINDOW;
+}
+
+static int sfa_fifo_capture_enabled = 0;
+static u8 *sfa_fifo_capture_buf = NULL;
+static unsigned long long sfa_fifo_capture_len = 0;
+static unsigned long long sfa_fifo_capture_over = 0;
+static unsigned long long sfa_fifo_capture_w64 = 0;
+
+static void sfa_fifo_capture_append(const u8 *bytes, unsigned n) {
+    unsigned i;
+    if (!sfa_fifo_capture_enabled)
+        return;
+    if (sfa_fifo_capture_buf == NULL) {
+        sfa_fifo_capture_buf =
+            (u8 *)malloc(SFA_FIFO_CAPTURE_CAP);
+        if (sfa_fifo_capture_buf == NULL)
+            return;
+    }
+    for (i = 0; i < n; i++) {
+        if (sfa_fifo_capture_len < SFA_FIFO_CAPTURE_CAP) {
+            sfa_fifo_capture_buf[sfa_fifo_capture_len++] = bytes[i];
+        } else {
+            sfa_fifo_capture_over++;
+        }
+    }
+}
+
+void sfa_fifo_capture_set_enabled(int enabled) {
+    sfa_fifo_capture_enabled = enabled ? 1 : 0;
+}
+
+void sfa_fifo_capture_reset(void) {
+    sfa_fifo_capture_len = 0;
+    sfa_fifo_capture_over = 0;
+    sfa_fifo_capture_w64 = 0;
+}
+
+unsigned long long sfa_fifo_capture_count(void) {
+    return sfa_fifo_capture_len;
+}
+
+unsigned long long sfa_fifo_capture_overflow(void) {
+    return sfa_fifo_capture_over;
+}
+
+unsigned long long sfa_fifo_capture_capacity(void) {
+    return SFA_FIFO_CAPTURE_CAP;
+}
+
+const u8 *sfa_fifo_capture_data(void) {
+    return sfa_fifo_capture_buf;
+}
+
+int sfa_fifo_capture_write_file(const char *path) {
+    FILE *f;
+    if (path == NULL)
+        return -1;
+    f = fopen(path, "wb");
+    if (f == NULL)
+        return -1;
+    if (sfa_fifo_capture_len > 0 && sfa_fifo_capture_buf != NULL) {
+        if (fwrite(sfa_fifo_capture_buf, 1,
+                   (size_t)sfa_fifo_capture_len, f) !=
+            (size_t)sfa_fifo_capture_len) {
+            fclose(f);
+            return -1;
+        }
+    }
+    fclose(f);
+    return 0;
+}
+
 int sfa_hw_trace_write_events_csv(const char *path) {
     if (path == NULL)
         return -1;
@@ -486,6 +573,10 @@ void mem_write8(CPUState *cpu, u32 addr, u8 value) {
     u8 *p = write_ptr(cpu, addr, 1, &hw);
     if (hw) {
         sfa_hw_trace_record(cpu, addr, 1, 1, value);
+        if (sfa_fifo_addr_in_window(addr)) {
+            u8 b = value;
+            sfa_fifo_capture_append(&b, 1);
+        }
         return;
     }
     if (p == NULL) {
@@ -505,6 +596,15 @@ void mem_write16(CPUState *cpu, u32 addr, u16 value) {
     if (hw) {
         sfa_ar_write16(addr, value);
         sfa_hw_trace_record(cpu, addr, 2, 1, value);
+        if (sfa_fifo_addr_in_window(addr)) {
+            u8 b[2];
+            unsigned n = 2;
+            if (addr + 2 > SFA_FIFO_ADDR + SFA_FIFO_WINDOW)
+                n = SFA_FIFO_ADDR + SFA_FIFO_WINDOW - addr;
+            b[0] = (u8)(value >> 8);
+            b[1] = (u8)value;
+            sfa_fifo_capture_append(b, n);
+        }
         return;
     }
     if (p == NULL) {
@@ -524,6 +624,17 @@ void mem_write32(CPUState *cpu, u32 addr, u32 value) {
     if (hw) {
         sfa_ai_write32(addr, value);
         sfa_hw_trace_record(cpu, addr, 4, 1, value);
+        if (sfa_fifo_addr_in_window(addr)) {
+            u8 b[4];
+            unsigned n = 4;
+            if (addr + 4 > SFA_FIFO_ADDR + SFA_FIFO_WINDOW)
+                n = SFA_FIFO_ADDR + SFA_FIFO_WINDOW - addr;
+            b[0] = (u8)(value >> 24);
+            b[1] = (u8)(value >> 16);
+            b[2] = (u8)(value >> 8);
+            b[3] = (u8)value;
+            sfa_fifo_capture_append(b, n);
+        }
         return;
     }
     if (p == NULL) {
@@ -542,6 +653,17 @@ void mem_write64(CPUState *cpu, u32 addr, u64 value) {
     u8 *p = write_ptr(cpu, addr, 8, &hw);
     if (hw) {
         sfa_hw_trace_record(cpu, addr, 8, 1, value);
+        if (sfa_fifo_addr_in_window(addr)) {
+            u8 b[8];
+            unsigned k;
+            unsigned n = 8;
+            if (addr + 8 > SFA_FIFO_ADDR + SFA_FIFO_WINDOW)
+                n = SFA_FIFO_ADDR + SFA_FIFO_WINDOW - addr;
+            sfa_fifo_capture_w64++;
+            for (k = 0; k < 8; k++)
+                b[k] = (u8)(value >> (56 - 8 * k));
+            sfa_fifo_capture_append(b, n);
+        }
         return;
     }
     if (p == NULL) {

@@ -10,10 +10,11 @@ arranque — en host ejecuta su arranque completo, carga los 89
 ficheros base por DVD, pasa audio/DSP/ARAM y entra en su bucle de
 frames estable (ver «Fase 5» abajo: 5.000.000 despachos sin
 exception, 1.789.482 escrituras FIFO GX, encuesta PAD por frame).
-No hay APK jugable en el repo ni renderer: sin GPU, el bucle
-emite comandos GX que nadie dibuja todavía. Cuando haya APK
-jugable, se anunciará aquí con su commit, tamaño y SHA, y solo
-entonces merece la pena descargarla para probar el juego.
+No hay APK jugable en el repo: el renderer GX ya existe y está
+verificado en host (Fase 5b: replay de 602 draws a imagen con
+texturas reales), pero todavía no está en la APK. Cuando haya
+APK jugable, se anunciará aquí con su commit, tamaño y SHA, y
+solo entonces merece la pena descargarla para probar el juego.
 
 ## Qué funciona (verificado)
 
@@ -68,17 +69,19 @@ entonces merece la pena descargarla para probar el juego.
 
 1. **~~Dispatch real y HLE pendientes (bloqueador actual nº 1):~~
    HECHO en Fases 2–5:** el juego ejecuta su arranque completo
-   y su bucle de frames en host (ver «Fase 5»). El bloqueador
-   actual nº 1 es el renderer GX + texturas (sin ellos, el
-   bucle emite comandos que nadie dibuja).
+   y su bucle de frames en host (ver «Fase 5»). **~~Renderer GX
+   + texturas (bloqueador nº 1 tras Fase 5):~~ HECHO en host
+   en Fase 5b** (máquina GX, conversiones verificadas y
+   renderer host con frame real); falta el mismo camino en
+   la APK (ver «Fase 5b»).
 2. **HLE completo pendiente:** GX (máquina de estado y
    display lists), callback async de DVD, struct PADStatus,
    audio DSP real, planificador de hilos real. El HLE actual
    cubre arranque + eventos DSP/ARQ + sueño instantáneo.
-3. **GX real pendiente:** solo clear. Falta la máquina de
-   estado GX, display lists interpretadas y texturas
-   convertidas (CMPR/RGB5A3/RGBA8 ya extraídas) para un
-   frame real.
+3. **GX real en APK pendiente:** la máquina de estado GX,
+   display lists y texturas convertidas ya existen y están
+   verificadas en host (Fase 5b); falta el mismo camino en
+   la APK (GLES3) para un frame real en dispositivo.
 4. **Audio MusyX/DSP pendiente:** backend AAudio/OpenSL sin
    implementar, sin mezcla ni streams.
 5. **Input pendiente:** sin mapeo táctil a stick/botones/gatillos ni
@@ -878,50 +881,51 @@ no avanza de pantalla). Distinguir título de carga exige
 capturar el texto de `OSReport` o inyectar Start; queda
 como siguiente paso, no como afirmación de este tramo.
 
-### GX por HLE (paso 1): estado
+### GX por HLE (paso 1): HECHO en host en Fase 5b
 
-- Hecho: `GXInit`/FIFO como stubs con log (heredados),
-  `GXLoadTexObj` HLE con registro (texObj, mapa).
-  El resto de GX (`GXSetViewport`, `GXFlush`,
-  `GXSetTexCoordGen2`, `__GXSetMatrixIndex`, `GXBegin`,
-  ...) corre como código huésped y emite comandos FIFO
-  reales (trazados en `0xCC008000`, no interpretados).
-- NO hecho (sin maquillar): máquina de estado GX en el
-  host (matrices, viewport, estado fijo, TEV) ni
-  interpretación de display lists; TEV multi-etapa,
-  `Rcp_*` y EFB siguen siendo no-op documentados, no
-  promesas. El siguiente subpaso es esa máquina de estado
-  (o, antes, decidir si el render va por GLES en la APK o
-  por un rasterizador host para verificación).
+- Hecho en Fase 5: `GXInit`/FIFO como stubs con log
+  (heredados), `GXLoadTexObj` HLE con registro (texObj,
+  mapa). El resto de GX corría como código huésped y
+  emitía comandos FIFO reales (trazados en `0xCC008000`,
+  no interpretados).
+- **Hecho en Fase 5b (ver sección «Fase 5b»):** máquina
+  de estado GX en host (`gamecube_runtime/gx.{h,cpp}`:
+  CP/XF/BP, viewport, matrices, draws VAT1, DLs leídas de
+  RAM), validada con 602 draws QUADS VAT1 a EOF sin
+  desconocidos. TEV multi-etapa, `Rcp_*` y EFB siguen
+  siendo no-op documentados, no promesas.
 
-### Texturas (paso 2): NO verificado todavía
+### Texturas (paso 2): VERIFICADO en Fase 5b
 
-Evidencia de partida, no conversión: `GXLoadTexObj`
-registra texObj `0x816C0020`, mapa 0 (desde
-`selectTextureWithSecondary`, probablemente textura UI).
-Falta: decodificar el `GXTexObj` huésped (dirección de
-imagen, formato, tamaño), resolverlo contra
-`assets/inventarios/texturas.csv` y convertir (RGB5A3,
-CMPR con reorden DXT1 o descompresión, RGBA8
-reentrelazado, IA8/I8/I4/IA4 a RGBA, sin TLUT). Ninguna
-conversión está verificada en este tramo; si una
-dirección no resuelve, la regla sigue siendo log +
-placeholder magenta/negra documentada, no inventar
+Evidencia de partida (Fase 5): `GXLoadTexObj` registra
+texObj `0x816C0020`, mapa 0 (desde
+`selectTextureWithSecondary`, textura UI).
+**Hecho en Fase 5b (ver sección «Fase 5b»):** layout
+`GXTexObj` cerrado y verificado (3 texObjs vivos: barra
+IA8, Rare RGB5A3, Dolby CMPR, todos con tamaño base
+exacto), conversiones C++ verificadas byte a byte contra
+la referencia del extractor (**10 PASS, 0 FAIL**, incluido
+CMPR con tile de 32 B corregido). Origen verificado:
+activos embebidos en `.rodata` del DOL (data5), no bancos
+TEX. Si una dirección no resuelve, la regla sigue siendo
+log + placeholder magenta/negra documentada, no inventar
 texturas.
 
-### Verificación por subpaso (paso 3): estado honesto
+### Verificación por subpaso (paso 3): HECHO en host en Fase 5b
 
 - Clear (Fase 0 APK): intacto, sin reconstruir (ver abajo).
-- Quad con textura convertida: NO verificado (falta
-  conversión + renderer).
-- Display list mínima: NO verificado (DLs huésped solo
-  trazadas como bytes FIFO).
-- HUD/UI: NO verificado como frame (el juego ejecuta
-  `gameTextRun` por frame, pero sin renderer no hay
-  imagen que mostrar).
-- El bucle de juego estable de run14 es la base sobre la
-  que esos subpasos se verificarán; no se presenta como
-  uno de ellos.
+- Quad con textura convertida: **VERIFICADO en host**
+  (Fase 5b: replay 602/602 draws con barra/Rare/Dolby
+  texturizados, logo Rare vertical y legible).
+- Display list mínima: NO aplica en este tramo (0 DLs en
+  el stream; el parser las soporta, leídas de RAM guest,
+  profundidad ≤ 4, sin ejercitar aquí).
+- HUD/UI: el juego ejecuta `gameTextRun` por frame, pero
+  en este tramo no genera draws; el frame renderizado es
+  el de logos (barra/Rare/Dolby), no HUD.
+- El bucle de juego estable de run14 es la base; el frame
+  visible del bucle es el último dibujado (Dolby),
+  retenido en el EFB (ver «Fase 5b»).
 
 ### No-op y limitaciones documentadas (Fase 5)
 
@@ -964,17 +968,275 @@ antes del enlace completo (`cpu.c`, `hle.cpp`, `chassis.cpp`,
 
 ### Qué queda (tras Fase 5, en orden)
 
-1. Máquina de estado GX en host + decodificación
-   `GXTexObj` y conversiones de textura (pasos 1–2).
-2. Renderer (GLES en APK o verificación host) para los
-   subpasos de imagen (paso 3).
+1. ~~Máquina de estado GX en host + decodificación
+   `GXTexObj` y conversiones de textura (pasos 1–2).~~
+   HECHO en Fase 5b (ver abajo).
+2. ~~Renderer (verificación host) para los subpasos de
+   imagen (paso 3).~~ HECHO en host en Fase 5b; falta el
+   mismo camino en la APK (GLES3).
 3. Callback async de DVD + struct `DVDFileInfo` (los
    reads ya son síncronos; falta avisar al juego).
 4. Input: PADStatus real + mapeo táctil/mando (el juego
-   ya encuesta PAD cada frame; con Start debería avanzar
-   de pantalla).
+   ya encuesta PAD cada frame; la inyección Start de
+   diagnóstico no produce efecto observable, ver Fase 5b).
 5. Audio DSP real (tareas DSP, no solo el evento de
    init) + backend de audio.
 6. Paquete de datos Pack B, APK jugable y test en Tab S8.
    La APK Fase 0 sigue siendo solo arranque (ver abajo).
 
+
+## Fase 5b (este tramo): máquina GX en host, texturas verificadas, renderer host y diagnóstico Start
+
+Trabajo en `android-port-base` (commit del tramo al final).
+Ficheros: `cpu/cpu.{h,c}` (captura FIFO, ventana de 32 B),
+`gamecube_runtime/hle.{h,cpp}` (OSReport, TexLoads, PAD de
+diagnóstico), `gamecube_runtime/gx_texture.{h,cpp}` (nuevo),
+`gamecube_runtime/gx.{h,cpp}` (nuevo). Tests host en
+`work-port/fase2-tests/` (fuera del repo): `test_gx.cpp` /
+`build_gx.sh` (runs 15–19), `test_gx_tex.cpp`,
+`test_gx_parse.cpp`, `test_gx_render.cpp` (runs 19).
+
+### Captura FIFO (corrección real, no cosmética)
+
+La captura inicial solo enganchaba `0xCC008000` exacto, pero
+el helper de matriz del SDK usa `psq_st` y su segundo float
+va a `0xCC008004`. El pipe write-gather acepta la ventana
+`0xCC008000–0xCC00801F` (32 B, con recorte en el borde) y
+acumula en orden de store. Efecto medido: el FIFO pasó de
+5.575.591 B (run15) a **5.575.663 B (run19, referencia
+vigente)**, +72 B = 18 floats × 4 B, y las 3 matrices de
+posición pasaron a identidad limpia. Búfer lineal de 32 MB,
+al llenarse deja de añadir pero sigue contando (overflow
+marcado, nunca sobrescritura silenciosa). Desactivada por
+defecto; global monohilo como la traza HW.
+
+### OSReport HLE (solo observación)
+
+`OSReport` 0x8007D8C0 es un stub retail de 0x50 B (vuelca
+r3–r10 y f1–f8 a la pila y retorna, sin imprimir nada). El
+HLE formatea (enteros r4–r10, flotantes f1–f8, resto en pila
+del llamador: arg entero nº k ≥ 7 en `sp + 8 + 4*(k-7)`,
+verificado con la línea `mem` de 16 args; flotantes en pila
+se marcan `[pila-f]`, no se inventan), guarda hasta 200.000
+líneas y loguea las 500 primeras. run19: 24.973 llamadas,
+24.923 de ellas la línea por frame
+`thread: state=0 attr=0 suspend=0` (sin valor discriminante)
+y 50 de init (líneas `mem`/`slot` completas, p. ej.
+`mem 0k/11488992k 0k/1835008k 0k/655264k 316448k/4587424k`).
+Ninguna línea menciona press/start/title/button/pad/input.
+
+### Diagnóstico Start: resultado negativo, con evidencia
+
+Inyección Start (0x1000) por dos vías en test host, ambas
+sin ningún cambio observable en FIFO, DVD, HLE ni OSReport:
+(a) vía `PADRead` (run16: contadores idénticos a run15,
+FIFO byte-idéntico SHA-256
+`b8210738e87adf5bf1e978d973069ae3631d8f2dc3d0882212054357dc8eb579`,
+globales PAD a 0 al final); (b) poke directo en
+`OSSleepThread` (run17: Held/JustPressed quedan en 0x1000
+en RAM al final, pero el FIFO sigue byte-idéntico). La vía
+(b) queda invalidada como prueba: `padUpdate` recomputa los
+globales desde el buffer `PADRead` antes de la lógica del
+frame siguiente, así que el poke se borra antes de leerse.
+La vía (a) es la prueba válida y tampoco muestra efecto.
+Conclusión honesta: con Start mantenido ~24.921 frames no
+hay cambio observable. **No se puede distinguir pantalla de
+título vs pantalla de carga animada con esta evidencia.**
+Hipótesis abiertas, sin decidir: `padUpdate` toma la rama
+err y borra el buffer/globales, o el juego lee input por
+otra vía (interrupciones SI); o la pantalla no espera input
+en esta fase (logos temporizados/atascados, ver «bucle
+estable» abajo). `padUpdate` 0x80014F6C verificado desde el
+código: globales Previous 0x8033B210, Held 0x8033B220,
+Released 0x8033B230, JustPressed 0x8033B240; `PADClamp`
+0x8024E458 no toca botones (si err != 0 retorna; si err
+== 0 solo ajusta sticks/triggers). La inyección es solo
+test host: la APK nunca llama a `SetPadInject`.
+
+### GXTexObj: layout cerrado y verificado
+
+`GXTexObj` = 32 bytes en `struct_juego + 32`: +0 mode0, +4
+mode1, +8 empaquetado (ancho `(v&0x3FF)+1`, alto
+`((v>>10)&0x3FF)+1`, formato `(v>>20)&0xF`), +12 dirección
+de imagen (`0x80000000 | ((w<<5) & 0x01FFFFFF)`), +16 user
+data (struct del juego), +20 formato en plano, +28 u16
+(tiles), +30/+31 (LOD/tile). Struct del juego: +10/+12
+ancho/alto u16, +22 formato, +23/+24 wraps, +32 GXTexObj,
++64 flag, +68 tamaño base (palabra en texObj+36), +96 datos
+embaldosados (texObj+64). Los 3 texObjs vivos de run19
+verifican todo (tamaño de campo = tamaño base calculado):
+
+- `0x816C0020`: 376×104, IA8 (3), imagen `0x816C0060`,
+  78.208 B — barra blanca redondeada (UI).
+- `0x816D3200`: 128×160, RGB5A3 (5), imagen `0x816D3240`,
+  40.960 B — logo Rareware (R dorada sobre azul oscuro).
+- `0x816DD260`: 180×92, CMPR (14), imagen `0x816DD2A0`,
+  8.832 B — logo Dolby Pro Logic II (tile CMPR de 32 B:
+  23×12×32 = 8.832 exacto; con 64 B daría el doble).
+
+**Origen verificado, no el esperado:** ninguno de los 3
+coincide con ningún fotograma de `texturas.csv` por
+(ancho, alto, formato) ni por datos base byte-idénticos en
+los bancos raíz. Agujas del medio (1.024 B) sí aparecen en
+`main.dol`, sección `data5` (fileoff 2.885.344, guest
+`0x802C36E0`): son activos embebidos en `.rodata` del DOL,
+copiados al heap por el juego, no texturas de bancos TEX.
+El decodificador trabaja sobre los bytes RAM, sea cual sea
+su origen, así que esto no bloquea el renderer. Queda
+pendiente una búsqueda con aguja larga en bancos de mapa y
+contenedores no-TEX solo si se quiere cerrar ese cabo.
+
+### Conversiones de textura verificadas (C++ contra referencia)
+
+Porte de `decode_pure` del extractor a
+`gamecube_runtime/gx_texture.*` (mismos tiles, ensanchados,
+CMPR con subbloques fila-mayor e índices MSB-primero,
+RGBA8 con planos AR + GB, IA8/IA4/I4/I8). Test host
+`test_gx_tex.cpp` contra las muestras de `run15/texverify/`
+(decodificadas con el extractor Python verificado):
+**10 PASS, 0 FAIL** — IA8 8×8, CMPR 64×48, RGB5A3 32×32,
+RGBA8 32×32, I8 32×32, IA4 32×32, I4 128×128 (todas byte a
+byte contra el `.rgba` de referencia), RGB565 sintético
+4×4 (0 casos reales en este disco, documentado como
+sintético), errores (paleta → false, tamaño incorrecto →
+false) y placeholder magenta 2×2. Bug encontrado y
+corregido en el porte: el tile CMPR era 64 B y debe ser
+**32 B** (4 subbloques DXT1 de 8 B por tile 8×8). Formatos
+de paleta (8/9/10) devuelven false: necesitan TLUT que no
+va en el blob; 0 casos reales en este disco. Dirección sin
+resolver → log + placeholder magenta documentada, nunca
+texturas inventadas.
+
+### Máquina GX en host (`gamecube_runtime/gx.{h,cpp}`)
+
+Parser C++ sin dependencias Android (stdlib solo): NOP,
+CP (1+1+4), XF (1+4+4n), BP (1+4, registro en byte alto),
+DL (1+4+4, leída de RAM guest, profundidad ≤ 4), INV y
+draws (1+2+vertices). Los códigos 0x20/0x28/0x30/0x38 no
+aparecen y se reportan como desconocidos sin adivinar
+payload. VAT según YAGCD + VCD global (CP 0x50/0x60);
+layout VAT1 validado por patrón y valores:
+`[texmtxidx u8][pos XYZ s16][tex ST f32] = 15 bytes`
+(byte 0 = 0x3C = 60 = GX_IDENTITY en todos los vértices;
+texcoords (0,0),(1,0),(1,1),(0,1) exactas). Atributos
+indexados NO se decodifican (se reportan; todo el stream
+actual es directo). Textura vigente por draw desde la
+lista externa `TexLoads` (el HLE la registra con offset
+FIFO), no desde BP: el stream de esta fase NO trae BP de
+textura porque `GXLoadTexObj` está HLEado.
+**Validación (`test_gx_parse.cpp`, run19, 10 PASS):**
+parseo completo a EOF sin desconocidos, **602 draws QUADS
+VAT1**, 0 DLs, 0 indexados, viewport [320, −240, 16777215,
+662, 582, 16777215], proyección orto en el primer draw
+(tipo 1, [0.003125, −1.0, −0.003809, 0.9123, −0.0101,
+−1.0101]), primer draw full-screen (0,0)–(640,480) z −0.5
+decodificado, último draw Dolby en offset 321.757.
+Escala de posiciones: **empírica /16 para VAT1** (el quad
+(0,0)–(10240,7680) solo cuadra con 640×480 así; el campo
+POSSHFT vale 2, así que la fórmula usada es
+`2^(shift+2)`); pendiente de confirmar contra otro VAT o
+contra el código SDK — no bloquear el render diagnóstico.
+Semántica de BP reg `0x00` con valores tipo color queda
+observada pero sin cerrar (reg-en-byte-alto confirmado,
+no es error de parseo).
+
+### Renderer host: frame real, con evidencia
+
+`test_gx_render.cpp` (fuera del repo): replay de los draws
+con la transformada GX estándar (pos_matrix del draw →
+proyección orto → viewport → región EFB (342,342)–(982,822)
+= canvas 640×480), rasterización por triángulos con
+interpolación baricéntrica de (s,t), texturas decodificadas
+desde `ram.bin` (layout GXTexObj arriba). **602/602 draws
+renderizados, 0 saltados** (`run19/frame602.ppm` + `.txt`).
+Desglose: tex 0 (sin textura) 1 draw, barra 241, Rare 240,
+Dolby 120. El full-screen con texel (0,0) de la barra es
+negro real (la esquina de la textura es negra), así que el
+fondo sale negro; el draw 1 sin textura usa gris-azul
+diagnóstico (32,32,64), documentado como NO color real
+(TEV pendiente), pero queda tapado por el draw 3. La
+altura 439 del full-screen y el desplazamiento vertical
+son el resultado de la proyección orto del juego, no un
+error del renderer. Fases por separado (cada una sobre
+negro, asumiendo el clear estándar entre pantallas de
+logo): `frame_barra.ppm` (242 draws, 1.689 px no negros),
+`frame_rare.ppm` (240 draws, 809 px), `frame_dolby.ppm`
+(120 draws, 398 px). **Verificación visual:** el logo Rare
+sale vertical con la R dorada legible (sin flip vertical);
+la geometría y la orientación de textura son correctas.
+Caveat honesto: el compuesto de 602 draws muestra barra +
+Rare + Dolby solapados arriba a la izquierda (las
+coordenadas del juego los ponen ahí: barra (33,60)–
+(127,84), Rare (64,58)–(99,98), Dolby (57,65)–(107,88) en
+canvas), porque entre fases el FIFO no trae ningún clear
+por draw; si el juego limpia el EFB entre fases, lo hace
+por un mecanismo fuera del FIFO (copia PE con clear, no
+visible en la traza de eventos truncada) y entonces las
+pantallas individuales son las de `frame_*`. El mecanismo
+de clear queda como verificación pendiente, no como
+afirmación. **Después del offset ~321.757 no hay más
+draws en todo el stream** (5,25 MB restantes): el bucle
+estable emite solo estado (frame estable ~216 B: INV +
+BP + XF viewport, 0 draws, sin reescribir proyección ni
+VAT/VCD), así que el frame visible del bucle es el último
+dibujado (Dolby), retenido en el EFB. Esto invalida la
+idea inicial de «un frame del bucle con draws». El bucle
+estable (24.921 frames sin dibujar) no encaja con un
+temporizador simple de logos: candidatos, el callback
+async de DVD nunca invocado o el contador de retraces VI
+por interrupción (que nunca se entrega;
+`VIWaitForRetrace` solo ×2 en todo el run).
+
+### No-regresión host (run20, tras todos los cambios)
+
+`build_gx.sh run20 5000000 300 baseline` (58,875 s):
+motivo `dispatch_cap`, 5.000.000 despachos, PC final
+`0x802440BC`, exception 0, unknown 0, main = 1, init = 1,
+HLE totales 175.450, retrace 2, FIFO 5.575.663 B sin
+overflow. Desglose HLE **idéntico** a run19 (diff vacío):
+`PADRead` ×24.923, `DVDOpen` ×89, `DVDReadAsyncPrio` ×82,
+`GXLoadTexObj` ×600, `OSReport` ×24.973, `OSSleepThread`
+×24.921. FIFO **byte-idéntico** a run19 (SHA-256
+`fb2ba7f822a654623841fad6f400fbfb6a78b8ffc244011750d88d80dcb2014e`).
+Sin regresión frente a run19 ni a run14.
+
+### Build NDK (verificación Fase 5b)
+
+Build `ndk-fase5b`, JOBS=4 (directorio nuevo, 178 C +
+16 C++ desde cero; el primer intento con JOBS=2 se
+reinició a JOBS=4 sin pérdida porque el script escribe
+`.o.tmp` y solo renombra al terminar): PASS, **0 errores**
+(0 líneas `error:`; los «error» del log son símbolos del
+runtime C++, `logic_error`/`length_error`).
+`libstarfox.so` **27.300.944 B**, ELF64 `DYN` AArch64,
+SHA-256
+`ea78bc86240727d77709f777cf8e6e3ac931b45fcdf2cfb045bb40e9bfe80084`
+(Fase 5: 27.260.624 B,
+`c24a7eab1e9eaf578320ceedaea3908dca353abf2f237adb3c0c8766f9efb6ed`),
+comprobación del script «OK: ningún símbolo
+mem_/ppc_/func_/dolrecomp_ sin resolver», 124 undefined
+totales (solo libs del sistema; 120 en Fase 5).
+`android_main` en `T`, `dolrecomp_call_depth` en `B`,
+`GxParser`/`GxDecodeTexture` en `T` (30 símbolos `sfa.*Gx`),
+`gx.cpp`/`gx_texture.cpp`/`cpu.c`/`hle.cpp` compilados
+limpios por separado con clang NDK r28c antes del enlace
+completo.
+
+### Qué queda (tras Fase 5b, en orden)
+
+1. Renderer en APK (GLES3): el camino host funciona; falta
+   el mismo camino en la APK (quads texturados desde el
+   parser + texturas decodificadas) cuando haya SDK.
+2. Callback async de DVD + struct `DVDFileInfo` (candidato
+   principal al atasco tras el logo Dolby, junto al
+   contador de retraces VI por interrupción).
+3. Input: PADStatus real + mapeo táctil/mando (la vía
+   `PADRead` con Start no produce efecto observable; el
+   poke directo queda invalidado por el recompute de
+   `padUpdate`).
+4. Mecanismo de clear EFB entre fases (copia PE) y fórmula
+   exacta de escala de posiciones / semántica de BP 0x00
+   (pendientes, no bloquean el render diagnóstico).
+5. Audio DSP real + backend de audio.
+6. Paquete de datos Pack B, APK jugable y test en Tab S8.
+   La APK Fase 0 sigue siendo solo arranque (ver abajo).

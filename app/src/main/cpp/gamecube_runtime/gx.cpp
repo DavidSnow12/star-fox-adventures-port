@@ -1,0 +1,668 @@
+// Maquina de estado GX en host (ver gx.h para los layouts).
+#include "gamecube_runtime/gx.h"
+
+#include <algorithm>
+#include <cstdio>
+#include <cstring>
+
+namespace sfa {
+namespace {
+
+uint32_t ReadBe32(const uint8_t* p) {
+  return (static_cast<uint32_t>(p[0]) << 24) |
+         (static_cast<uint32_t>(p[1]) << 16) |
+         (static_cast<uint32_t>(p[2]) << 8) | static_cast<uint32_t>(p[3]);
+}
+
+uint16_t ReadBe16(const uint8_t* p) {
+  return static_cast<uint16_t>((static_cast<uint16_t>(p[0]) << 8) |
+                               static_cast<uint16_t>(p[1]));
+}
+
+float BitsToFloat(uint32_t bits) {
+  float f = 0.0f;
+  std::memcpy(&f, &bits, sizeof(f));
+  return f;
+}
+
+std::string HexContext(const uint8_t* p, size_t n) {
+  std::string out;
+  char buf[4];
+  for (size_t i = 0; i < n; ++i) {
+    std::snprintf(buf, sizeof(buf), "%02X", p[i]);
+    out += buf;
+  }
+  return out;
+}
+
+// Tamano en bytes de un componente directo (sin indices).
+// type: 0=U8, 1=S8, 2=U16, 3=S16, 4=F32. -1 si desconocido.
+int CompSize(int type) {
+  switch (type) {
+    case 0:
+    case 1:
+      return 1;
+    case 2:
+    case 3:
+      return 2;
+    case 4:
+      return 4;
+    default:
+      return -1;
+  }
+}
+
+int ColorSize(int type) {
+  switch (type) {
+    case 0:
+    case 3:
+      return 2;
+    case 1:
+      return 3;
+    case 2:
+    case 4:
+    case 5:
+      return 4;
+    default:
+      return -1;
+  }
+}
+
+}  // namespace
+
+GxParser::GxParser() = default;
+
+void GxParser::SetTexLoads(const std::vector<GxTexLoad>& loads) {
+  tex_loads_ = loads;
+  std::sort(tex_loads_.begin(), tex_loads_.end(),
+            [](const GxTexLoad& a, const GxTexLoad& b) {
+              return a.fifo_offset < b.fifo_offset;
+            });
+}
+
+bool GxParser::Parse(const uint8_t* fifo, size_t fifo_len) {
+  draws_.clear();
+  stats_ = GxStats();
+  cp_.clear();
+  bp_.clear();
+  xf_.clear();
+  first_unknown_.clear();
+  failed_ = false;
+  stats_.total_bytes = fifo_len;
+  bool ok = ParseStream(fifo, fifo_len, false, 0, 0);
+  return ok && !failed_;
+}
+
+bool GxParser::ParseStream(const uint8_t* data, size_t len, bool in_dl,
+                           int depth, uint64_t base_offset) {
+  size_t pos = 0;
+  while (pos < len) {
+    uint8_t op = data[pos];
+    uint64_t fifo_offset = in_dl ? base_offset : pos;
+    if (op == 0x00) {
+      ++stats_.n_nop;
+      ++pos;
+      continue;
+    }
+    if (op == 0x08) {
+      if (pos + 6 > len) break;
+      uint32_t addr = data[pos + 1];
+      uint32_t value = ReadBe32(data + pos + 2);
+      cp_[addr] = value;
+      ++stats_.n_cp;
+      pos += 6;
+      continue;
+    }
+    if (op == 0x10) {
+      if (pos + 5 > len) break;
+      uint32_t header = ReadBe32(data + pos + 1);
+      uint32_t count = (header >> 16) + 1;
+      uint32_t addr = header & 0xFFFF;
+      if (pos + 5 + 4 * static_cast<size_t>(count) > len) break;
+      std::vector<uint32_t> words;
+      for (uint32_t i = 0; i < count; ++i) {
+        words.push_back(ReadBe32(data + pos + 5 + 4 * i));
+      }
+      for (uint32_t i = 0; i < count; ++i) {
+        xf_[addr + i] = std::vector<uint32_t>(1, words[i]);
+      }
+      ++stats_.n_xf;
+      pos += 5 + 4 * static_cast<size_t>(count);
+      continue;
+    }
+    if (op == 0x61) {
+      if (pos + 5 > len) break;
+      uint32_t v = ReadBe32(data + pos + 1);
+      bp_[v >> 24] = v & 0xFFFFFF;
+      ++stats_.n_bp;
+      pos += 5;
+      continue;
+    }
+    if (op == 0x40) {
+      if (pos + 9 > len) break;
+      uint32_t addr = ReadBe32(data + pos + 1);
+      uint32_t size = ReadBe32(data + pos + 5);
+      ++stats_.n_dl;
+      stats_.dl_bytes += size;
+      if (depth >= 4) {
+        first_unknown_ = "DL anidado demasiado profundo en offset " +
+                         std::to_string(fifo_offset);
+        failed_ = true;
+        return false;
+      }
+      if (ram_reader_ == nullptr) {
+        first_unknown_ = "DL sin lector RAM en offset " +
+                         std::to_string(fifo_offset);
+        failed_ = true;
+        return false;
+      }
+      const uint8_t* dl = ram_reader_(addr, size);
+      if (dl == nullptr) {
+        char buf[128];
+        std::snprintf(buf, sizeof(buf),
+                      "DL ilegible guest=0x%08X size=%u en offset %llu",
+                      addr, size,
+                      static_cast<unsigned long long>(fifo_offset));
+        first_unknown_ = buf;
+        failed_ = true;
+        return false;
+      }
+      if (!ParseStream(dl, size, true, depth + 1, fifo_offset)) {
+        return false;
+      }
+      pos += 9;
+      continue;
+    }
+    if (op == 0x48) {
+      ++stats_.n_inv;
+      ++pos;
+      continue;
+    }
+    if (op >= 0x80 && op <= 0xBF) {
+      if (!ParseDraw(data, len, &pos, op & 0xF8, op & 0x07,
+                     fifo_offset)) {
+        return false;
+      }
+      continue;
+    }
+    // Opcode desconocido (incluye 0x20/0x28/0x30/0x38): detener
+    // sin adivinar su payload.
+    {
+      size_t ctx_len = len - pos < 16 ? len - pos : 16;
+      char buf[256];
+      std::snprintf(buf, sizeof(buf),
+                    "opcode desconocido 0x%02X en offset %llu contexto "
+                    "%s",
+                    op, static_cast<unsigned long long>(fifo_offset),
+                    HexContext(data + pos, ctx_len).c_str());
+      first_unknown_ = buf;
+      failed_ = true;
+      return false;
+    }
+  }
+  if (pos != len && !in_dl) {
+    first_unknown_ = "stream truncado en offset " + std::to_string(pos);
+    failed_ = true;
+    return false;
+  }
+  return true;
+}
+
+bool GxParser::ParseDraw(const uint8_t* data, size_t len, size_t* pos_io,
+                         int prim, int vat, uint64_t fifo_offset) {
+  size_t pos = *pos_io;
+  if (pos + 3 > len) {
+    first_unknown_ = "draw truncado en offset " +
+                     std::to_string(fifo_offset);
+    failed_ = true;
+    return false;
+  }
+  uint32_t count = ReadBe16(data + pos + 1);
+  uint32_t vsize = VertexSize(vat);
+  if (vsize == 0) {
+    first_unknown_ = "draw con VAT no decodificable (vat=" +
+                     std::to_string(vat) + ") en offset " +
+                     std::to_string(fifo_offset);
+    failed_ = true;
+    return false;
+  }
+  if (pos + 3 + static_cast<size_t>(vsize) * count > len) {
+    first_unknown_ = "vertices truncados en offset " +
+                     std::to_string(fifo_offset);
+    failed_ = true;
+    return false;
+  }
+  GxDraw draw;
+  draw.fifo_offset = static_cast<uint32_t>(fifo_offset);
+  draw.prim = prim;
+  draw.vat = vat;
+  draw.tex_obj = TexLoadFor(fifo_offset);
+  draw.tex_map = TexMapFor(fifo_offset);
+  draw.has_viewport = Viewport(draw.viewport);
+  draw.has_projection = Projection(draw.projection, &draw.projection_type);
+  // Matriz de posicion vigente (CP 0x30, PNMTXIDX en bits 0-5).
+  int pnmtx = 0;
+  auto cp_it = cp_.find(0x30);
+  if (cp_it != cp_.end()) pnmtx = static_cast<int>(cp_it->second & 0x3F);
+  PosMatrix(pnmtx, draw.pos_matrix);
+  size_t vpos = pos + 3;
+  for (uint32_t i = 0; i < count; ++i) {
+    GxVertex v;
+    uint32_t consumed = 0;
+    if (!DecodeVertex(data + vpos, vsize, vat, &consumed, &v)) {
+      first_unknown_ = "vertice no decodificable en offset " +
+                       std::to_string(fifo_offset);
+      failed_ = true;
+      return false;
+    }
+    draw.verts.push_back(v);
+    vpos += consumed;
+  }
+  // Si el vertice trae PNMTXIDX propio, la matriz del draw es la
+  // del primer vertice (GX permite una por vertice; el renderer
+  // actual usa una por draw y este caso no aparece en el stream).
+  if (!draw.verts.empty() && draw.verts[0].has_pos_mtx_idx) {
+    PosMatrix(draw.verts[0].pos_mtx_idx, draw.pos_matrix);
+  }
+  draws_.push_back(draw);
+  ++stats_.n_draw;
+  ++stats_.draws_by_prim[prim];
+  ++stats_.draws_by_vat[vat];
+  *pos_io = pos + 3 + static_cast<size_t>(vsize) * count;
+  return true;
+}
+
+GxParser::VatFmt GxParser::VatFormat(int vat) const {
+  VatFmt f;
+  auto get = [&](uint32_t addr) -> uint32_t {
+    auto it = cp_.find(addr);
+    return it == cp_.end() ? 0 : it->second;
+  };
+  uint32_t a = get(0x70 + vat);
+  uint32_t b = get(0x80 + vat);
+  uint32_t c = get(0x90 + vat);
+  f.pos_count = static_cast<int>(a & 0x1);
+  f.pos_type = static_cast<int>((a >> 1) & 0x7);
+  f.pos_shift = static_cast<int>((a >> 4) & 0x1F);
+  f.nrm_count = static_cast<int>((a >> 9) & 0x1);
+  f.nrm_type = static_cast<int>((a >> 10) & 0x7);
+  f.col0_count = static_cast<int>((a >> 13) & 0x1);
+  f.col0_type = static_cast<int>((a >> 14) & 0x7);
+  f.col1_count = static_cast<int>((a >> 17) & 0x1);
+  f.col1_type = static_cast<int>((a >> 18) & 0x7);
+  f.tex_count[0] = static_cast<int>((a >> 21) & 0x1);
+  f.tex_type[0] = static_cast<int>((a >> 22) & 0x7);
+  f.tex_shift[0] = static_cast<int>((a >> 25) & 0x1F);
+  f.tex_count[1] = static_cast<int>(b & 0x1);
+  f.tex_type[1] = static_cast<int>((b >> 1) & 0x7);
+  f.tex_shift[1] = static_cast<int>((b >> 4) & 0x1F);
+  f.tex_count[2] = static_cast<int>((b >> 9) & 0x1);
+  f.tex_type[2] = static_cast<int>((b >> 10) & 0x7);
+  f.tex_shift[2] = static_cast<int>((b >> 13) & 0x1F);
+  f.tex_count[3] = static_cast<int>((b >> 18) & 0x1);
+  f.tex_type[3] = static_cast<int>((b >> 19) & 0x7);
+  f.tex_shift[3] = static_cast<int>((b >> 22) & 0x1F);
+  f.tex_count[4] = static_cast<int>((b >> 27) & 0x1);
+  f.tex_type[4] = static_cast<int>((b >> 28) & 0x7);
+  f.tex_shift[4] = 0;  // TEX4SHFT no esta en VAT_B (ver YAGCD)
+  f.tex_count[5] = static_cast<int>(c & 0x1);
+  f.tex_type[5] = static_cast<int>((c >> 1) & 0x7);
+  f.tex_shift[5] = static_cast<int>((c >> 4) & 0x1F);
+  f.tex_count[6] = static_cast<int>((c >> 9) & 0x1);
+  f.tex_type[6] = static_cast<int>((c >> 10) & 0x7);
+  f.tex_shift[6] = static_cast<int>((c >> 13) & 0x1F);
+  f.tex_count[7] = static_cast<int>((c >> 18) & 0x1);
+  f.tex_type[7] = static_cast<int>((c >> 19) & 0x7);
+  f.tex_shift[7] = static_cast<int>((c >> 22) & 0x1F);
+  return f;
+}
+
+uint32_t GxParser::VertexSize(int vat) const {
+  auto vcd_lo_it = cp_.find(0x50);
+  auto vcd_hi_it = cp_.find(0x60);
+  if (vcd_lo_it == cp_.end() || vcd_hi_it == cp_.end()) return 0;
+  uint32_t lo = vcd_lo_it->second;
+  uint32_t hi = vcd_hi_it->second;
+  VatFmt f = VatFormat(vat);
+  uint32_t size = 0;
+  auto direct = [](uint32_t field) -> bool { return field == 1; };
+  // Indices de matriz (1 byte cada uno si presentes).
+  if (lo & 0x100) size += 1;  // PNMTXIDX
+  for (int i = 0; i < 8; ++i) {
+    if (lo & (0x200u << i)) size += 1;  // TEXnMTXIDX
+  }
+  // POS
+  uint32_t pos_field = lo & 0x3;
+  if (pos_field == 0) {
+    // Sin posicion: un draw sin posicion no es valido aqui.
+    return 0;
+  }
+  if (!direct(pos_field)) return 0;
+  int cs = CompSize(f.pos_type);
+  if (cs < 0) return 0;
+  size += static_cast<uint32_t>(cs) * (f.pos_count ? 3u : 2u);
+  // NRM
+  uint32_t nrm_field = (lo >> 2) & 0x3;
+  if (nrm_field != 0) {
+    if (!direct(nrm_field)) return 0;
+    if (f.nrm_count) return 0;  // NBT (9 comps) no soportado
+    cs = CompSize(f.nrm_type);
+    if (cs < 0) return 0;
+    size += static_cast<uint32_t>(cs) * 3u;
+  }
+  // CLR0 / CLR1
+  uint32_t c0_field = (lo >> 4) & 0x3;
+  if (c0_field != 0) {
+    if (!direct(c0_field)) return 0;
+    cs = ColorSize(f.col0_type);
+    if (cs < 0) return 0;
+    size += static_cast<uint32_t>(cs);
+  }
+  uint32_t c1_field = (lo >> 6) & 0x3;
+  if (c1_field != 0) {
+    if (!direct(c1_field)) return 0;
+    cs = ColorSize(f.col1_type);
+    if (cs < 0) return 0;
+    size += static_cast<uint32_t>(cs);
+  }
+  // TEX0-7
+  for (int i = 0; i < 8; ++i) {
+    uint32_t t_field = (hi >> (2 * i)) & 0x3;
+    if (t_field == 0) continue;
+    if (!direct(t_field)) return 0;
+    cs = CompSize(f.tex_type[i]);
+    if (cs < 0) return 0;
+    size += static_cast<uint32_t>(cs) * (f.tex_count[i] ? 2u : 1u);
+  }
+  return size;
+}
+
+bool GxParser::ReadComp(const uint8_t* data, size_t avail, size_t* off,
+                        int type, int shift, float* out) const {
+  int cs = CompSize(type);
+  if (cs < 0 || *off + static_cast<size_t>(cs) > avail) return false;
+  const uint8_t* p = data + *off;
+  double v = 0.0;
+  switch (type) {
+    case 0:
+      v = p[0];
+      break;
+    case 1:
+      v = static_cast<int8_t>(p[0]);
+      break;
+    case 2:
+      v = ReadBe16(p);
+      break;
+    case 3:
+      v = static_cast<int16_t>(ReadBe16(p));
+      break;
+    case 4:
+      *out = BitsToFloat(ReadBe32(p));
+      *off += 4;
+      return true;
+    default:
+      return false;
+  }
+  // Divisor validado para VAT1 (shift 2 -> /16). Ver gx.h.
+  double divisor = 1.0;
+  for (int i = 0; i < shift + 2; ++i) divisor *= 2.0;
+  *out = static_cast<float>(v / divisor);
+  *off += static_cast<size_t>(cs);
+  return true;
+}
+
+bool GxParser::ReadColor(const uint8_t* data, size_t avail, size_t* off,
+                         int type, int count, GxVertex* out) const {
+  (void)count;  // el tamano lo da el formato, no el contador
+  int cs = ColorSize(type);
+  if (cs < 0 || *off + static_cast<size_t>(cs) > avail) return false;
+  const uint8_t* p = data + *off;
+  auto expand5 = [](uint32_t v) -> uint8_t {
+    return static_cast<uint8_t>((v << 3) | (v >> 2));
+  };
+  auto expand6 = [](uint32_t v) -> uint8_t {
+    return static_cast<uint8_t>((v << 2) | (v >> 4));
+  };
+  auto expand4 = [](uint32_t v) -> uint8_t {
+    return static_cast<uint8_t>((v << 4) | v);
+  };
+  switch (type) {
+    case 0: {
+      uint16_t v = ReadBe16(p);
+      out->r = expand5((v >> 11) & 31);
+      out->g = expand6((v >> 5) & 63);
+      out->b = expand5(v & 31);
+      out->a = 255;
+      break;
+    }
+    case 1:
+      out->r = p[0];
+      out->g = p[1];
+      out->b = p[2];
+      out->a = 255;
+      break;
+    case 2:
+      out->r = p[0];
+      out->g = p[1];
+      out->b = p[2];
+      out->a = 255;
+      break;
+    case 3: {
+      uint16_t v = ReadBe16(p);
+      out->r = expand4((v >> 12) & 15);
+      out->g = expand4((v >> 8) & 15);
+      out->b = expand4((v >> 4) & 15);
+      out->a = expand4(v & 15);
+      break;
+    }
+    case 4: {
+      // RGBA6 empaquetado en 4 bytes (6 bits por canal).
+      uint32_t r6 = p[0] >> 2;
+      uint32_t g6 = ((p[0] & 3) << 4) | (p[1] >> 4);
+      uint32_t b6 = ((p[1] & 15) << 2) | (p[2] >> 6);
+      uint32_t a6 = p[2] & 63;
+      auto expand6b = [](uint32_t v) -> uint8_t {
+        return static_cast<uint8_t>((v * 255 + 31) / 63);
+      };
+      out->r = expand6b(r6);
+      out->g = expand6b(g6);
+      out->b = expand6b(b6);
+      out->a = expand6b(a6);
+      break;
+    }
+    case 5:
+      out->r = p[0];
+      out->g = p[1];
+      out->b = p[2];
+      out->a = p[3];
+      break;
+    default:
+      return false;
+  }
+  out->has_color = true;
+  *off += static_cast<size_t>(cs);
+  return true;
+}
+
+bool GxParser::DecodeVertex(const uint8_t* data, size_t avail, int vat,
+                            uint32_t* consumed, GxVertex* out) const {
+  auto vcd_lo_it = cp_.find(0x50);
+  auto vcd_hi_it = cp_.find(0x60);
+  if (vcd_lo_it == cp_.end() || vcd_hi_it == cp_.end()) return false;
+  uint32_t lo = vcd_lo_it->second;
+  uint32_t hi = vcd_hi_it->second;
+  VatFmt f = VatFormat(vat);
+  size_t off = 0;
+  auto need_direct = [&](uint32_t field) -> bool {
+    return field == 1;
+  };
+  if (lo & 0x100) {
+    if (off + 1 > avail) return false;
+    out->pos_mtx_idx = data[off];
+    out->has_pos_mtx_idx = true;
+    off += 1;
+  }
+  for (int i = 0; i < 8; ++i) {
+    if (lo & (0x200u << i)) {
+      if (off + 1 > avail) return false;
+      if (i == 0) out->tex_mtx_idx = data[off];
+      off += 1;
+    }
+  }
+  uint32_t pos_field = lo & 0x3;
+  if (!need_direct(pos_field)) return false;
+  float x = 0, y = 0, z = 0;
+  if (!ReadComp(data, avail, &off, f.pos_type, f.pos_shift, &x)) {
+    return false;
+  }
+  if (!ReadComp(data, avail, &off, f.pos_type, f.pos_shift, &y)) {
+    return false;
+  }
+  if (f.pos_count) {
+    if (!ReadComp(data, avail, &off, f.pos_type, f.pos_shift, &z)) {
+      return false;
+    }
+  }
+  out->x = x;
+  out->y = y;
+  out->z = z;
+  uint32_t nrm_field = (lo >> 2) & 0x3;
+  if (nrm_field != 0) {
+    if (!need_direct(nrm_field) || f.nrm_count) return false;
+    float nx = 0, ny = 0, nz = 0;
+    // Normales: normalizacion directa (sin shift de VAT; la
+    // iluminacion no la usa el renderer actual).
+    auto read_nrm = [&](float* v) -> bool {
+      int cs = CompSize(f.nrm_type);
+      if (cs < 0 || off + static_cast<size_t>(cs) > avail) return false;
+      const uint8_t* p = data + off;
+      switch (f.nrm_type) {
+        case 0:
+          *v = p[0] / 255.0f;
+          break;
+        case 1:
+          *v = static_cast<int8_t>(p[0]) / 127.0f;
+          break;
+        case 2:
+          *v = ReadBe16(p) / 65535.0f;
+          break;
+        case 3:
+          *v = static_cast<int16_t>(ReadBe16(p)) / 32767.0f;
+          break;
+        case 4:
+          *v = BitsToFloat(ReadBe32(p));
+          break;
+        default:
+          return false;
+      }
+      off += static_cast<size_t>(cs);
+      return true;
+    };
+    if (!read_nrm(&nx) || !read_nrm(&ny) || !read_nrm(&nz)) return false;
+    out->nx = nx;
+    out->ny = ny;
+    out->nz = nz;
+    out->has_normal = true;
+  }
+  uint32_t c0_field = (lo >> 4) & 0x3;
+  if (c0_field != 0) {
+    if (!need_direct(c0_field)) return false;
+    if (!ReadColor(data, avail, &off, f.col0_type, f.col0_count, out)) {
+      return false;
+    }
+  }
+  uint32_t c1_field = (lo >> 6) & 0x3;
+  if (c1_field != 0) {
+    if (!need_direct(c1_field)) return false;
+    // CLR1 se decodifica pero no se guarda (el renderer usa CLR0).
+    GxVertex tmp;
+    if (!ReadColor(data, avail, &off, f.col1_type, f.col1_count, &tmp)) {
+      return false;
+    }
+  }
+  for (int i = 0; i < 8; ++i) {
+    uint32_t t_field = (hi >> (2 * i)) & 0x3;
+    if (t_field == 0) continue;
+    if (!need_direct(t_field)) return false;
+    float s = 0, t = 0;
+    if (!ReadComp(data, avail, &off, f.tex_type[i], f.tex_shift[i],
+                  &s)) {
+      return false;
+    }
+    if (f.tex_count[i]) {
+      if (!ReadComp(data, avail, &off, f.tex_type[i], f.tex_shift[i],
+                    &t)) {
+        return false;
+      }
+    }
+    if (i == 0) {
+      out->s = s;
+      out->t = t;
+      out->has_tex = true;
+    }
+  }
+  *consumed = static_cast<uint32_t>(off);
+  return true;
+}
+
+uint32_t GxParser::TexLoadFor(uint64_t fifo_offset) const {
+  uint32_t tex = 0;
+  for (size_t i = 0; i < tex_loads_.size(); ++i) {
+    if (tex_loads_[i].fifo_offset <= fifo_offset) {
+      tex = tex_loads_[i].tex_obj;
+    } else {
+      break;
+    }
+  }
+  return tex;
+}
+
+int GxParser::TexMapFor(uint64_t fifo_offset) const {
+  int map = 0;
+  for (size_t i = 0; i < tex_loads_.size(); ++i) {
+    if (tex_loads_[i].fifo_offset <= fifo_offset) {
+      map = tex_loads_[i].map;
+    } else {
+      break;
+    }
+  }
+  return map;
+}
+
+bool GxParser::Viewport(float out[6]) const {
+  for (int i = 0; i < 6; ++i) {
+    auto it = xf_.find(0x101A + i);
+    if (it == xf_.end() || it->second.empty()) return false;
+    out[i] = BitsToFloat(it->second[0]);
+  }
+  return true;
+}
+
+bool GxParser::Projection(float out[6], int* type) const {
+  for (int i = 0; i < 6; ++i) {
+    auto it = xf_.find(0x1020 + i);
+    if (it == xf_.end() || it->second.empty()) return false;
+    out[i] = BitsToFloat(it->second[0]);
+  }
+  auto it = xf_.find(0x1026);
+  if (it != xf_.end() && !it->second.empty() && type != nullptr) {
+    *type = static_cast<int>(it->second[0]);
+  } else if (type != nullptr) {
+    *type = 0;
+  }
+  return true;
+}
+
+void GxParser::PosMatrix(int index, float out[12]) const {
+  static const float kIdentity[12] = {1, 0, 0, 0, 0, 1,
+                                      0, 0, 0, 0, 1, 0};
+  for (int i = 0; i < 12; ++i) out[i] = kIdentity[i];
+  uint32_t base = static_cast<uint32_t>(index) * 4u;
+  for (int i = 0; i < 12; ++i) {
+    auto it = xf_.find(base + i);
+    if (it == xf_.end() || it->second.empty()) return;
+    out[i] = BitsToFloat(it->second[0]);
+  }
+}
+
+}  // namespace sfa

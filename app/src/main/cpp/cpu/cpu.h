@@ -228,6 +228,29 @@ int sfa_hw_trace_write_csv(const char *path);
 /* CSV detalle: los (maximo) 20 primeros eventos por direccion. */
 int sfa_hw_trace_write_events_csv(const char *path);
 
+/* Captura del stream FIFO GX (Fase 5b). Las mem_write* a
+ * 0xCC008000 (WGPIPE) son el unico camino por el que el codigo
+ * huesped alimenta a la GP: la traza HW solo guardaba el primer
+ * valor por direccion, insuficiente para interpretar comandos.
+ * Con la captura activa, cada escritura a la ventana del
+ * write-gather pipe (0xCC008000-0xCC00801F; el SDK escribe la
+ * matriz con psq_st y el segundo float va a 0xCC008004) anade
+ * sus bytes en orden big-endian al bufer lineal (capacidad fija;
+ * al llenarse se deja de anadir pero se sigue contando y se
+ * marca overflow, nunca se sobrescribe en silencio). El bufer
+ * es global monohilo como la traza (mismo motivo). Desactivada
+ * por defecto; el test host la activa antes de correr el juego
+ * y la vuelca a fichero para el parser GX offline. En la APK
+ * futura el mismo bufer alimentara al parser en vivo por
+ * frames (Reset entre frames), sin fichero. */
+void sfa_fifo_capture_set_enabled(int enabled);
+void sfa_fifo_capture_reset(void);
+unsigned long long sfa_fifo_capture_count(void);
+unsigned long long sfa_fifo_capture_overflow(void);
+unsigned long long sfa_fifo_capture_capacity(void);
+const u8 *sfa_fifo_capture_data(void);
+int sfa_fifo_capture_write_file(const char *path);
+
 /* Excepciones y control. */
 void ppc_take_exception(CPUState *cpu, u32 exception, u32 vector, u32 srr0,
                         u32 srr1_info);
