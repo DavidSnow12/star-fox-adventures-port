@@ -39,6 +39,19 @@ class GCMemory {
   uint32_t Read32(uint32_t address) const;
   void Write32(uint32_t address, uint32_t value);
 
+  // Accesos big-endian usados por el cargador y por mem.*.
+  uint8_t Read8(uint32_t address) const;
+  uint16_t Read16(uint32_t address) const;
+  uint64_t Read64(uint32_t address) const;
+  void Write8(uint32_t address, uint8_t value);
+  void Write16(uint32_t address, uint16_t value);
+  void Write64(uint32_t address, uint64_t value);
+  // Copia un bloque guest->host (para el cargador DOL). Devuelve
+  // false si el rango no cabe en RAM.
+  bool WriteBytes(uint32_t address, const uint8_t* data, uint32_t size);
+  // Pone a cero el BSS en su dirección exacta (ver dol_loader).
+  bool ZeroBss();
+
   // Marca un rango como modificado (SMC). De momento solo registra;
   // la re-traducción/invalidación de código es trabajo del runtime.
   void MarkCodeModified(uint32_t address, uint32_t size);

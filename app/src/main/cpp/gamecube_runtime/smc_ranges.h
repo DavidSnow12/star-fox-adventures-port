@@ -24,12 +24,17 @@ namespace sfa {
 
 struct SmcRange {
   uint32_t start_gc = 0;  // Dirección guest (0x8000..., no host).
-  uint32_t end_gc = 0;
+  uint32_t end_gc = 0;    // INCLUSIVO (start == end = una dirección).
   bool patched = false;
 };
 
 class SmcTable {
  public:
+  // Carga rangos desde el texto de generated_smc.txt: una línea
+  // por rango "0xSTART-0xEND", más una cabecera de texto que se
+  // ignora. Devuelve el número de rangos cargados (0 si el texto
+  // no contiene ninguno). El fichero real tiene 107 rangos.
+  uint32_t LoadFromText(const char* text);
   void AddRange(uint32_t start_gc, uint32_t end_gc);
   bool IsInSmcRange(uint32_t guest_address) const;
   // STUB: registra el patch, no modifica código ejecutado todavía.

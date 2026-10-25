@@ -21,6 +21,7 @@
 // la tabla real se generará desde ese fichero en la integración.
 
 #include <cstddef>
+#include <cstdint>
 
 namespace sfa {
 
@@ -41,11 +42,26 @@ class SymbolDispatch {
   void* Lookup(const char* name);
   std::size_t RegisteredCount() const { return count_; }
 
+  // Tabla guest (dirección del juego, no puntero host): se usa
+  // antes de enlazar los chunks DolRecomp, para resolver nombres
+  // de arranque a direcciones guest verificadas en
+  // generated_symbols.h. RegisterGuestBoot() registra la cadena
+  // de arranque: __start, __init_registers, __init_data,
+  // __init_hardware, __flush_cache, memset, memcpy.
+  void RegisterGuest(const char* name, uint32_t guest_address);
+  // Devuelve 0 si no está registrado.
+  uint32_t LookupGuest(const char* name) const;
+  void RegisterGuestBoot();
+  std::size_t GuestCount() const { return guest_count_; }
+
  private:
   static constexpr std::size_t kMaxEntries = 64;
   const char* names_[kMaxEntries] = {};
   void* addresses_[kMaxEntries] = {};
   std::size_t count_ = 0;
+  const char* guest_names_[kMaxEntries] = {};
+  uint32_t guest_addresses_[kMaxEntries] = {};
+  std::size_t guest_count_ = 0;
 };
 
 }  // namespace sfa

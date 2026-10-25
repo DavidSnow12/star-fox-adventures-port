@@ -17,6 +17,11 @@ namespace sfa {
 class GameCubeRuntime {
  public:
   bool Init();
+  // Carga un DOL real en la RAM guest (Fase 1). Devuelve false si
+  // el fichero no existe o no valida; en ese caso el runtime sigue
+  // en modo base (sin juego) y el motivo queda en boot.log. La ruta
+  // la dará el paquete de datos, no está hardcodeada aquí.
+  bool LoadGame(const char* dol_path);
   void Shutdown();
 
   // Un frame completo (llamado desde android_main cuando hay ventana).

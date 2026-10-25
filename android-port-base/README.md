@@ -134,6 +134,21 @@ No adoptado todavía, con motivo (no ignorado):
   heredar de NativeActivity y expondrá callbacks JNI de surface,
   y el loop nativo pasará a ser llamado desde Java.
 
+## Avance 2026-10-25: Fases 1-3 del runtime (ver PORT-STATUS.md)
+
+- **Fase 1 hecha y verificada en host:** `dol_loader.*` carga el
+  `main.dol` real (2 text / 2.875.456 B, 8 data / 529.888 B, BSS a
+  cero, entry `0x80003140`, palabra en entry `0x48000139`).
+- **Memoria guest hecha:** `cpu_state.h` (todos los campos que usan
+  los chunks) y `mem.*` (8/16/32/64 big-endian, guest->host, hardware
+  0xCC00xxxx a 0, fuera de rango con exception).
+- **Dispatch y SMC hechos como base:** tabla guest de arranque (7
+  símbolos) y `LoadFromText` con 107 rangos SMC exactos.
+- **Pendiente, sin maquillar:** shim global `cpu/cpu.h` y enlace de
+  los 176 chunks, HLE (GX/VI/DVD/SI/DSP...), GX real, MusyX, input,
+  paquete de datos y build APK (sin SDK aquí). Ver
+  `PORT-STATUS.md` para el estado completo y los bloqueadores.
+
 ## Siguiente bloque (después de esta base)
 
 1. Cargador de `main.dol` + RAM/BSS en direcciones exactas.

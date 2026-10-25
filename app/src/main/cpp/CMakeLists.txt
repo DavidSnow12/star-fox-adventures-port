@@ -18,6 +18,8 @@ add_library(starfox SHARED
     gamecube_runtime/runtime.cpp
     gamecube_runtime/cpu.cpp
     gamecube_runtime/memory.cpp
+    gamecube_runtime/dol_loader.cpp
+    gamecube_runtime/mem.cpp
     gamecube_runtime/symbol_dispatch.cpp
     gamecube_runtime/smc_ranges.cpp
     renderer/renderer.cpp

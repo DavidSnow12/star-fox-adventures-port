@@ -1,5 +1,6 @@
 #include "gamecube_runtime/runtime.h"
 
+#include "gamecube_runtime/dol_loader.h"
 #include "log.h"
 
 namespace sfa {
@@ -15,6 +16,19 @@ bool GameCubeRuntime::Init() {
   SFA_LOGI("runtime: dispatch con %zu imports minimos pendientes, SMC "
            "con %zu rangos registrados",
            SymbolDispatch::kMinimalImportCount, smc_.Count());
+  return true;
+}
+
+bool GameCubeRuntime::LoadGame(const char* dol_path) {
+  DolLoadResult result = LoadDolFromFile(dol_path, &memory_);
+  if (!result.ok) {
+    SFA_LOGE("runtime: no se pudo cargar el DOL (%s)",
+             result.error != nullptr ? result.error : "desconocido");
+    return false;
+  }
+  dispatch_.RegisterGuestBoot();
+  SFA_LOGI("runtime: DOL cargado, entry 0x%08X, listo para dispatch",
+           result.entry);
   return true;
 }
 
