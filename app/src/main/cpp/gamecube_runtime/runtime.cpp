@@ -1,0 +1,38 @@
+#include "gamecube_runtime/runtime.h"
+
+#include "log.h"
+
+namespace sfa {
+
+bool GameCubeRuntime::Init() {
+  if (!memory_.Init()) return false;
+  cpu_.Reset();
+  audio_.Init();
+  audio_.Start();
+  input_.Reset();
+  running_ = true;
+  SFA_LOGI("runtime: inicializado (base, sin codigo de juego todavia)");
+  SFA_LOGI("runtime: dispatch con %zu imports minimos pendientes, SMC "
+           "con %zu rangos registrados",
+           SymbolDispatch::kMinimalImportCount, smc_.Count());
+  return true;
+}
+
+void GameCubeRuntime::Shutdown() {
+  running_ = false;
+  audio_.Shutdown();
+  SFA_LOGI("runtime: apagado");
+}
+
+void GameCubeRuntime::Frame(Renderer* renderer) {
+  if (!running_ || renderer == nullptr) return;
+  // Ritmo nominal de la base: un paso de CPU stub por frame.
+  // El runtime real ejecutará aquí los chunks DolRecomp hasta el
+  // siguiente sincronismo (VI/DVD/audio), no un paso por frame.
+  cpu_.Step();
+  audio_.Pump();
+  renderer->DrawQuad();
+  renderer->RenderFrame();
+}
+
+}  // namespace sfa

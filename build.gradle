@@ -1,0 +1,18 @@
+// Top-level build file de la base del port Android (rama android-port-base).
+// En Android Studio, abrir la carpeta que contiene settings.gradle.
+buildscript {
+    repositories {
+        google()
+        mavenCentral()
+    }
+    dependencies {
+        classpath 'com.android.application:8.3.2'
+    }
+}
+
+allprojects {
+    repositories {
+        google()
+        mavenCentral()
+    }
+}
