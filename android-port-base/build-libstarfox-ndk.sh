@@ -17,6 +17,13 @@
 # sobrescribia al primero y el .so quedaba sin mem_*/ppc_*.
 # La recompilacion es incremental: un objeto mas nuevo que su
 # fuente no se recompila.
+# NOTA Fase 2 (2026-10-25): se anadio -fPIC a C y C++: sin el, el
+# enlace del .so rechazaba reubicaciones absolutas contra
+# simbolos globales de hle.cpp (bug latente de la Fase 1: sus
+# objetos no referenciaban globales de datos y enlazaban igual).
+# Los objetos viejos sin -fPIC que ya enlazaban en la Fase 1 se
+# reutilizan; solo se recompilan con -fPIC los ficheros nuevos o
+# tocados (el script es incremental por fecha, no por flags).
 set -eu
 ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 OUT=${1:-/tmp/sfa-ndk-build}
@@ -42,7 +49,7 @@ objname() {
 compile_c() {
   o="$OUT/obj/$(objname "$1").o"
   if [ ! -f "$o" ] || [ "$1" -nt "$o" ]; then
-    $CC -c -O2 -std=c11 -I"$CPP" -I"$GEN" \
+    $CC -c -O2 -fPIC -std=c11 -I"$CPP" -I"$GEN" \
       -I"$NDK_DIR/sources/android/native_app_glue" "$1" -o "$o"
   fi
   printf '%s\n' "$o"
@@ -50,7 +57,7 @@ compile_c() {
 compile_cxx() {
   o="$OUT/obj/$(objname "$1").o"
   if [ ! -f "$o" ] || [ "$1" -nt "$o" ]; then
-    $CXX -c -O2 -std=c++17 -I"$CPP" -I"$GEN" \
+    $CXX -c -O2 -fPIC -std=c++17 -I"$CPP" -I"$GEN" \
       -I"$NDK_DIR/sources/android/native_app_glue" "$1" -o "$o"
   fi
   printf '%s\n' "$o"

@@ -1,5 +1,6 @@
 #include "gamecube_runtime/runtime.h"
 
+#include "cpu/cpu.h"
 #include "gamecube_runtime/dol_loader.h"
 #include "log.h"
 
@@ -11,6 +12,11 @@ bool GameCubeRuntime::Init() {
   audio_.Init();
   audio_.Start();
   input_.Reset();
+  game_loaded_ = false;
+  boot_finished_ = false;
+  boot_reached_main_ = false;
+  boot_reached_init_ = false;
+  boot_reached_video_init_ = false;
   running_ = true;
   SFA_LOGI("runtime: inicializado (base, sin codigo de juego todavia)");
   SFA_LOGI("runtime: dispatch con %zu imports minimos pendientes, SMC "
@@ -28,8 +34,20 @@ bool GameCubeRuntime::LoadGame(const char* dol_path) {
   }
   dispatch_.RegisterGuestBoot();
   dispatch_.RegisterGuestInit();
+  // Chassis Fase 2: el CPUState apunta a la RAM guest ya cargada
+  // con el DOL real, con el HLE instalado y la traza activa.
+  InitCpuForBoot(&cpu_state_, memory_.RamData(), memory_.RamSize(),
+                 result.entry);
+  hle_.Install(&cpu_state_);
+  sfa_hw_trace_reset();
+  sfa_hw_trace_set_enabled(1);
+  game_loaded_ = true;
+  boot_finished_ = false;
+  boot_reached_main_ = false;
+  boot_reached_init_ = false;
+  boot_reached_video_init_ = false;
   SFA_LOGI("runtime: DOL cargado, entry 0x%08X, dispatch guest con "
-           "%zu simbolos (boot + init)",
+           "%zu simbolos (boot + init), chassis+HLE listos",
            result.entry, dispatch_.GuestCount());
   return true;
 }
@@ -37,15 +55,45 @@ bool GameCubeRuntime::LoadGame(const char* dol_path) {
 void GameCubeRuntime::Shutdown() {
   running_ = false;
   audio_.Shutdown();
+  sfa_hw_trace_set_enabled(0);
   SFA_LOGI("runtime: apagado");
+}
+
+bool GameCubeRuntime::DumpHwTrace(const char* csv_path,
+                                  const char* events_path) {
+  int a = sfa_hw_trace_write_csv(csv_path);
+  int b = sfa_hw_trace_write_events_csv(events_path);
+  return a == 0 && b == 0;
 }
 
 void GameCubeRuntime::Frame(Renderer* renderer) {
   if (!running_ || renderer == nullptr) return;
-  // Ritmo nominal de la base: un paso de CPU stub por frame.
-  // El runtime real ejecutará aquí los chunks DolRecomp hasta el
-  // siguiente sincronismo (VI/DVD/audio), no un paso por frame.
-  cpu_.Step();
+  if (game_loaded_ && !boot_finished_) {
+    // Rebanada del chassis por frame: el arranque completo puede
+    // necesitar varias rebanadas; el estado (pc, registros, RAM)
+    // vive en cpu_state_ y persiste entre frames.
+    ChassisResult slice =
+        RunChassis(&cpu_state_, &hle_, 100000, 0.25,
+                   kBootVideoInitAddress);
+    if (slice.reached_main) boot_reached_main_ = true;
+    if (slice.reached_init) boot_reached_init_ = true;
+    if (slice.reached_stop_pc) boot_reached_video_init_ = true;
+    if (slice.reached_stop_pc ||
+        slice.reason == ChassisResult::kException ||
+        slice.reason == ChassisResult::kUnknownPc ||
+        slice.reason == ChassisResult::kReachedExit) {
+      boot_finished_ = true;
+      SFA_LOGI("runtime: arranque terminado: %s, despachos en "
+               "rebanada %llu, main=%d init=%d videoInit=%d",
+               slice.reason_text,
+               static_cast<unsigned long long>(slice.dispatches),
+               boot_reached_main_ ? 1 : 0, boot_reached_init_ ? 1 : 0,
+               boot_reached_video_init_ ? 1 : 0);
+    }
+  } else if (!game_loaded_) {
+    // Fase 0 intacta: sin juego, el paso stub de siempre.
+    cpu_.Step();
+  }
   audio_.Pump();
   renderer->DrawQuad();
   renderer->RenderFrame();

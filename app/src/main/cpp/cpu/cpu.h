@@ -205,6 +205,28 @@ void mem_write8(CPUState *cpu, u32 addr, u8 value);
  * como extern; debe existir exactamente una definicion, aqui). */
 extern unsigned dolrecomp_call_depth;
 
+/* Traza dinamica de hardware (Fase 4 del port). Los chunks llaman
+ * directamente a las mem_* C, no a los envoltorios C++, asi que la
+ * traza vive aqui, no en mem.cpp: cualquier acceso a 0xCC00xxxx
+ * (el unico rango hardware que mem_* reconoce) queda registrado
+ * con direccion efectiva, tamano, lectura/escritura, valor y PC
+ * guest (ctx->pc en el momento del acceso, que los chunks asignan
+ * antes de cada instruccion). Para no inundar el log, por
+ * direccion solo se guardan los 20 primeros eventos en detalle;
+ * los contadores totales siguen contando despues del tope.
+ * El estado es global porque el chassis es monohilo (un solo
+ * CPUState activo); no hay cerrojos. Desactivada por defecto:
+ * el HLE la activa al cargar un juego. */
+void sfa_hw_trace_set_enabled(int enabled);
+void sfa_hw_trace_reset(void);
+unsigned long long sfa_hw_trace_total(void);
+unsigned sfa_hw_trace_distinct(void);
+/* CSV resumen: una fila por direccion, ordenada por total desc.
+ * Devuelve 0 si se escribio, -1 si no se pudo abrir el fichero. */
+int sfa_hw_trace_write_csv(const char *path);
+/* CSV detalle: los (maximo) 20 primeros eventos por direccion. */
+int sfa_hw_trace_write_events_csv(const char *path);
+
 /* Excepciones y control. */
 void ppc_take_exception(CPUState *cpu, u32 exception, u32 vector, u32 srr0,
                         u32 srr1_info);

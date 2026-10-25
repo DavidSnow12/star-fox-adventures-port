@@ -11,10 +11,162 @@
 #include "cpu/cpu.h"
 
 #include <math.h>
+#include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <fenv.h>
 
 unsigned dolrecomp_call_depth = 0;
+
+/* ---------------- traza dinamica de hardware (Fase 4) ---------------- */
+
+#define SFA_HW_TRACE_MAX_ADDRS 2048
+#define SFA_HW_TRACE_EVENTS_PER_ADDR 20
+
+typedef struct {
+    u32 addr;
+    u64 reads;
+    u64 writes;
+    u32 first_count;
+    u32 first_pc[SFA_HW_TRACE_EVENTS_PER_ADDR];
+    u8 first_is_write[SFA_HW_TRACE_EVENTS_PER_ADDR];
+    u8 first_size[SFA_HW_TRACE_EVENTS_PER_ADDR];
+    u64 first_value[SFA_HW_TRACE_EVENTS_PER_ADDR];
+} SfaHwTraceEntry;
+
+static int sfa_hw_trace_enabled = 0;
+static SfaHwTraceEntry sfa_hw_trace_entries[SFA_HW_TRACE_MAX_ADDRS];
+static unsigned sfa_hw_trace_n = 0;
+static unsigned long long sfa_hw_trace_total_count = 0;
+static unsigned long long sfa_hw_trace_dropped_addrs = 0;
+
+static void sfa_hw_trace_record(CPUState *cpu, u32 addr, u8 size,
+                                int is_write, u64 value) {
+    if (!sfa_hw_trace_enabled)
+        return;
+    sfa_hw_trace_total_count++;
+    unsigned i;
+    for (i = 0; i < sfa_hw_trace_n; i++) {
+        if (sfa_hw_trace_entries[i].addr == addr)
+            break;
+    }
+    if (i == sfa_hw_trace_n) {
+        if (sfa_hw_trace_n >= SFA_HW_TRACE_MAX_ADDRS) {
+            sfa_hw_trace_dropped_addrs++;
+            return;
+        }
+        memset(&sfa_hw_trace_entries[i], 0, sizeof(sfa_hw_trace_entries[i]));
+        sfa_hw_trace_entries[i].addr = addr;
+        sfa_hw_trace_n++;
+    }
+    SfaHwTraceEntry *e = &sfa_hw_trace_entries[i];
+    if (is_write)
+        e->writes++;
+    else
+        e->reads++;
+    if (e->first_count < SFA_HW_TRACE_EVENTS_PER_ADDR) {
+        unsigned slot = e->first_count++;
+        e->first_pc[slot] = cpu ? cpu->pc : 0;
+        e->first_is_write[slot] = (u8)is_write;
+        e->first_size[slot] = size;
+        e->first_value[slot] = value;
+    }
+}
+
+void sfa_hw_trace_set_enabled(int enabled) {
+    sfa_hw_trace_enabled = enabled ? 1 : 0;
+}
+
+void sfa_hw_trace_reset(void) {
+    sfa_hw_trace_n = 0;
+    sfa_hw_trace_total_count = 0;
+    sfa_hw_trace_dropped_addrs = 0;
+    memset(sfa_hw_trace_entries, 0, sizeof(sfa_hw_trace_entries));
+}
+
+unsigned long long sfa_hw_trace_total(void) {
+    return sfa_hw_trace_total_count;
+}
+
+unsigned sfa_hw_trace_distinct(void) {
+    return sfa_hw_trace_n;
+}
+
+static int sfa_hw_trace_entry_cmp(const void *a, const void *b) {
+    const SfaHwTraceEntry *ea = (const SfaHwTraceEntry *)a;
+    const SfaHwTraceEntry *eb = (const SfaHwTraceEntry *)b;
+    u64 ta = ea->reads + ea->writes;
+    u64 tb = eb->reads + eb->writes;
+    if (ta != tb)
+        return ta < tb ? 1 : -1;
+    return ea->addr < eb->addr ? -1 : (ea->addr > eb->addr ? 1 : 0);
+}
+
+int sfa_hw_trace_write_csv(const char *path) {
+    if (path == NULL)
+        return -1;
+    FILE *f = fopen(path, "w");
+    if (f == NULL)
+        return -1;
+    SfaHwTraceEntry *sorted = NULL;
+    if (sfa_hw_trace_n > 0) {
+        sorted = (SfaHwTraceEntry *)malloc(
+            sizeof(SfaHwTraceEntry) * sfa_hw_trace_n);
+        if (sorted == NULL) {
+            fclose(f);
+            return -1;
+        }
+        memcpy(sorted, sfa_hw_trace_entries,
+               sizeof(SfaHwTraceEntry) * sfa_hw_trace_n);
+        qsort(sorted, sfa_hw_trace_n, sizeof(SfaHwTraceEntry),
+              sfa_hw_trace_entry_cmp);
+    }
+    fprintf(f, "address,reads,writes,total,first_pc,first_op,first_size,"
+               "first_value\n");
+    for (unsigned i = 0; i < sfa_hw_trace_n; i++) {
+        SfaHwTraceEntry *e = &sorted[i];
+        if (e->first_count > 0) {
+            fprintf(f, "0x%08X,%llu,%llu,%llu,0x%08X,%s,%u,0x%llX\n",
+                    e->addr, (unsigned long long)e->reads,
+                    (unsigned long long)e->writes,
+                    (unsigned long long)(e->reads + e->writes),
+                    e->first_pc[0], e->first_is_write[0] ? "W" : "R",
+                    e->first_size[0],
+                    (unsigned long long)e->first_value[0]);
+        } else {
+            fprintf(f, "0x%08X,%llu,%llu,%llu,,,, \n",
+                    e->addr, (unsigned long long)e->reads,
+                    (unsigned long long)e->writes,
+                    (unsigned long long)(e->reads + e->writes));
+        }
+    }
+    fprintf(f, "# total=%llu distinct=%u dropped_addrs=%llu\n",
+            sfa_hw_trace_total_count, sfa_hw_trace_n,
+            sfa_hw_trace_dropped_addrs);
+    free(sorted);
+    fclose(f);
+    return 0;
+}
+
+int sfa_hw_trace_write_events_csv(const char *path) {
+    if (path == NULL)
+        return -1;
+    FILE *f = fopen(path, "w");
+    if (f == NULL)
+        return -1;
+    fprintf(f, "address,seq,op,size,value,guest_pc\n");
+    for (unsigned i = 0; i < sfa_hw_trace_n; i++) {
+        SfaHwTraceEntry *e = &sfa_hw_trace_entries[i];
+        for (unsigned j = 0; j < e->first_count; j++) {
+            fprintf(f, "0x%08X,%u,%s,%u,0x%llX,0x%08X\n",
+                    e->addr, j, e->first_is_write[j] ? "W" : "R",
+                    e->first_size[j],
+                    (unsigned long long)e->first_value[j], e->first_pc[j]);
+        }
+    }
+    fclose(f);
+    return 0;
+}
 
 /* ---------------- memoria guest ---------------- */
 
@@ -114,11 +266,17 @@ static void write_be64(u8 *p, u64 v) {
 u8 mem_read8(CPUState *cpu, u32 addr) {
     bool hw = false;
     u8 *p = read_ptr(cpu, addr, 1, &hw);
-    if (hw)
+    if (hw) {
+        sfa_hw_trace_record(cpu, addr, 1, 0, 0);
         return 0;
+    }
     if (p == NULL) {
-        if (cpu != NULL)
+        if (cpu != NULL) {
             cpu->exception = 1;
+            // DAR = direccion efectiva fallida (como en una DSI
+            // real): el chassis la registra para diagnosticar.
+            cpu->dar = addr;
+        }
         return 0;
     }
     return p[0];
@@ -127,11 +285,17 @@ u8 mem_read8(CPUState *cpu, u32 addr) {
 u16 mem_read16(CPUState *cpu, u32 addr) {
     bool hw = false;
     u8 *p = read_ptr(cpu, addr, 2, &hw);
-    if (hw)
+    if (hw) {
+        sfa_hw_trace_record(cpu, addr, 2, 0, 0);
         return 0;
+    }
     if (p == NULL) {
-        if (cpu != NULL)
+        if (cpu != NULL) {
             cpu->exception = 1;
+            // DAR = direccion efectiva fallida (como en una DSI
+            // real): el chassis la registra para diagnosticar.
+            cpu->dar = addr;
+        }
         return 0;
     }
     return read_be16(p);
@@ -140,11 +304,17 @@ u16 mem_read16(CPUState *cpu, u32 addr) {
 u32 mem_read32(CPUState *cpu, u32 addr) {
     bool hw = false;
     u8 *p = read_ptr(cpu, addr, 4, &hw);
-    if (hw)
+    if (hw) {
+        sfa_hw_trace_record(cpu, addr, 4, 0, 0);
         return 0;
+    }
     if (p == NULL) {
-        if (cpu != NULL)
+        if (cpu != NULL) {
             cpu->exception = 1;
+            // DAR = direccion efectiva fallida (como en una DSI
+            // real): el chassis la registra para diagnosticar.
+            cpu->dar = addr;
+        }
         return 0;
     }
     return read_be32(p);
@@ -153,11 +323,17 @@ u32 mem_read32(CPUState *cpu, u32 addr) {
 u64 mem_read64(CPUState *cpu, u32 addr) {
     bool hw = false;
     u8 *p = read_ptr(cpu, addr, 8, &hw);
-    if (hw)
+    if (hw) {
+        sfa_hw_trace_record(cpu, addr, 8, 0, 0);
         return 0;
+    }
     if (p == NULL) {
-        if (cpu != NULL)
+        if (cpu != NULL) {
             cpu->exception = 1;
+            // DAR = direccion efectiva fallida (como en una DSI
+            // real): el chassis la registra para diagnosticar.
+            cpu->dar = addr;
+        }
         return 0;
     }
     return read_be64(p);
@@ -166,11 +342,15 @@ u64 mem_read64(CPUState *cpu, u32 addr) {
 void mem_write8(CPUState *cpu, u32 addr, u8 value) {
     bool hw = false;
     u8 *p = write_ptr(cpu, addr, 1, &hw);
-    if (hw)
+    if (hw) {
+        sfa_hw_trace_record(cpu, addr, 1, 1, value);
         return;
+    }
     if (p == NULL) {
-        if (cpu != NULL)
+        if (cpu != NULL) {
             cpu->exception = 1;
+            cpu->dar = addr;
+        }
         return;
     }
     clear_matching_reservation(cpu, addr);
@@ -180,11 +360,15 @@ void mem_write8(CPUState *cpu, u32 addr, u8 value) {
 void mem_write16(CPUState *cpu, u32 addr, u16 value) {
     bool hw = false;
     u8 *p = write_ptr(cpu, addr, 2, &hw);
-    if (hw)
+    if (hw) {
+        sfa_hw_trace_record(cpu, addr, 2, 1, value);
         return;
+    }
     if (p == NULL) {
-        if (cpu != NULL)
+        if (cpu != NULL) {
             cpu->exception = 1;
+            cpu->dar = addr;
+        }
         return;
     }
     clear_matching_reservation(cpu, addr);
@@ -194,11 +378,15 @@ void mem_write16(CPUState *cpu, u32 addr, u16 value) {
 void mem_write32(CPUState *cpu, u32 addr, u32 value) {
     bool hw = false;
     u8 *p = write_ptr(cpu, addr, 4, &hw);
-    if (hw)
+    if (hw) {
+        sfa_hw_trace_record(cpu, addr, 4, 1, value);
         return;
+    }
     if (p == NULL) {
-        if (cpu != NULL)
+        if (cpu != NULL) {
             cpu->exception = 1;
+            cpu->dar = addr;
+        }
         return;
     }
     clear_matching_reservation(cpu, addr);
@@ -208,11 +396,15 @@ void mem_write32(CPUState *cpu, u32 addr, u32 value) {
 void mem_write64(CPUState *cpu, u32 addr, u64 value) {
     bool hw = false;
     u8 *p = write_ptr(cpu, addr, 8, &hw);
-    if (hw)
+    if (hw) {
+        sfa_hw_trace_record(cpu, addr, 8, 1, value);
         return;
+    }
     if (p == NULL) {
-        if (cpu != NULL)
+        if (cpu != NULL) {
             cpu->exception = 1;
+            cpu->dar = addr;
+        }
         return;
     }
     clear_matching_reservation(cpu, addr);

@@ -383,10 +383,11 @@ con `OUT` persistente y dio resultados idénticos.
   8 / 529.888 B, palabra en entry 0x48000139, BSS primero y
   último a cero. RESULTADO: TODO OK.
 - **APK Fase 0 intacta:** este tramo no la reconstruye ni la
-  toca (su fichero no aparece modificado en `git status`); el
-  runtime que arranca la app sigue siendo el stub, así que su
-  comportamiento de arranque no cambia. La APK con chunks
-  llegará cuando haya dispatch real + HLE (Fase 2), no antes.
+  toca (su fichero no aparece modificado en `git status`, 57.916 B
+  sin cambios). El runtime ya tiene chassis + HLE en código, pero
+  `Frame()` solo los usa cuando hay un juego cargado, y la APK
+  Fase 0 nunca carga ninguno: su comportamiento de arranque no
+  cambia. La APK con chunks llegará con el GX real, no antes.
 
 **Fidelidad honesta de los `ppc_*` (límites de esta fase):**
 la aritmética FP es doble plana con redondeo a f32 en las
@@ -398,19 +399,304 @@ bit-exactitud de la estimación queda para la Fase 2). Nada de
 esto está validado ejecutando el juego: solo enlaza y pasa
 tests de unidad.
 
-**Qué bloquea la Fase 2 (dispatch real desde 0x80003140):**
-falta (1) conectar el runtime (`GameCubeRuntime::Frame`) a
-`dolrecomp_run_blocks()`/`dolrecomp_call()` con un `CPUState`
-cuya `ram` apunte a la `GCMemory` cargada con el DOL, y (2) el
-HLE mínimo de arranque en el orden de `init` (OS → DVD → VI →
-PAD → LC/DC → GXInit → audio → carga de ficheros), porque el
-primer bloque real llamará a esas familias y hoy devolvería
-`exception` o se quedaría sin respuesta. Sin eso, llamar a
-`__start` es correr a ciegas: enlazado sí, ejecutable todavía no.
+**Fase 2 resuelta en este tramo (ver sección "Fases 2–4" al
+final):** el runtime ya conecta `Frame()` con el chassis de
+dispatch real y el HLE mínimo de arranque; la ruta
+`0x80003140 → main → init → videoInit` está verificada en
+test host sin exception. Lo que queda es el GX real y la
+frontera ARAM (ver abajo), no el dispatch.
 
 ## Orden que queda
 
-1. Dispatch real desde `0x80003140` + HLE mínimo de arranque
-   (OS/GX/VI/DVD/SI) para que __start avance.
-2. GX real (primer frame) y luego DSP/MusyX e input.
+1. ~~Dispatch real desde `0x80003140` + HLE mínimo de arranque
+   (OS/GX/VI/DVD/SI) para que __start avance.~~ HECHO en este
+   tramo (Fases 2–4, ver abajo): ruta a videoInit verificada y
+   exploración hasta la frontera ARAM.
+2. GX real (primer frame) + ARAM/DSP (la frontera actual es
+   `__ARChecksize` esperando el estado ARAM en `0xCC005016`) y
+   luego input y carga de ficheros (DVD) hasta gameLoop.
 3. Paquete de datos + build APK + validación + test en Tab S8.
+
+## Fases 2–4 (este tramo): dispatch real, HLE mínimo y traza HW
+
+Código nuevo: `gamecube_runtime/chassis.{h,cpp}` (bucle de
+dispatch), `gamecube_runtime/hle.{h,cpp}` (43 entradas HLE),
+`runtime.{h,cpp}` (conexión `Frame()`), `cpu/cpu.{h,c}`
+(traza HW + DAR en accesos fuera de rango),
+`build-libstarfox-ndk.sh` (añade `-fPIC`, ver abajo).
+Tests host en `work-port/fase2-tests/` (fuera del repo):
+`test_boot.cpp` (puerta de paso) y `test_trace2.cpp`
+(exploración sin stop-PC, NO es puerta de paso).
+
+### Ruta ejecutada (Fase 2, verificada)
+
+Chassis: cada iteración despacha `dolrecomp_call(cpu, pc)`,
+repone `downcount` a 0 antes de cada despacho (los chunks
+ceden al chassis con `downcount <= -256`) y avanza el
+`timebase` simulado 10.000 por despacho (no es exacto por
+ciclo; `mftb` ya ve pasar el tiempo). Paradas limpias, nunca
+silenciosas: stop-PC, exit `0x8028DE18`, exception, PC
+desconocido o topes. La interceptación HLE solo puede ocurrir
+en el despacho (los chunks nunca llaman a `dolrecomp_call`
+internamente: `bl` intra-chunk es `goto`, `bl` entre chunks
+pone `lr` y devuelve al chassis; `blr` usa el switch de
+retorno). Un handler HLE pone `pc = lr` y devuelve true: vale
+tanto para `bl` como para tail-call `b`.
+
+Cadena real observada: `__start` (0x80003140) →
+`__init_registers` → `__init_hardware` (llama a `__OSPSInit`
+0x80241628 y `__OSCacheInit` 0x802428AC) → `__init_data`
+(memcpy / `__flush_cache`) → `DBInit` 0x80247714 → `OSInit` →
+`__check_pad3` (0x80003100) → `__init_user` 0x80247680 →
+`main` 0x800214A4 → `init` 0x80020F8C (detectado por rango
+[0x80020F8C, 0x800214A4): `main → init` es `bl` intra-chunk
+chunk_0007, nunca se despacha exacto) → `videoInit`
+0x80049D84 (chunk distinto: sí se despacha exacto).
+
+Primeras 10 llamadas HLE en orden (retorno entre paréntesis):
+`__OSPSInit` ← 0x80003368, `__OSCacheInit` ← 0x8000336C,
+`DBInit` ← 0x8000323C, `OSInit` ← 0x80003240,
+`__init_user` ← 0x80003268, `OSInit` ← 0x80020FB8 (segunda
+vez, desde init), `DVDInit` ← 0x80020FBC, `VIInit` ←
+0x80020FC0, `PADInit` ← 0x80020FC4, `LCEnable` ← 0x80020FC8.
+`videoInit` llama después, en orden: OSGetArenaLo/Hi,
+DCStoreRange, DCInvalidateRange, GXInit, OSInitAlloc,
+VIConfigure, GXInitFifoBase, GXSetCPUFifo, GXSetGPFifo,
+GXInitFifoLimits, GXSetCPUFifo, GXSetGPFifo, OSInitThreadQueue,
+VIFlush, VIWaitForRetrace ×2.
+
+### HLE implementado y su comportamiento (Fase 3)
+
+- OS: OSInit marca init y registra la arena provisional;
+  OSInitAlloc acepta lo/hi coherentes del llamador y reinicia
+  el bump allocator del heap en lo (alineado a 32);
+  OSGetArenaLo/Hi devuelven la arena provisional
+  `0x80400000–0x81700000` (por encima de la pila
+  `0x803F9E58` y del fin del BSS `0x803E4458`, dentro de RAM
+  `0x81800000`; videoInit luego la fija a
+  `0x80400A00–0x81700000` con su OSInitAlloc real). Alarmas
+  (OSInitAlarm/OSSetAlarm/OSCancelAlarm) = no-op con log,
+  nunca se disparan en esta fase. Hilos: OSCreateThread
+  registra y devuelve 1, OSResumeThread marca runnable y
+  devuelve 1; no hay ejecución real de hilos (el chassis
+  monohilo ES el scheduler).
+- Heap: OSAllocFromHeap 0x80241DCC = bump allocator HLE
+  (bloques alineados a 32 dentro de la arena, 0 si no cabe;
+  el handle de r3 se ignora: un solo heap global);
+  OSFreeToHeap 0x80241EC8 = no-op con log (fuga acotada a
+  init; pendiente para sesiones largas). Motivo documentado:
+  el OSAllocFromHeap real trabaja sobre la cabecera que
+  OSInitAlloc debería escribir en RAM; sin ella sigue
+  punteros basura (ver Exceptions).
+- DVD (del árbol extraído, nunca DVD físico): DVDInit marca
+  flag; DVDOpen lee el nombre guest (máx. 1.024 chars),
+  prueba `raíz + "/" + nombre` y `raíz + nombre`, abre con
+  `fopen("rb")`, guarda tamaño y una entrada por dirección
+  guest fileInfo, devuelve 1/0. DVDOpen NO escribe todavía
+  los campos del struct DVDFileInfo (layout pendiente de
+  verificar contra `initLoadFiles`). DVDReadPrio lee con
+  `fseek`/`fread` y copia a RAM guest (puntero directo si
+  está en RAM incl. alias no cacheado `0xC0000000`, si no
+  byte a byte), devuelve bytes o -1. DVDReadAsyncPrio es
+  síncrono en esta fase (lee ya, devuelve 1) y NO invoca el
+  callback (r7) todavía. DVDClose cierra y borra; leer después
+  devuelve -1. OJO: el `DVDRead` 0x80015888 es una función
+  DEL JUEGO (wrapper propio), NO el read del SDK: no se HLEa;
+  los reads SDK son DVDReadPrio 0x80249948 y
+  DVDReadAsyncPrio 0x80249858. OSGetTick 0x80247614 NO se HLEa
+  a propósito: su código real usa `mftb` del timebase del
+  chassis, ya correcto; HLEarlo arriesgaría el ABI r3:r4.
+- VI: VIInit resetea el contador de retrace; VIWaitForRetrace
+  incrementa y devuelve AL INSTANTE (nunca bloquea: un wait
+  real colgaría el chassis); VIConfigure/VIFlush = stubs con
+  log (el modo de vídeo / framebuffer real es trabajo GX).
+- PAD: PADInit = estado a cero; PADRead = stub con log que
+  devuelve 0 y NO escribe todavía el struct PADStatus (layout
+  pendiente); la RAM del buffer ya es cero tras el BSS, así
+  que `padUpdate` lee el estado neutro, que es el
+  comportamiento pedido para esta fase. PADReset/PADRecalibrate
+  aparecen en la exploración posterior (ver abajo) como stubs
+  con log (añadidos al recorrer la ruta: PADReset 0x8024EDC0,
+  PADRecalibrate 0x8024EEC0).
+- LC/DC: LCEnable, DCStoreRange, DCFlushRange,
+  DCInvalidateRange = no-op con log (sin caches separadas en
+  recompilación); DCZeroRange SÍ pone a cero la RAM guest
+  (puntero directo si está en RAM, si no byte a byte).
+- GX en esta fase: GXInit = stub con log (el GX real es la
+  fase siguiente); GXInitFifoBase/Ptrs/Limits, GXSetCPUFifo,
+  GXSetGPFifo = stubs con log, sin tocar hardware ni FIFO.
+- SPR por fallback: el emisor C de DolRecomp solo traduce
+  unos pocos SPR; mfhid0/mthid0 (SPR 1008) y mfl2cr/mtl2cr
+  (1017) llegan como fallback y el HLE los modela con estado
+  propio (hid0_/l2cr_, inicio 0 provisional: el código
+  observado solo hace OR de bits sobre lo leído). OJO: el
+  número SPR va partido en el raw (bits 11-15 mitad alta,
+  16-20 mitad baja); `(raw>>11)&0x3FF` da 501 para HID0 en vez
+  de 1008 (error real, corregido y cubierto con test usando el
+  raw del propio juego `0x7C10FAA6`).
+- Cache por fallback: dcbst/dcbf/dcbi/icbi (opcode 31, XO 54/
+  86/470/982) = no-op + `pc = cia + 4` (el emisor termina el
+  bloque tras el fallback; no avanzar sería un bucle
+  infinito). Cualquier otro fallback = exception registrada
+  sin avanzar (el chassis se detiene, no se enmascara).
+- `__OSPSInit` NO es no-op puro (ver Exceptions): replica su
+  efecto verificado en el chunk (`hid2 |= 0xA0000000`
+  LSQE+PSE, `gqr[0] = 0`). `__OSCacheInit` sí es no-op: su
+  chunk solo toca HID0/L2CR/error handler/prints, sin efecto
+  observable aquí.
+
+### Verificación: test host boot (puerta de paso, run1)
+
+`test_boot.cpp`, DOL real solo en lectura, árbol
+`disc/files/` como raíz DVD. RESULTADO: TODO OK.
+- Arranque: motivo `reached_stop_pc`, 847 despachos, 0,007 s,
+  PC final `0x80049D84` (videoInit, detenido ANTES de
+  despacharlo), main = 1, init = 1, videoInit = 1, exception 0,
+  PC desconocido 0, HLE totales 10, retrace 0, fallback_cache
+  0, fallback_unknown 0, GXInit 0 (correcto: el stop es la
+  entrada a videoInit). DOL re-verificado: entry, text/data,
+  palabra en entry, BSS primero/último a cero.
+- Unidades: retrace ×1000 en 0,001 s; DCZeroRange pone a cero
+  64 B reales; DCStoreRange no toca la RAM; arenas
+  `0x80400000`/`0x81700000`; `__OSPSInit` HLE deja HID2 con
+  LSQE+PSE y `gqr[0] = 0`; heap HLE: primer bloque en
+  arena_lo, segundo tras 128 B alineados (100 → 128);
+  fallback dcbst avanza sin exception; fallback desconocido
+  (raw 0) marca exception sin avanzar; traza HW: escribir +
+  2 lecturas en `0xCC001234` → total 3, distinct 1.
+- DVD contra el árbol real: DVDOpen `AMAP.BIN` = 1,
+  DVDReadPrio 256 B @0 y 128 B @1024 byte-idénticos al
+  fichero host, DVDOpen `/AMAP.BIN` = 1 (candidato con barra
+  inicial), DVDOpen `NOEXISTE.BIN` = 0, DVDClose = 1, leer
+  tras cerrar = -1 (`0xFFFFFFFF`).
+- Traza HW del arranque a videoInit: total 0, distinct 0 (la
+  traza funciona por test de unidad: el juego NO toca ningún
+  `0xCC00xxxx` directo en esa ruta; todo el hardware de esa
+  fase vive dentro de las funciones SDK que el HLE sustituye).
+
+### Exploración más allá de videoInit (run2, diagnóstica)
+
+`test_trace2.cpp`, sin stop-PC, topes 300.000 despachos /
+60 s. NO es puerta de paso: su valor es la frontera y la
+traza. Resultado actual: motivo `dispatch_cap`, 300.000
+despachos, 1,365 s, sin exception, PC final `0x80250BA0`,
+main = 1, init = 1, HLE totales 93, retrace 2, fallback_cache
+0, fallback_unknown 0. La ejecución pasa videoInit,
+setDisplayCopyFilter (vía SPR HID0), initLoadingScreenTextures
+(OSGetArenaHi ← 0x80116198), mmInit (5 OSAllocFromHeap HLE:
+tamaños `0xC3EEE0`, `0x6EC`, `0x1C0000`, `0x9FFA0`,
+`0x45FFA0`), ~49 DCInvalidateRange, 5 DCFlushRange, PADInit
+(segunda vez, desde 0x80015500), PADRecalibrate, PADReset ×2,
+PADRead ×1 (desde `padUpdate` 0x80014FC0), y queda girando en
+`__ARChecksize` 0x80250B88 (ver Exceptions / frontera).
+NO se alcanzó todavía: ningún DVDOpen/DVDRead, ningún
+`initLoadFiles`, ningún gameLoop.
+
+### Traza de hardware (Fase 4, run2 post-correcciones)
+
+CSV en `work-port/fase2-tests/run2/` (fuera del repo). Total
+25.220.080 eventos, 11 direcciones distintas, 0 descartadas.
+El 99,99 % es un solo bucle de espera (ver frontera). Top:
+
+| Dirección | Lect. | Escr. | Total | Primer PC | Nota |
+|---|---|---|---|---|---|
+| 0xCC005016 | 25.219.146 | 0 | 25.219.146 | 0x80250BA0 | Espera ARAM/DSP (`__ARChecksize`) |
+| 0xCC008000 | 0 | 285 | 285 | 0x80259950 | FIFO GX (stream de comandos) |
+| 0xCC006800 | 97 | 97 | 194 | 0x802442F4 | EXI (lectura/escritura) |
+| 0xCC00680C | 96 | 96 | 192 | 0x80253E18 | EXI |
+| 0xCC006024 | 96 | 0 | 96 | 0x80241668 | DI/DVD (solo lectura) |
+| 0xCC006804 | 0 | 48 | 48 | 0x80253FA0 | EXI |
+| 0xCC006808 | 0 | 48 | 48 | 0x80253FAC | EXI |
+| 0xCC006810 | 0 | 48 | 48 | 0x80253DD4 | EXI |
+| 0xCC008004 | 0 | 18 | 18 | 0x8025D9A4 | Registro junto al FIFO GX |
+| 0xCC00501A | 2 | 1 | 3 | 0x80250AB8 | ARAM/DSP |
+| 0xCC006828 | 1 | 1 | 2 | 0x8024439C | EXI |
+
+Interpretación para la fase GX (las regiones EXI/DI/DSP son
+plausibles por mapa GC, a confirmar contra el código que
+accede): el FIFO GX `0xCC008000` ya recibe comandos reales
+desde funciones GX no HLEadas (285 escrituras, primer byte
+`0x61`); el resto del tráfico pre-GX es ARAM/DSP + EXI/DI de
+init. La traza vive en el shim C (`cpu.c`, no en `mem.cpp`:
+los chunks llaman a `mem_*` C directamente), solo el rango
+`0xCC000000–0xCC020000`, primeros 20 eventos por dirección en
+detalle, contadores sin truncar, máx. 2.048 direcciones
+distintas. `CPUState` no cambió de layout (orden canónico
+DolRecomp); el estado de traza es estático en `cpu.c`
+(chassis monohilo, sin locks). Desactivada por defecto;
+`LoadGame` la resetea y activa; `DumpHwTrace` existe para
+uso futuro desde código nativo (aún sin cablear a
+`native-lib.cpp`).
+
+### Exceptions encontradas (ninguna enmascarada)
+
+1. PSMTXIdentity 0x80247800 → program exception, vector
+   `0x700` (run2 pre-corrección). Causa: el HLE inicial de
+   `__OSPSInit` era no-op puro y perdía su efecto real.
+   Verificado en el chunk 0x80241628: lee HID2, hace OR con
+   `0xA0000000` (LSQE+PSE), escribe HID2, invalida icache y
+   pone `gqr[0] = 0`. Corrección: el HLE replica esos dos
+   efectos (no se tocó el juego ni el shim de PSQ). Tras la
+   corrección, PSMTXIdentity se ejecuta sin exception.
+   `__OSCacheInit` se verificó que NO escribe HID2 (sus
+   llamadas son mfhid0/ICEnable/DCEnable/L2CR/MSR/error
+   handler/prints), así que su no-op es correcto.
+2. mfhid0 0x8004A5B4 → fallback desconocido (run2
+   pre-corrección). Causa: SPR sin modelar en CPUState.
+   Corrección: HLE de SPR HID0/L2CR por fallback (ver arriba).
+   Tras la corrección, setDisplayCopyFilter continúa.
+3. mmInit 0x80024148 → exception genérica tras
+   OSAllocFromHeap 0x80241DCC real (run2 pre-corrección).
+   Causa: OSInitAlloc HLE no escribía la cabecera del heap y
+   el allocador real seguía punteros basura. Corrección: heap
+   HLE por bump allocator (ver arriba). Tras la corrección,
+   mmInit completa sus 5 reservas sin exception.
+4. Frontera actual (NO es un fallo del juego): el run2 actual
+   agota el tope de despachos girando en `__ARChecksize`
+   0x80250B88, que lee `0xCC005016` (16 bits) esperando un bit
+   de estado ARAM/DSP que nunca se pone porque las lecturas
+   HW devuelven 0. Siguiente trabajo GX/ARAM: emular el
+   estado ARAM/DMA (o HLEar ARInit/`__ARChecksize`) para que
+   init continúe hacia la carga de ficheros.
+
+### Build NDK (verificación)
+
+Script existente con dos cambios documentados:
+`build-libstarfox-ndk.sh` añade `-fPIC` a `compile_c` y
+`compile_cxx` (bug latente de Fase 1: los objetos de Fase 1
+no referenciaban globales de datos, así que enlazaban sin
+PIC; el enlace Fase 2 falló con
+`R_AARCH64_ADR_PREL_PG_HI21 ... recompile with -fPIC` hasta
+el cambio). Además, `generated.h` es C puro sin guardas
+`extern "C"`: incluirlo desde C++ mangla `func_*`; la
+corrección es envolver el include en `extern "C" {}` en
+`chassis.cpp` (verificado: `U func_80003100` sin manglar).
+Resultado (tras las correcciones HLE de este tramo, build
+`fase2-ndk-build`, JOBS=2): PASS, 0 errores.
+`libstarfox.so` 27.257.168 B, SHA-256
+`b64416715b57e6fd02c6ee55db2da994b4fb454cd202d536094bc0f3f1e8e64e`,
+comprobación del script "OK: ningún símbolo
+mem_/ppc_/func_/dolrecomp_ sin resolver", 115 undefined
+totales (solo libs del sistema: libc/pthread/bionic). Los
+objetos hle/chassis/runtime/cpu se borraron antes de
+reconstruir para que los cambios de este tramo entraran
+(el script es incremental por timestamp, no por flags ni
+por cabeceras); las cadenas nuevas ("heap bump",
+"OSAllocFromHeap", "fallback SPR") y los símbolos
+`sfa_hle_host_call` / `sfa_hle_instruction_fallback` están
+en el `.so` final. El directorio de build de Fase 1
+(`fase1-ndk-build`) no se tocó.
+
+### Qué queda para GX
+
+- GX real: FIFO `0xCC008000` (285 escrituras ya observadas),
+  registros CP/PE, display lists, texturas, framebuffer y
+  modo de vídeo (VIConfigure real). La traza HW de arriba ES
+  la especificación de partida.
+- ARAM/DSP: estado `0xCC005016` / `0xCC00501A` o HLE AR
+  (`__ARChecksize`, ARInit, DMA ARAM) para salir del bucle.
+- Después: DVDFileInfo struct + callback async de DVD,
+  struct PADStatus, heap con free real (no solo bump),
+  arena definitiva (no provisional), input con mapeo a
+  táctil/mando, paquete de datos Pack B, APK jugable y test
+  en Tab S8. Sin ejecución en dispositivo todavía.

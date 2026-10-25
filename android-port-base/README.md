@@ -51,18 +51,21 @@ gradle/wrapper/gradle-wrapper.properties
 
 ## Qué NO hace todavía (honesto)
 
-- No ejecuta el código recompilado de DolRecomp: `cpu.cpp` es un stub
-  que registra el PC inicial y no despacha funciones. La integración
-  real (dispatch por nombre con `generated_symbols.h`, o
-  post-procesado de chunks) es el siguiente bloque de trabajo.
-- No hay GX real: el renderer solo limpia la pantalla con GLES3.
+- El código recompilado YA se ejecuta en el test host (Fases 2-3,
+  ver `PORT-STATUS.md`): el chassis despacha desde 0x80003140 hasta
+  videoInit con el HLE mínimo. En la APK todavía no: `Frame()` solo
+  ejecuta el chassis cuando hay un juego cargado con `LoadGame()`,
+  y la APK Fase 0 no carga ningún DOL (sigue siendo solo arranque
+  + clear, NO jugable). El `cpu.cpp` stub solo se usa ya en ese
+  modo sin juego.
+- No hay GX real: el renderer solo limpia la pantalla con GLES3
+  (GXInit es un stub HLE que registra y devuelve).
 - No hay DSP/MusyX: el audio es un stub que no suena.
-- No carga `main.dol` ni los datos del juego: `memory.cpp` reserva la
-  RAM y rechaza la carga con un log claro hasta que el cargador exista.
 - No hay sistema de objetos/DLLs/mapas/animaciones.
 - Los assets extraídos (cerca de 2 GB) no van dentro del APK en esta
   base; su empaquetado y carga se decidirán en la fase de integración
-  (ver `PLAN.md` de la rama `main`).
+  (ver `PLAN.md` de la rama `main`). El HLE DVD ya lee del árbol
+  del disco extraído en el test host, no de un DVD físico.
 
 ## Compilar (Windows, Android Studio)
 
