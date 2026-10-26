@@ -50,11 +50,13 @@
 
 #include <cstdint>
 #include <cstdio>
+#include <memory>
 #include <string>
 #include <vector>
 
 #include "gamecube_runtime/card.h"
 #include "gamecube_runtime/cpu_state.h"
+#include "gamecube_runtime/rumble.h"
 #include "input/pad_state.h"
 
 namespace sfa {
@@ -190,6 +192,17 @@ class Hle {
   static constexpr uint32_t kPadRead = 0x8024F1D4u;
   static constexpr uint32_t kPadReset = 0x8024EDC0u;
   static constexpr uint32_t kPadRecalibrate = 0x8024EEC0u;
+  // Rumble fase A (ver gamecube_runtime/rumble.h): PADControlMotor
+  // 0x8024F580, llamado desde stopRumble2 0x80014A54, stopRumble
+  // 0x80014A90, doRumble 0x80014ACC, padUpdate 0x80014F6C e
+  // initControllers 0x800154D8. Sin esta entrada, el juego
+  // ejecutaria el PADControlMotor recompilado del SDK contra
+  // registros SI no modelados (comportamiento no definido, no
+  // un no-op limpio). El HLE es no-op + log con estado por
+  // canal y solo-en-transicion; la vibracion real (fase B,
+  // Vibrator por JNI) queda pendiente y se inyecta por
+  // SetRumbleSink sin tocar el HLE.
+  static constexpr uint32_t kPadControlMotor = 0x8024F580u;
   static constexpr uint32_t kGxInit = 0x802556DCu;
   static constexpr uint32_t kLcEnable = 0x80242548u;
   // DMA de la caché bloqueada (Fase 8, bloqueador nº 1): el
@@ -499,6 +512,11 @@ class Hle {
   // vive en el mismo objeto que Hle).
   void SetPadState(const PadState* state) { pad_state_ext_ = state; }
   const PadState* PadStatePtr() const { return pad_state_ext_; }
+  // Rumble fase A: sink inyectable (por defecto nulo, fase B
+  // pendiente). El puntero no se posee: debe vivir mas que
+  // el Hle. Sin sink, el HLE solo registra y loguea.
+  void SetRumbleSink(RumbleSink* sink) { rumble_sink_ = sink; }
+  bool RumbleOn(int chan) const { return rumble_tracker_.IsOn(chan); }
   // Flag de muestra PAD nueva (0x803DE65D, ver cabecera).
   static constexpr uint32_t kPadFreshFlag = 0x803DE65Du;
   // FST del disco (Fase 6a): ruta explicita opcional; si no se
@@ -727,6 +745,10 @@ class Hle {
   // Fase 6a/b: estado PAD y FST (ver hle.cpp).
   PadState pad_state_;
   const PadState* pad_state_ext_ = nullptr;
+  // Rumble fase A (ver rumble.h): tracker por canal + sink
+  // inyectable (nulo por defecto: no-op + log).
+  RumbleTracker rumble_tracker_;
+  RumbleSink* rumble_sink_ = nullptr;
   std::string fst_path_;
   bool fst_loaded_ = false;
   bool fst_load_attempted_ = false;

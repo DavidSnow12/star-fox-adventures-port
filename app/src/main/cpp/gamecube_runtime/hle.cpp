@@ -42,6 +42,7 @@ constexpr HleEntry kHleTable[] = {
     {Hle::kPadRead, "PADRead"},
     {Hle::kPadReset, "PADReset"},
     {Hle::kPadRecalibrate, "PADRecalibrate"},
+    {Hle::kPadControlMotor, "PADControlMotor"},
     {Hle::kGxInit, "GXInit"},
     {Hle::kLcEnable, "LCEnable"},
     {Hle::kLcLoadBlocks, "LCLoadBlocks"},
@@ -2062,6 +2063,30 @@ bool Hle::HandleHostCall(CpuState* cpu, uint32_t address) {
     case kPadReset:
     case kPadRecalibrate:
       return Return(cpu, 0);
+    case kPadControlMotor: {
+      // Rumble fase A (ver rumble.h): r3 = chan, r4 = command
+      // (0=STOP, 1=RUMBLE, 2=STOP_HARD=STOP). Solo-en-transicion
+      // via RumbleTracker: padUpdate llama cada frame y un
+      // RUMBLE sostenido no debe re-disparar sink ni log por
+      // frame. Chan/cmd fuera de rango: aviso, sin estado y
+      // sin crash. Retorno void en libogc: se devuelve 0 y
+      // los wrappers no usan r3 tras la llamada.
+      uint32_t chan = cpu->gpr[3];
+      uint32_t cmd = cpu->gpr[4];
+      bool want_on = false;
+      if (rumble_tracker_.Apply(static_cast<int>(chan),
+                                static_cast<int>(cmd), &want_on)) {
+        SFA_LOGI("hle: PADControlMotor chan=%u cmd=%u (%s)",
+                 chan, cmd, want_on ? "RUMBLE" : "STOP");
+        if (rumble_sink_ != nullptr)
+          rumble_sink_->SetRumble(static_cast<int>(chan), want_on);
+      } else if (chan >= 4 || cmd > 2) {
+        SFA_LOGI("hle: PADControlMotor chan=%u cmd=%u fuera de "
+                 "rango: sin efecto",
+                 chan, cmd);
+      }
+      return Return(cpu, 0);
+    }
     case kGxInit:
       gx_init_done_ = true;
       SFA_LOGI("hle: GXInit HLE (Fase 5, GX por HLE): registra y "

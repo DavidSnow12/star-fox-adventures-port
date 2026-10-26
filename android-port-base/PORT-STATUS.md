@@ -4875,3 +4875,150 @@ ejecución MCMD completa. sndFXStartEx aislado devuelve -1 por
 falta de estado synth en el test aislado, no por error de tabla.
 La cuestión 1367 sigue abierta. MusyX/DSP (secuencias) y TEV
 multi-etapa siguen pendientes en este tramo.
+
+## Fase TEV (2026-10-26, este tramo, SIN commit ni push): TEV multi-etapa + rumble fase A
+
+**Estado del arbol: cambios sin commitear en `android-port-base` para
+revision del coordinador (no se hizo commit, no se hizo push, `main`
+intacto).** Diseno seguido sin reinventar: `work-port/fase18-tev/
+TEV-DESIGN.md`, `RUMBLE.md`, `GX-RESTO.md`.
+
+**1) Anclaje previo obligatorio (hecho).** `GxDraw` gana `TevState tev`
++ `has_tev`, rellenados en `GxParser::ParseDraw()` ANTES de las tres
+salidas (normal, opaca, POINTS): el snapshot copia el `bp_` vigente
+en ese offset FIFO, porque `bp_` muta con el stream y leerlo al final
+del frame daria a todos los draws la configuracion del ultimo.
+Decodificado con confianza alta: GENMODE (BP 0x00) bits [13:10] + 1 =
+nº de etapas; palabra color BP 0xC0+2*etapa y palabra alfa
+0xC1+2*etapa (YAGCD + codigo SDK recompilado: d[3:0], c[7:4], b[11:8],
+a[15:12], bias[17:16], op-bit[18], clamp[19], scale[21:20], out[23:22];
+bits[17:16]==3 => COMP, si no ADD/SUB). La palabra alfa usa la misma
+estructura con campos de 3 bits en simetria asumida (d[2:0], c[5:3],
+b[8:6], a[11:9]): PENDIENTE del anclaje §3.3 del diseno, y el test
+host fija el comportamiento actual para que el anclaje solo tenga
+que corregir `DecodeAlphaWord`.
+
+**2) Generador TEV (`renderer/gx_tev.h`, sin GL, GLSL ES 1.00).**
+Formula ADD `mix(a,b,c)+d` con bias/scale/clamp, SUB con b negado,
+COMP por canal (R8 solo R, GR16 R+G, BGR24/RGB8 los tres; el caso
+sombra COMP_R8_GT esta cubierto por test), estado PREV/REG0-2,
+KONST por selector (literales 1..1/8 y K0-K3 por canal), swap
+identidad, samplers un uniform por texmap usado (max 8), cache por
+hash FNV-1a con tope 128 (LRU). Politica §6 del diseno: indirecto =
+no-op contado (la etapa combina igual con la texcoord sin perturbar);
+input/op fuera de enum = passthrough de la etapa + contador, nunca
+crash ni magenta; >16 etapas truncadas con marca; etapa identidad
+sin codigo pero contada como procesada. Integracion GL en
+`GxGlRenderer`: el programa TEV compilado solo se USA cuando es
+resoluble con el formato de vertice actual (sin RASC/RASA y como
+mucho 1 sampler cuyo mapa es el tex_map del draw); cualquier otro
+draw TEV cae al programa fijo anterior con contador `tev_fallback_`.
+Sin snapshot (`has_tev=false`) no se tocan los contadores TEV.
+Contadores nuevos: `tev_draws_`, `tev_stages_total_`,
+`tev_indirect_noop_`, `tev_unsupported_`, `tev_programs_compiled_`,
+`tev_fallback_`.
+
+**3) Rumble fase A (`gamecube_runtime/rumble.h` + HLE).**
+`Hle::kPadControlMotor = 0x8024F580` en la tabla HLE
+("PADControlMotor") con estado por canal y solo-en-transicion
+(`RumbleTracker`): r3 = chan (0-3), r4 = cmd (0=STOP, 1=RUMBLE,
+2=STOP_HARD=STOP); chan/cmd fuera de rango = aviso sin estado y sin
+crash; retorno 0 (void en libogc). Salida por interfaz `RumbleSink`:
+por defecto nula (no-op + log, fase A). **Fase B pendiente y
+documentada, no hecha:** Vibrator por JNI detras de la misma
+interfaz (`Hle::SetRumbleSink`), permiso VIBRATE en el manifiesto y
+cancelacion en `onPause`; sin prueba en la Tab S8 no se declara
+terminada. Sitios `bl` conocidos (sin cambiar): stopRumble2
+0x80014A54, stopRumble 0x80014A90, doRumble 0x80014ACC, padUpdate
+0x80014F6C, initControllers 0x800154D8. Comentario de `input.h`
+actualizado (antes decia que no habia HLE).
+
+**4) Tests host (en `work-port/fase2-tests/`, no en el repo).**
+`test_tev.cpp` + `build_tev.sh`, `test_rumble.cpp` +
+`build_rumble.sh`: TODO OK. `test_tev`: decodificacion color
+caustica etapa 0 (a=15,b=8,c=10,d=15, ADD, clamp 1) y sombra etapa 1
+(COMP_R8_GT, op 8, no ADD); caustica 3 etapas (muestreo, `vColor`,
+konstante 0.5, `gl_FragColor`, indirecto contado 1); sombra 4 etapas
+(comparacion `>` + `uRegC0/C1/C2`); UI 2 etapas (samplers `uTex0` y
+`uTex1`, `uKonst0` K0_R); indirecto sin referencia indirecta y etapa
+fuera de enum en passthrough contada, sin fallar; >16 etapas
+truncadas a 16; cache (mismo estado mismo hash, 1 compilado; un
+campo distinto hash distinto, 2 compilados); snapshot (GENMODE 2
+etapas, BP distinto hash distinto, `bp_raw` conservado, order/ksel
+marcados no anclados); regresion run19: parseo completo, 602 draws,
+602/602 con snapshot TEV, 602 tris traducidos (sin cambio), GLSL
+generado para 602/602. Ojo: run19 tiene UN solo hash TEV distinto
+(pantalla de titulo con una sola configuracion TEV): la varianza
+por draw queda probada sinteticamente (snapshot), no con run19.
+`test_rumble`: tracker (repetido no re-dispara, STOP_HARD = STOP,
+chan 4 y cmd 9 sin efecto, canales independientes) y despacho HLE
+real con sink de registro: (0,1),(0,1),(0,0),(0,2),(4,1),(1,1) dan
+exactamente ON, OFF, ON(1) (3 llamadas al sink), 6 llamadas
+registradas como "PADControlMotor", direccion fuera de tabla false,
+y sin sink no-op sin crash con estado cambiado.
+
+**5) Compilacion NDK arm64: OK.** `android-port-base/
+build-libstarfox-ndk.sh` (NDK r28c, clang aarch64 API 26, sin
+instalar nada en /usr) enlaza `libstarfox.so` (27.683.056 B, ELF
+64-bit shared object ARM aarch64) con el script sin cambios:
+"OK: ningun simbolo mem_/ppc_/func_/dolrecomp_ sin resolver"
+(194 undefined, solo libs del sistema bionic). Simbolos TEV
+presentes en el .so (`GenerateTevFragment`, `SnapshotTevFromBp`,
+`TevHash`, `GxGlRenderer::GetOrCompileTevProgram`). Salida en
+`work-port/ndk-tev-build/libstarfox.so` (fuera del repo, no se
+sube). Los 4 TU tocados (`gx.cpp`, `hle.cpp`, `gx_gl.cpp`,
+`input.cpp`) tambien se verificaron por separado con el mismo
+toolchain (objetos ELF AArch64, sin errores ni warnings).
+
+**Quedo sin implementar y por que (honesto, no oculto).**
+- Order/KSEL/indirecto/konst/regcolor del snapshot: NO anclados
+(TEV-DESIGN.md §3.3). El snapshot guarda `bp_raw` completo para el
+anclaje futuro sin tocar el parser, pero sus campos order usan la
+heuristica texcoord=texmap=etapa (coincide con el caso UI 2 etapas,
+NO garantizada para mundo: la etapa 2 de caustica usa mapa 3, no 2)
+y ksel/regcolor/konst quedan en neutro (sel 0 = constante 1, valores
+0) con `order_anchored=false` / `ksel_anchored=false`. Sin una
+captura FIFO de mundo con el caso UI (`gameUiSetupTexturedQuadTev`)
+no se puede anclar: el anclaje es trabajo de una ejecucion host,
+no de este tramo.
+- Color de vertice y UV por mapa en el renderer GL (GX-RESTO.md
+P0.2/P0.3): el generador emite `vColor`/`vColor1` y `vUv0..7`, pero
+el formato de vertice actual solo lleva una UV y ningun color, asi
+que esos programas caen al camino fijo con contador. Multi-textura
+por draw (lista `tex_obj_por_mapa`) y matrices de textura (P0.5)
+siguen pendientes: sin ellos, la sombra/luz proyectada y los
+materiales multi-mapa no se ven aunque el generador sea correcto.
+- Estado fijo GL (blend/alpha-compare/z/cull/fog, P0.4), TEV
+indirecto real (P2.1), EFB/copia y filtros (P3): fuera de la fase A
+por diseno; el indirecto queda en no-op contado.
+- Fase B de rumble (Vibrator JNI): pendiente, ver punto 3.
+- Ficheros de audio de la Fase 18 (`audio_bridge.*`, `fx_table.h`):
+NO tocados. `main` no tocado. Sin commit, sin push.
+
+## Fase 18 ADP (2026-10-26, coordinador): streams solo-ADP suenan por el bridge
+
+**Implementado y verificado en host:** decodificador DTK en el repo
+(audio/adp_decode.*), puerto del verificador Fase 18 (bit a bit
+idéntico al WAV host en 7 ficheros, con la corrección int64
+crítica). OnStreamPlay: si no hay WAV, decodifica el .adp
+homónimo (misma ruta relativa, extensión .adp) a 32.000 Hz
+estéreo y lo encola como stream vía EnqueueDecoded (la
+refactorización EnqueueWav -> EnqueueDecoded no rompe la
+suite: test_fase18_fx y test_fase17 siguen TODO OK).
+Test test_fase18_adp.cpp con pack simulado solo-ADP (sin WAV):
+stream 1301 encola por ADP, 1.892.352 frames a 48 kHz
+(exactamente la referencia WAV 1.261.568 x 1,5 y la entrega
+Fase 15), entregados == drenados, 0 descartados; stream
+999999 no resuelto sin crash. TODO OK.
+**Limitación v1 documentada:** decodificación de fichero
+entero (~3,2 s para el mayor ADP); el streaming por bloques +
+caché PCM en sfa-data/audio-cache/v1/ (diseño Fase 18
+payload) queda como siguiente paso. Payload medido:
+Tier 0 257,40 MiB, Tier 1 365,24 MiB, completo-ADP 778,40
+MiB; ningún tier cubre música secuenciada ni los 85
+streams sin resolver. MusyX secuencias: PARCIALMENTE
+RESUELTO (formato y flujo de eventos verificados contra
+el huésped, 98,85 % de 105.141 notas resueltas offline;
+audio audible NO resuelto, sin DSP necesario para el
+modelo bridge; sndSeqPlayEx NO cableado a WAV).
+La cuestión 1367 sigue abierta.

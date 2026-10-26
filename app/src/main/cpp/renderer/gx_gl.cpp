@@ -29,6 +29,35 @@ const char* kFragmentShader =
     "  }\n"
     "}\n";
 
+// Vertex shader del camino TEV: la unica UV del formato de
+// vertice actual se replica en vUv0..vUv7, asi que un programa
+// TEV de 1 sampler muestrea bien sea cual sea su mapa (el
+// mapa es el tex_map del draw, ver TevGlUsable). El color de
+// vertice NO se entrega aqui: un programa TEV que lo pida no
+// es usable y cae al programa fijo (GX-RESTO.md P0.3).
+const char* kTevVertexShader =
+    "attribute vec2 aPos;\n"
+    "attribute vec2 aUv;\n"
+    "varying vec2 vUv0;\n"
+    "varying vec2 vUv1;\n"
+    "varying vec2 vUv2;\n"
+    "varying vec2 vUv3;\n"
+    "varying vec2 vUv4;\n"
+    "varying vec2 vUv5;\n"
+    "varying vec2 vUv6;\n"
+    "varying vec2 vUv7;\n"
+    "void main() {\n"
+    "  vUv0 = aUv;\n"
+    "  vUv1 = aUv;\n"
+    "  vUv2 = aUv;\n"
+    "  vUv3 = aUv;\n"
+    "  vUv4 = aUv;\n"
+    "  vUv5 = aUv;\n"
+    "  vUv6 = aUv;\n"
+    "  vUv7 = aUv;\n"
+    "  gl_Position = vec4(aPos, 0.0, 1.0);\n"
+    "}\n";
+
 GLuint CompileShader(GLenum type, const char* src) {
   GLuint sh = glCreateShader(type);
   glShaderSource(sh, 1, &src, nullptr);
@@ -90,6 +119,10 @@ void GxGlRenderer::ShutdownGl() {
   vbo_ = 0;
   if (program_ != 0) glDeleteProgram(program_);
   program_ = 0;
+  for (auto& kv : tev_programs_) {
+    if (kv.second.program != 0) glDeleteProgram(kv.second.program);
+  }
+  tev_programs_.clear();
 }
 
 GLuint GxGlRenderer::UploadTexture(const uint8_t* rgba, int width,
@@ -225,6 +258,113 @@ void GxGlRenderer::DrawTriVertices(const GlTri& tri, GLuint tex,
   ++tris_drawn_;
 }
 
+const GxGlRenderer::TevGlProgram* GxGlRenderer::GetOrCompileTevProgram(
+    const TevGenResult& gen) {
+  auto it = tev_programs_.find(gen.hash);
+  if (it != tev_programs_.end()) return &it->second;
+  GLuint vs = CompileShader(GL_VERTEX_SHADER, kTevVertexShader);
+  if (vs == 0) return nullptr;
+  GLuint fs = CompileShader(GL_FRAGMENT_SHADER, gen.fragment.c_str());
+  if (fs == 0) {
+    glDeleteShader(vs);
+    if (!tev_compile_failed_logged_) {
+      tev_compile_failed_logged_ = true;
+      SFA_LOGE("gx_gl: TEV fragment fallo (hash 0x%08X): cae al "
+               "programa fijo",
+               gen.hash);
+    }
+    return nullptr;
+  }
+  GLuint prog = glCreateProgram();
+  glAttachShader(prog, vs);
+  glAttachShader(prog, fs);
+  glLinkProgram(prog);
+  glDeleteShader(vs);
+  glDeleteShader(fs);
+  GLint ok = 0;
+  glGetProgramiv(prog, GL_LINK_STATUS, &ok);
+  if (ok == 0) {
+    char buf[512];
+    glGetProgramInfoLog(prog, sizeof(buf), nullptr, buf);
+    if (!tev_compile_failed_logged_) {
+      tev_compile_failed_logged_ = true;
+      SFA_LOGE("gx_gl: TEV link fallo (hash 0x%08X): %s", gen.hash, buf);
+    }
+    glDeleteProgram(prog);
+    return nullptr;
+  }
+  TevGlProgram tp;
+  tp.program = prog;
+  tp.loc_pos = glGetAttribLocation(prog, "aPos");
+  tp.loc_uv = glGetAttribLocation(prog, "aUv");
+  for (int m = 0; m < 8; ++m) {
+    tp.loc_tex[m] = glGetUniformLocation(
+        prog, ("uTex" + std::to_string(m)).c_str());
+  }
+  for (int i = 0; i < 3; ++i) {
+    tp.loc_regc[i] = glGetUniformLocation(
+        prog, ("uRegC" + std::to_string(i)).c_str());
+    tp.loc_rega[i] = glGetUniformLocation(
+        prog, ("uRegA" + std::to_string(i)).c_str());
+  }
+  for (int i = 0; i < 4; ++i) {
+    tp.loc_konst[i] = glGetUniformLocation(
+        prog, ("uKonst" + std::to_string(i)).c_str());
+  }
+  ++tev_programs_compiled_;
+  auto inserted = tev_programs_.emplace(gen.hash, tp);
+  return &inserted.first->second;
+}
+
+void GxGlRenderer::DrawTriVerticesTev(const GlTri& tri, GLuint tex,
+                                      bool use_tex,
+                                      const TevGlProgram& tp,
+                                      const TevState& tev) {
+  float verts[3 * 4];
+  for (int k = 0; k < 3; ++k) {
+    verts[k * 4 + 0] = tri.x[k];
+    verts[k * 4 + 1] = tri.y[k];
+    verts[k * 4 + 2] = tri.s[k];
+    verts[k * 4 + 3] = tri.t[k];
+  }
+  glUseProgram(tp.program);
+  glBindBuffer(GL_ARRAY_BUFFER, vbo_);
+  glBufferData(GL_ARRAY_BUFFER, sizeof(verts), verts, GL_STREAM_DRAW);
+  glEnableVertexAttribArray(tp.loc_pos);
+  glVertexAttribPointer(tp.loc_pos, 2, GL_FLOAT, GL_FALSE,
+                        4 * sizeof(float),
+                        reinterpret_cast<const void*>(0));
+  glEnableVertexAttribArray(tp.loc_uv);
+  glVertexAttribPointer(tp.loc_uv, 2, GL_FLOAT, GL_FALSE,
+                        4 * sizeof(float),
+                        reinterpret_cast<const void*>(2 * sizeof(float)));
+  // Uniforms TEV: registros y konstantes del snapshot (el
+  // snapshot sin anclar los deja a 0; un TevState construido
+  // a mano los trae explicitos). glUniform con loc -1 (uniform
+  // optimizado fuera) se ignora en silencio: seguro.
+  for (int i = 0; i < 3; ++i) {
+    glUniform3f(tp.loc_regc[i], tev.regcolor[i][0], tev.regcolor[i][1],
+                tev.regcolor[i][2]);
+    glUniform1f(tp.loc_rega[i], tev.regcolor[i][3]);
+  }
+  for (int i = 0; i < 4; ++i) {
+    glUniform4f(tp.loc_konst[i], tev.konst[i][0], tev.konst[i][1],
+                tev.konst[i][2], tev.konst[i][3]);
+  }
+  if (use_tex) {
+    // Camino usable = como mucho 1 sampler: la unidad 0.
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, tex);
+    for (int m = 0; m < 8; ++m) {
+      if (tp.loc_tex[m] >= 0) glUniform1i(tp.loc_tex[m], 0);
+    }
+  }
+  glDrawArrays(GL_TRIANGLES, 0, 3);
+  glDisableVertexAttribArray(tp.loc_pos);
+  glDisableVertexAttribArray(tp.loc_uv);
+  ++tris_drawn_;
+}
+
 int GxGlRenderer::DrawDraws(const std::vector<GxDraw>& draws,
                             const TexResolver& resolver) {
   if (program_ == 0) return 0;
@@ -266,6 +406,35 @@ int GxGlRenderer::DrawDraws(const std::vector<GxDraw>& draws,
         use_tex = true;
         frame_tex[tex_obj] = tex;
       }
+    }
+    // Camino TEV fase A: si el draw trae snapshot, su programa
+    // se genera por hash (contado) y se usa solo si es
+    // resoluble con el formato actual; si no, cae al programa
+    // fijo anterior (tev_fallback_), nunca crash. Sin snapshot
+    // (has_tev=false) no se tocan los contadores TEV.
+    if (d.has_tev) {
+      ++tev_draws_;
+      TevGenResult gen;
+      tev_cache_.Get(d.tev, &gen);
+      tev_stages_total_ += gen.stages_processed;
+      tev_indirect_noop_ += gen.indirect_noop;
+      tev_unsupported_ += gen.unsupported;
+      const TevGlProgram* tp = nullptr;
+      // Con sampler pero sin textura (tex_obj 0): no dibujar
+      // con un sampler sin enlazar (negro en GL); caer al
+      // camino fijo, que usa el color diagnostico.
+      if (TevGlUsable(gen, d) &&
+          (gen.sampler_maps.empty() || use_tex))
+        tp = GetOrCompileTevProgram(gen);
+      if (tp != nullptr) {
+        for (const GlTri& tri : tris) {
+          DrawTriVerticesTev(tri, tex, use_tex, *tp, d.tev);
+        }
+        ++drawn;
+        ++quads_drawn_;
+        continue;
+      }
+      ++tev_fallback_;
     }
     for (const GlTri& tri : tris) {
       if (use_tex) {

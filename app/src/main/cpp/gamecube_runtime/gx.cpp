@@ -1,6 +1,8 @@
 // Maquina de estado GX en host (ver gx.h para los layouts).
 #include "gamecube_runtime/gx.h"
 
+#include "renderer/gx_tev.h"
+
 #include <algorithm>
 #include <cstdio>
 #include <cstring>
@@ -344,6 +346,12 @@ bool GxParser::ParseDraw(const uint8_t* data, size_t len, size_t* pos_io,
   draw.vat = vat;
   draw.tex_obj = TexLoadFor(fifo_offset);
   draw.tex_map = TexMapFor(fifo_offset);
+  // Instantánea TEV (anclaje previo obligatorio): se copia
+  // AQUI, antes de las tres salidas (normal, opaca, POINTS),
+  // porque bp_ muta con el stream y el generador no puede
+  // leerlo al final del frame. Sin snapshot no hay TEV.
+  draw.tev = SnapshotTevFromBp(bp_);
+  draw.has_tev = true;
   draw.has_viewport = Viewport(draw.viewport);
   draw.has_projection = Projection(draw.projection, &draw.projection_type);
   // Matriz de posicion vigente (CP 0x30, PNMTXIDX en bits 0-5).

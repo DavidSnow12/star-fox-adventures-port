@@ -203,6 +203,15 @@ class AudioBridge {
   bool EnqueueWav(const char* rel, uint32_t id, const char* kind,
                   float gain, size_t loop_start_48k,
                   size_t loop_len_48k, bool is_stream);
+  // Encola un WavData ya cargado/decodificado (WAV o ADP
+  // decodificado a 32.000 Hz estéreo) con la misma
+  // semántica de voz que EnqueueWav. Usado por el fallback
+  // ADP de streams (Fase 18) para no duplicar la lógica
+  // de voces; EnqueueWav lo reutiliza tras cargar el WAV.
+  bool EnqueueDecoded(const Audio::WavData& wav, const char* rel,
+                      uint32_t id, const char* kind, float gain,
+                      size_t loop_start_48k, size_t loop_len_48k,
+                      bool is_stream);
 
   Audio* audio_ = nullptr;
   std::string wav_root_;

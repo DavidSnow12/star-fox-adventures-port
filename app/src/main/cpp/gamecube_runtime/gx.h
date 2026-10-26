@@ -105,6 +105,70 @@ struct GxVertex {
   bool has_tex = false;
 };
 
+// --- Estado TEV por draw (Fase TEV, ver renderer/gx_tev.h) ---
+//
+// Una etapa TEV = ColorIn/AlphaIn + ColorOp/AlphaOp + Order.
+// Decodificacion de las palabras BP (YAGCD + codigo SDK
+// recompilado, ver TEV-DESIGN.md §3.2): palabra color en BP
+// 0xC0+2*etapa, palabra alfa en 0xC1+2*etapa, nº de etapas en
+// GENMODE (BP 0x00) bits [13:10] + 1. Campos de la palabra
+// color (LSB): d[3:0], c[7:4], b[11:8], a[15:12], bias[17:16],
+// op-bit[18], clamp[19], scale[21:20], out[23:22]; si
+// bits[17:16]==3 la operacion es COMP (op = 8 + bit[18] +
+// (bits[21:20]<<1)), si no es ADD (bit[18]=0) o SUB (1).
+// La palabra alfa tiene la misma estructura de operacion y
+// campos de entrada de 3 bits (posicion exacta de esos 4
+// campos: simetria asumida con la palabra color, PENDIENTE
+// del anclaje §3.3 de TEV-DESIGN.md; el decodificador vive en
+// gx_tev.h y el test host fija el comportamiento actual).
+// Order/KSEL/indirecto/konst/regcolor: NO anclados todavia
+// (TEV-DESIGN.md §3.3). El snapshot guarda SIEMPRE la copia
+// cruda completa de bp_ (bp_raw) para que el anclaje futuro
+// pueda decodificarlos sin tocar el parser; los campos
+// order/ksel del snapshot usan valores neutros documentados
+// abajo y TevState marca order_anchored=false y
+// ksel_anchored=false para que ningun consumidor los confunda
+// con valores medidos. El generador usa solo lo que TevState
+// dice: un TevState construido a mano (tests, casos dorados)
+// con order/ksel explicitos genera el GLSL completo.
+struct TevInput {
+  int a = 0, b = 0, c = 0, d = 0;  // enums GX_CC (color) o GX_CA (alfa)
+};
+struct TevOp {
+  int op = 0;       // 0=ADD, 1=SUB, 8-15=COMP (ver gx_tev.h)
+  int bias = 0;     // 0=ZERO, 1=ADDHALF, 2=SUBHALF (solo ADD/SUB)
+  int scale = 0;    // 0=x1, 1=x2, 2=x4, 3=/2 (solo ADD/SUB)
+  int clamp = 0;    // 0=no, 1=sí (a [0,1])
+  int out_reg = 0;  // 0=PREV, 1=REG0, 2=REG1, 3=REG2
+};
+struct TevStage {
+  int texcoord = 255, texmap = 255, colorchan = 255;  // Order
+  TevInput color, alpha;
+  TevOp color_op, alpha_op;
+  int kcolor_sel = 0, kalpha_sel = 0;  // selectores K (0 = constante 1)
+  int swap_ras = 0, swap_tex = 0;      // tablas (def. identidad)
+  bool has_indirect = false;
+  int indstage = 0;  // fase A: no-op contado, ver gx_tev.h
+};
+struct TevState {
+  int num_stages = 1;
+  TevStage stages[16];
+  // K0..K3 RGBA y C0..C3 RGBA: solo validos si el constructor
+  // los relleno (tests / anclaje futuro); el snapshot del
+  // parser los deja a 0 salvo que BP 0xE0-0xE7 este presente,
+  // en cuyo caso se decodifica como RGBA8 (ver gx_tev.h).
+  float konst[4][4] = {};
+  float regcolor[4][4] = {};
+  int swap_tables[4][4] = {};
+  // Copia cruda de bp_ en el momento del draw (reg -> valor24),
+  // para el anclaje futuro de order/ksel/indirecto/estado fijo.
+  std::map<uint32_t, uint32_t> bp_raw;
+  bool order_anchored = false;  // Order decodificado de BP real
+  bool ksel_anchored = false;   // KSEL decodificado de BP real
+  bool truncated = false;       // num_stages BP > 16 (defensa)
+  uint32_t hash = 0;            // clave de caché (ver gx_tev.h)
+};
+
 // Un draw completo con el estado vigente en su offset.
 struct GxDraw {
   uint32_t fifo_offset = 0;
@@ -127,6 +191,13 @@ struct GxDraw {
   int projection_type = 0;  // 0 = perspectiva, 1 = orto
   bool has_projection = false;
   float pos_matrix[12] = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0};
+  // Instantánea TEV (Fase TEV): copia del estado BP vigente en
+  // el momento del draw, rellenada en ParseDraw(). bp_ muta
+  // con el stream, asi que leerlo al final del frame daria a
+  // todos los draws la configuracion del ultimo. has_tev es
+  // false solo en draws construidos a mano sin snapshot.
+  TevState tev;
+  bool has_tev = false;
 };
 
 // Carga de textura externa (la que registra el HLE GXLoadTexObj).

@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 
+#include "audio/adp_decode.h"
 #include "audio/audio_id_map.h"
 #include "audio/fx_table.h"
 #include "log.h"
@@ -44,28 +45,6 @@ bool AudioBridge::EnqueueWav(const char* rel, uint32_t id,
                              size_t loop_start_48k,
                              size_t loop_len_48k, bool is_stream) {
   if (audio_ == nullptr || rel == nullptr) return false;
-  Voice* slot = nullptr;
-  if (is_stream) {
-    slot = &stream_voice_;  // La voz de stream es única:
-    // un nuevo Play sustituye al anterior (no se encola
-    // detrás: el juego tiene un solo stream actual).
-  } else {
-    for (Voice& v : sfx_voices_) {
-      if (!v.active) {
-        slot = &v;
-        break;
-      }
-    }
-    if (slot == nullptr) {
-      // Paso 1: descartar y contar, no robar voces (el robo
-      // por antigüedad/volumen es el paso siguiente, una
-      // vez medido qué voces conviven en trazas reales).
-      ++dropped_sfx_;
-      SFA_LOGI("bridge: SFX id %u descartado (8 voces "
-               "ocupadas)", id);
-      return false;
-    }
-  }
   std::string path = wav_root_;
   if (!path.empty() && path.back() != '/') path += '/';
   path += rel;
@@ -74,6 +53,34 @@ bool AudioBridge::EnqueueWav(const char* rel, uint32_t id,
     SFA_LOGI("bridge: WAV no legible '%s' (id %u, %s)",
              path.c_str(), id, kind);
     return false;
+  }
+  return EnqueueDecoded(wav, rel, id, kind, gain, loop_start_48k,
+                        loop_len_48k, is_stream);
+}
+
+bool AudioBridge::EnqueueDecoded(const Audio::WavData& wav,
+                                 const char* rel, uint32_t id,
+                                 const char* kind, float gain,
+                                 size_t loop_start_48k,
+                                 size_t loop_len_48k,
+                                 bool is_stream) {
+  if (audio_ == nullptr || rel == nullptr) return false;
+  Voice* slot = nullptr;
+  if (is_stream) {
+    slot = &stream_voice_;  // La voz de stream es única.
+  } else {
+    for (Voice& v : sfx_voices_) {
+      if (!v.active) {
+        slot = &v;
+        break;
+      }
+    }
+    if (slot == nullptr) {
+      ++dropped_sfx_;
+      SFA_LOGI("bridge: SFX id %u descartado (8 voces "
+               "ocupadas)", id);
+      return false;
+    }
   }
   std::vector<int16_t> pcm =
       Audio::ResampleToStereo(wav, Audio::kOutputRate);
@@ -114,14 +121,37 @@ bool AudioBridge::OnStreamPlay(uint32_t stream_id) {
              stream_id);
     return false;
   }
-  if (!EnqueueWav(wav, stream_id, "stream", 1.0f, 0, 0, true)) {
-    Unresolved u;
-    u.id = stream_id;
-    u.kind = "stream";
-    unresolved_.push_back(u);
-    return false;
+  if (EnqueueWav(wav, stream_id, "stream", 1.0f, 0, 0, true)) {
+    return true;
   }
-  return true;
+  // Fallback ADP (Fase 18): si no hay WAV (pack solo-ADP,
+  // Tier 1), decodificar el .adp homónimo (misma ruta
+  // relativa, extensión .adp) a 32.000 Hz estéreo y
+  // encolarlo como stream. Sin WAV ni ADP válido, queda
+  // no resuelto, sin crash. Limitación v1: decodificación
+  // de fichero entero (ver adp_decode.h); el streaming
+  // por bloques + caché PCM queda como siguiente paso.
+  {
+    std::string adp_rel = wav;
+    size_t dot = adp_rel.rfind(".wav");
+    if (dot != std::string::npos) adp_rel.replace(dot, 4, ".adp");
+    std::string adp_path = wav_root_;
+    if (!adp_path.empty() && adp_path.back() != '/') adp_path += '/';
+    adp_path += adp_rel;
+    Audio::WavData decoded;
+    if (DecodeAdpFile(adp_path.c_str(), &decoded) &&
+        EnqueueDecoded(decoded, adp_rel.c_str(), stream_id, "stream",
+                       1.0f, 0, 0, true)) {
+      SFA_LOGI("bridge: stream %u por ADP '%s' (fallback, sin WAV)",
+               stream_id, adp_rel.c_str());
+      return true;
+    }
+  }
+  Unresolved u;
+  u.id = stream_id;
+  u.kind = "stream";
+  unresolved_.push_back(u);
+  return false;
 }
 
 void AudioBridge::OnStreamStop() {
