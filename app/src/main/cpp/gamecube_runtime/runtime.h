@@ -12,6 +12,7 @@
 // Fase 0 (paso stub + quad): la APK boot-test no cambia.
 
 #include "audio/audio.h"
+#include "audio/audio_bridge.h"
 #include "gamecube_runtime/chassis.h"
 #include "gamecube_runtime/cpu.h"
 #include "gamecube_runtime/gx.h"
@@ -38,6 +39,15 @@ class GameCubeRuntime {
   // (p. ej. la carpeta files/ del paquete de datos). Debe
   // llamarse antes de que el juego abra ficheros DVD.
   void SetDiscRoot(const char* root) { hle_.SetDiscRoot(root); }
+  // Raiz de los WAV extraidos para el bridge de audio
+  // (Fase 14): carpeta con streams/... y musyx/... . Si no
+  // existe (Pack B sin payload de audio), el bridge queda
+  // inerte: las peticiones quedan como no resueltas y el
+  // juego sigue igual. Debe llamarse antes de LoadGame.
+  void SetAudioWavRoot(const char* root) {
+    audio_bridge_.SetWavRoot(root);
+  }
+  AudioBridge* AudioBridgeState() { return &audio_bridge_; }
   void Shutdown();
 
   // Un frame completo (llamado desde android_main cuando hay
@@ -78,6 +88,7 @@ class GameCubeRuntime {
   Hle hle_;
   CpuState cpu_state_{};
   Audio audio_;
+  AudioBridge audio_bridge_;
   Input input_;
   bool running_ = false;
   bool game_loaded_ = false;

@@ -53,7 +53,8 @@ void InitCpuForBoot(CpuState* cpu, uint8_t* ram, uint32_t ram_size,
 
 ChassisResult RunChassis(CpuState* cpu, Hle* hle,
                          uint64_t max_dispatches, double max_seconds,
-                         uint32_t stop_pc) {
+                         uint32_t stop_pc, AudioEntryHook audio_hook,
+                         void* audio_hook_user) {
   ChassisResult result;
   if (cpu == nullptr) {
     result.reason = ChassisResult::kUnknownPc;
@@ -137,16 +138,48 @@ ChassisResult RunChassis(CpuState* cpu, Hle* hle,
             0x80263648u,  // CARDFormat
             0x80262E00u,  // CARDUnmount
             0x80264D58u,  // CARDGetSerialNo
+            // Fase 14: traza de audio (simbolos GSAP01_rev1 PAL,
+            // verificados en codigo/symbols.map). Solo entradas
+            // entre chunks: una llamada dentro del mismo chunk
+            // es un goto y no aparece aqui (limitacion
+            // documentada en PORT-STATUS, Fase 14).
+            0x80009BF8u,  // audioInit
+            0x80009BD0u,  // audioUpdate
+            0x8000980Cu,  // audioLoadTriggerData
+            0x80009A28u,  // audioSetVolumes
+            0x80009B4Cu,  // audioStopAll
+            0x8000D220u,  // AudioStream_Play (r3 = id de stream)
+            0x8000D158u,  // AudioStream_StartPrepared
+            0x8000D03Cu,  // AudioStream_StopCurrent
+            0x8000CFC8u,  // AudioStream_SetVolume
+            0x8000CFB8u,  // AudioStream_GetCurrentId
+            0x8000D5B4u,  // AudioStream_Init
+            0x80273218u,  // sndFXStartEx
+            0x8027C34Cu,  // sndSeqPlayEx
+            0x8027C09Cu,  // sndPushGroup
+            0x80272F80u,  // sndSeqStop
+            0x802732E0u,  // sndVolume
+            0x80273340u,  // sndMasterVolume
+            0x80119848u,  // AttractMovieAudio_Init (audio THP)
+            0x800806F0u,  // ObjSeq_AudioStreamCallback
         };
         for (uint32_t t : kTracePcs) {
           if (pc == t) {
+            // r3-r7: argumentos de la llamada (Fase 14: el id
+            // de sonido/stream viaja en r3 en AudioStream_Play
+            // y en los snd*; sin ellos la traza no sirve para
+            // mapear). Los campos van al final para no romper
+            // el parseo existente por "pc=0x...".
             std::fprintf(stderr,
                          "PCTRACE desp=%llu pc=0x%08X lr=0x%08X "
-                         "fifo=%llu\n",
+                         "fifo=%llu r3=0x%08X r4=0x%08X "
+                         "r5=0x%08X r6=0x%08X r7=0x%08X\n",
                          static_cast<unsigned long long>(result.dispatches),
                          pc, cpu->lr,
                          static_cast<unsigned long long>(
-                             sfa_fifo_capture_count()));
+                             sfa_fifo_capture_count()),
+                         cpu->gpr[3], cpu->gpr[4], cpu->gpr[5],
+                         cpu->gpr[6], cpu->gpr[7]);
             break;
           }
         }
@@ -203,6 +236,20 @@ ChassisResult RunChassis(CpuState* cpu, Hle* hle,
         result.elapsed_seconds = elapsed;
         break;
       }
+    }
+    // Hook de audio (Fase 14): solo en entradas de funcion
+    // conocidas, antes del despacho, sin sustituirlo. La
+    // lista es la de funciones con hook en audio_bridge.h;
+    // aqui solo se filtra por PC (las demas entradas no
+    // llegan al hook, ni siquiera a contar).
+    if (audio_hook != nullptr &&
+        (pc == 0x8000D220u ||  // AudioStream_Play
+         pc == 0x8000D03Cu ||  // AudioStream_StopCurrent
+         pc == 0x8000D158u ||  // AudioStream_StartPrepared
+         pc == 0x80273218u ||  // sndFXStartEx
+         pc == 0x8027C34Cu)) {  // sndSeqPlayEx
+      audio_hook(pc, cpu->gpr[3], cpu->gpr[4], cpu->gpr[5],
+                 audio_hook_user);
     }
     if (cpu->downcount < 0) cpu->downcount = 0;
     // Timebase simulado (Fase 5, desbloqueo AI): +200 por

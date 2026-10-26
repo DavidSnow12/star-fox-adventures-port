@@ -6,11 +6,25 @@
 
 namespace sfa {
 
+namespace {
+
+// Trampolin del hook de audio del chassis (Fase 14) al
+// bridge del runtime. Sin WAV en el root, el bridge es
+// inerte (ver audio_bridge.h).
+void AudioHookTrampoline(uint32_t pc, uint32_t r3, uint32_t r4,
+                         uint32_t r5, void* user) {
+  auto* bridge = static_cast<AudioBridge*>(user);
+  if (bridge != nullptr) bridge->OnAudioEntry(pc, r3, r4, r5);
+}
+
+}  // namespace
+
 bool GameCubeRuntime::Init() {
   if (!memory_.Init()) return false;
   cpu_.Reset();
   audio_.Init();
   audio_.Start();
+  audio_bridge_.SetAudio(&audio_);
   input_.Reset();
   // Fase 6b: el estado PAD que escribe Input (eventos Android)
   // es el que lee PADRead en el HLE. Sin este cable, Input y
@@ -147,7 +161,8 @@ void GameCubeRuntime::Frame(Renderer* renderer) {
     // draws del frame real (el tope de 32 MiB se evita con el
     // drenaje por frame).
     ChassisResult slice =
-        RunChassis(&cpu_state_, &hle_, 100000, 0.25, 0);
+        RunChassis(&cpu_state_, &hle_, 100000, 0.25, 0,
+                   &AudioHookTrampoline, &audio_bridge_);
     FeedGxFrame();
     ++post_boot_slices_;
     if (slice.reason == ChassisResult::kException ||
@@ -166,7 +181,8 @@ void GameCubeRuntime::Frame(Renderer* renderer) {
     // vive en cpu_state_ y persiste entre frames.
     ChassisResult slice =
         RunChassis(&cpu_state_, &hle_, 100000, 0.25,
-                   kBootVideoInitAddress);
+                   kBootVideoInitAddress, &AudioHookTrampoline,
+                   &audio_bridge_);
     FeedGxFrame();
     if (slice.reached_main) boot_reached_main_ = true;
     if (slice.reached_init) boot_reached_init_ = true;
@@ -187,6 +203,10 @@ void GameCubeRuntime::Frame(Renderer* renderer) {
     // Fase 0 intacta: sin juego, el paso stub de siempre.
     cpu_.Step();
   }
+  // Fase 14: el bridge alimenta al backend antes de que
+  // Pump() drene (en host) o el callback AAudio drene (en
+  // Android, donde Pump() es no-op).
+  audio_bridge_.Tick();
   audio_.Pump();
   renderer->DrawQuad();
   if (!pending_gx_draws_.empty()) {

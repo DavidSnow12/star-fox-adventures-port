@@ -1,0 +1,3498 @@
+tipo,id,wav,extra
+stream,1,streams/TTH/ttalk1.wav,
+stream,2,streams/TTH/ttalk2.wav,
+stream,3,streams/TTH/ttalk3.wav,
+stream,4,streams/TTH/ttalk11.wav,
+stream,7,streams/MC/MCaveOut.wav,
+stream,8,streams/MC/MCaveIn.wav,
+stream,11,streams/TTH/tth11.wav,
+stream,12,streams/TTH/tBeacLit.wav,
+stream,16,streams/TTH/mttalk0.wav,
+stream,17,streams/TTH/mttalk1.wav,
+stream,18,streams/TTH/mttalk2.wav,
+stream,19,streams/TTH/mttalk3.wav,
+stream,26,streams/TTH/BloopAtt.wav,
+stream,27,streams/TTH/BloopFai.wav,
+stream,28,streams/TTH/bloopded.wav,
+stream,29,streams/TTH/fighttra.wav,
+stream,30,streams/TTH/tth30.wav,
+stream,31,streams/TTH/tth31.wav,
+stream,32,streams/TTH/findcave.wav,
+stream,33,streams/SW/mtalkg2.wav,
+stream,34,streams/SW/mtalkg3.wav,
+stream,35,streams/TTH/retwall.wav,
+stream,37,streams/SW/mtalkb1.wav,
+stream,38,streams/SW/mtalkb3.wav,
+stream,39,streams/SW/shw39.wav,
+stream,44,streams/DIM/losttric.wav,
+stream,45,streams/WC/tricbye1.wav,
+stream,46,streams/WC/tricbye2.wav,
+stream,63,streams/GNR/gnr63.wav,
+stream,65,streams/CRF/crf65.wav,
+stream,68,streams/CRF/crf68.wav,
+stream,69,streams/CRF/crf69.wav,
+stream,73,streams/TTH/tth73.wav,
+stream,75,streams/CRF/crf75.wav,
+stream,79,streams/TTH/crazth1.wav,
+stream,80,streams/TTH/crazth2.wav,
+stream,82,streams/TTH/wellintr.wav,
+stream,83,streams/TTH/qtalk61L.wav,
+stream,84,streams/CRF/crf84.wav,
+stream,87,streams/CRF/crf87.wav,
+stream,88,streams/CRF/crf84.wav,
+stream,89,streams/CRF/crf84.wav,
+stream,94,streams/SW/shw94.wav,
+stream,99,streams/IM/landing.wav,
+stream,100,streams/IM/iamfox.wav,
+stream,102,streams/TTH/qtalk71L.wav,
+stream,105,streams/GB/Intro.wav,
+stream,107,streams/SW/mtalkg4.wav,
+stream,108,streams/SW/mtalkb2.wav,
+stream,109,streams/GB/Board.wav,
+stream,110,streams/TTH/qtalk81S.wav,
+stream,111,streams/TTH/ttalk81.wav,
+stream,112,streams/TTH/ttalk82.wav,
+stream,114,streams/TTH/mttalk51.wav,
+stream,116,streams/LV/lv116.wav,
+stream,117,streams/LV/totem.wav,
+stream,119,streams/TTH/ttalk83.wav,
+stream,120,streams/LV/opmound.wav,
+stream,121,streams/TTH/mttalk52.wav,
+stream,122,streams/LV/ttest.wav,
+stream,123,streams/LV/ctotem.wav,
+stream,125,streams/TTH/qtalk0L.wav,
+stream,126,streams/TTH/trtalk2.wav,
+stream,127,streams/TTH/qtalk1L.wav,
+stream,128,streams/TTH/tth128.wav,
+stream,131,streams/GB/Meeting.wav,
+stream,133,streams/TTH/qtalk2L.wav,
+stream,135,streams/TTH/qtalk3L.wav,
+stream,136,streams/TTH/qtalk4L.wav,
+stream,139,streams/SW/heelcomm.wav,
+stream,140,streams/TTH/mttalk21.wav,
+stream,142,streams/CRF/cf08j_bh.wav,
+stream,146,streams/SW/treefall.wav,
+stream,147,streams/GB/Defeated.wav,
+stream,148,streams/TTH/mttalk31.wav,
+stream,149,streams/TTH/mttalk40.wav,
+stream,155,streams/TTH/mttalk61.wav,
+stream,157,streams/SW/mtalkh1.wav,
+stream,158,streams/SW/mtalkh2.wav,
+stream,160,streams/SW/mtalkw1.wav,
+stream,161,streams/SW/mtalkw2.wav,
+stream,162,streams/SW/mtalkw3.wav,
+stream,163,streams/SW/mtalkw4.wav,
+stream,164,streams/SW/mtalkh4.wav,
+stream,165,streams/TTH/mttalk71.wav,
+stream,166,streams/TTH/mttalk81.wav,
+stream,167,streams/CC/queen.wav,
+stream,169,streams/CC/cc169.wav,
+stream,170,streams/CC/qincage.wav,
+stream,173,streams/CC/caplight.wav,
+stream,175,streams/TTH/tLanding.wav,
+stream,176,streams/TTH/tTakeoff.wav,
+stream,177,streams/TTH/ttalk35a.wav,
+stream,178,streams/TTH/ttalk35b.wav,
+stream,179,streams/TTH/ttalk111.wav,
+stream,180,streams/TTH/ttalk112.wav,
+stream,181,streams/TTH/ttalk113.wav,
+stream,182,streams/TTH/ttalkbel.wav,
+stream,183,streams/TTH/qtalkm.wav,
+stream,184,streams/TTH/qtalk23L.wav,
+stream,187,streams/TTH/qtalk24L.wav,
+stream,188,streams/TTH/qtalk31L.wav,
+stream,190,streams/TTH/qtalk51L.wav,
+stream,191,streams/TTH/ttalk34a.wav,
+stream,192,streams/TTH/ttalk32b.wav,
+stream,193,streams/TTH/ttalk34b.wav,
+stream,194,streams/TTH/ttalk25a.wav,
+stream,198,streams/TTH/ttalk25b.wav,
+stream,199,streams/CC/cc361.wav,
+stream,201,streams/SK/shop1a.wav,
+stream,202,streams/SK/shop1b.wav,
+stream,203,streams/SK/shopintro.wav,
+stream,204,streams/CC/cc206.wav,
+stream,209,streams/TTH/ThatMyMa.wav,
+stream,210,streams/TTH/QueenIll.wav,
+stream,213,streams/TTH/QueenOK.wav,
+stream,214,streams/TTH/qtalk21D.wav,
+stream,216,streams/TTH/qtalk22D.wav,
+stream,217,streams/TTH/ttalk32a.wav,
+stream,223,streams/TTH/mttalk53.wav,
+stream,226,streams/TTH/tth226.wav,
+stream,227,streams/TTH/tth227.wav,
+stream,228,streams/TTH/fathgate.wav,
+stream,229,streams/TTH/qtalk52L.wav,
+stream,231,streams/TTH/ttalkbel.wav,
+stream,232,streams/TTH/ttalkbel.wav,
+stream,234,streams/IM/winrace.wav,
+stream,235,streams/IM/loserace.wav,
+stream,236,streams/GB/Bird.wav,
+stream,238,streams/TTH/ttalkbel.wav,
+stream,239,streams/TTH/ttalkbel.wav,
+stream,240,streams/TTH/ttalkbel.wav,
+stream,241,streams/TTH/ttalkbel.wav,
+stream,243,streams/TTH/tth243.wav,
+stream,247,streams/TTH/ttalkbel.wav,
+stream,248,streams/SW/mtalkh3.wav,
+stream,250,streams/DIM/hungmam2.wav,
+stream,251,streams/DIM/hungmam3.wav,
+stream,252,streams/DIM/feed.wav,
+stream,255,streams/DIM/flame.wav,
+stream,257,streams/KP/getspirit.wav,
+stream,258,streams/KP/failed.wav,
+stream,261,streams/DIM/frees.wav,
+stream,267,streams/KP/getspirit.wav,
+stream,268,streams/KP/failed.wav,
+stream,272,streams/KP/kp266.wav,
+stream,274,streams/KP/getspirit.wav,
+stream,275,streams/KP/failed.wav,
+stream,277,streams/SK/shop1d.wav,
+stream,280,streams/SK/shop1i.wav,
+stream,282,streams/TTH/staffup.wav,
+stream,283,streams/SW/getfrost.wav,
+stream,284,streams/SW/mtalkg0.wav,
+stream,286,streams/SW/gmamfree.wav,
+stream,287,streams/SW/mtalkg1.wav,
+stream,288,streams/TTH/ttalk5.wav,
+stream,289,streams/DIM/hungmam4.wav,
+stream,291,streams/TTH/ttalk52.wav,
+stream,293,streams/TTH/ttalk53.wav,
+stream,295,streams/SK/shop2d.wav,
+stream,296,streams/SK/shop2e.wav,
+stream,299,streams/SW/tree2.wav,
+stream,305,streams/CC/cc305.wav,
+stream,315,streams/DIM/smashgat.wav,
+stream,317,streams/KP/getspirit.wav,
+stream,318,streams/KP/failed.wav,
+stream,323,streams/KP/getspirit.wav,
+stream,324,streams/KP/failed.wav,
+stream,328,streams/KP/kp328.wav,
+stream,330,streams/KP/kp330.wav,
+stream,348,streams/DIM/dim348.wav,
+stream,349,streams/DIM/dim349.wav,
+stream,350,streams/DIM/dim350.wav,
+stream,351,streams/DIM/dim351.wav,
+stream,358,streams/CC/cc358.wav,
+stream,362,streams/DIM/entermin.wav,
+stream,363,streams/DIM/bridge.wav,
+stream,366,streams/DIM/meet.wav,
+stream,372,streams/WC/wc372.wav,
+stream,373,streams/WC/wc372.wav,
+stream,380,streams/CRF/landing.wav,
+stream,384,streams/KP/placespirit.wav,
+stream,404,streams/WC/wc977.wav,
+stream,406,streams/DIM/dim406.wav,
+stream,407,streams/DIM/dim407.wav,
+stream,408,streams/DIM/dim408.wav,
+stream,412,streams/DIM/startice.wav,
+stream,420,streams/DIM/reunited.wav,
+stream,426,streams/LV/lcapture.wav,
+stream,426,streams/LV/lcapture.wav,
+stream,427,streams/LV/cheif1.wav,
+stream,431,streams/LV/mommyhelp1.wav,
+stream,432,streams/LV/luntie.wav,
+stream,433,streams/LV/mommyrescue1.wav,
+stream,434,streams/LV/mommyhelp2.wav,
+stream,447,streams/SW/mtalkw15.wav,
+stream,448,streams/SW/mtalkw14.wav,
+stream,449,streams/SW/mtalkw16.wav,
+stream,456,streams/SW/mtalkw13.wav,
+stream,469,streams/DIM/dim469.wav,
+stream,471,streams/CRF/crf471.wav,
+stream,475,streams/CRF/crf475.wav,
+stream,506,streams/TTH/communic.wav,
+stream,507,streams/TTH/tth507.wav,
+stream,508,streams/TTH/QueenHT.wav,
+stream,510,streams/TTH/ttalk33a.wav,
+stream,511,streams/TTH/ttalk33b.wav,
+stream,517,streams/CR/cr517.wav,
+stream,518,streams/CR/cr518.wav,
+stream,527,streams/MMP/barrels.wav,
+stream,533,streams/IM/im533.wav,
+stream,535,streams/IM/im535.wav,
+stream,566,streams/WC/wc977.wav,
+stream,571,streams/DIM/onbike.wav,
+stream,573,streams/SW/mtalkw5.wav,
+stream,574,streams/TTH/pickup.wav,
+stream,578,streams/DIM/dim578.wav,
+stream,582,streams/SW/shw94.wav,
+stream,583,streams/SW/mtalkw12.wav,
+stream,584,streams/SW/mtalkw10.wav,
+stream,585,streams/SW/mtalkw11.wav,
+stream,586,streams/SW/mtalkw6.wav,
+stream,609,streams/SW/mtalkw9.wav,
+stream,624,streams/SW/mtalkw7.wav,
+stream,625,streams/SW/mamroot1.wav,
+stream,626,streams/SW/mamroot2.wav,
+stream,629,streams/TTH/ttalk0.wav,
+stream,630,streams/TTH/ttalk31a.wav,
+stream,633,streams/TTH/ttalk4.wav,
+stream,634,streams/TTH/ttalk51.wav,
+stream,635,streams/TTH/ttalk6.wav,
+stream,636,streams/TTH/ttalk7.wav,
+stream,637,streams/TTH/ttalk8.wav,
+stream,638,streams/TTH/ttalk9.wav,
+stream,639,streams/TTH/ttalk10.wav,
+stream,640,streams/TTH/ttalk31b.wav,
+stream,642,streams/CRF/cf08g_bh.wav,
+stream,643,streams/CRF/cf08k_bh.wav,
+stream,645,streams/CRF/bpowRm.wav,
+stream,650,streams/TTH/ttalk23b.wav,
+stream,651,streams/TTH/ttalk24b.wav,
+stream,655,streams/TTH/ttalk12.wav,
+stream,656,streams/TTH/ttalk13.wav,
+stream,657,streams/TTH/ttalk14.wav,
+stream,658,streams/TTH/ttalk21a.wav,
+stream,659,streams/TTH/ttalk21b.wav,
+stream,660,streams/TTH/ttalk22a.wav,
+stream,661,streams/TTH/ttalk22b.wav,
+stream,664,streams/TTH/ttalk23a.wav,
+stream,665,streams/TTH/ttalk24a.wav,
+stream,682,streams/CR/cr862.wav,
+stream,709,streams/VFP/vfp1426.wav,
+stream,721,streams/SW/hungry.wav,
+stream,722,streams/TREX/intro.wav,
+stream,723,streams/TREX/end.wav,
+stream,728,streams/CRF/crf728.wav,
+stream,737,streams/KP/kp737.wav,
+stream,741,streams/LV/strength.wav,
+stream,763,streams/CC/cc763.wav,
+stream,765,streams/LV/lv765.wav,
+stream,770,streams/DR/etalk3.wav,
+stream,772,streams/DR/etalk1.wav,
+stream,782,streams/CRF/cf08a_kr.wav,
+stream,804,streams/DR/dr804.wav,
+stream,807,streams/DR/ctalk1.wav,
+stream,808,streams/DR/ctalk2.wav,
+stream,809,streams/DR/ctalk3.wav,
+stream,823,streams/DR/dr823.wav,
+stream,824,streams/DR/dr824.wav,
+stream,825,streams/DR/dr825.wav,
+stream,826,streams/DR/dr826.wav,
+stream,846,streams/OFP/ofp846.wav,
+stream,858,streams/DR/dr858.wav,
+stream,863,streams/TTH/WarpSton.wav,
+stream,882,streams/OFP/ofp882.wav,
+stream,893,streams/DR/etalk2.wav,
+stream,899,streams/LV/wstrength.wav,
+stream,900,streams/LV/lstrength.wav,
+stream,904,streams/DR/dr904.wav,
+stream,917,streams/DR/dr917.wav,
+stream,918,streams/DB/db918.wav,
+stream,919,streams/DB/db919.wav,
+stream,934,streams/DR/dr934.wav,
+stream,953,streams/OFP/ofp953.wav,
+stream,964,streams/MMP/mmp964.wav,
+stream,968,streams/MMP/cometokp.wav,
+stream,974,streams/WC/wc974.wav,
+stream,975,streams/WC/wc979.wav,
+stream,976,streams/WC/wc977.wav,
+stream,977,streams/WC/wc977.wav,
+stream,978,streams/WC/wc974.wav,
+stream,979,streams/WC/wc979.wav,
+stream,1001,streams/SW/mtalkw8.wav,
+stream,1055,streams/DIM/meltice.wav,
+stream,1122,streams/CRF/cf08h_qu.wav,
+stream,1124,streams/CRF/crf1124.wav,
+stream,1127,streams/CRF/cf04c_kt.wav,
+stream,1128,streams/TTH/landing.wav,
+stream,1129,streams/TTH/tTakeoff.wav,
+stream,1132,streams/CRF/crf1132.wav,
+stream,1143,streams/CRF/crf1143.wav,
+stream,1146,streams/CRF/crf1146.wav,
+stream,1151,streams/TTH/GetStaff.wav,
+stream,1152,streams/DIM/chest.wav,
+stream,1153,streams/CRF/cf09a_bh.wav,
+stream,1154,streams/CRF/cf09c_bh.wav,
+stream,1155,streams/CRF/cf09b_bh.wav,
+stream,1156,streams/CRF/crf1156.wav,
+stream,1159,streams/MMP/mmp1159.wav,
+stream,1168,streams/KP/LandPal.wav,
+stream,1170,streams/KP/EWDieHarder.wav,
+stream,1171,streams/KP/EWdie.wav,
+stream,1172,streams/KP/EWDieHarder.wav,
+stream,1177,streams/VFP/vfp1177.wav,
+stream,1179,streams/OFP/ofp1477.wav,
+stream,1180,streams/OFP/ofp1180.wav,
+stream,1185,streams/MC/MCaveOut.wav,
+stream,1186,streams/MC/MCaveIn.wav,
+stream,1189,streams/ARW/win.wav,
+stream,1190,streams/ARW/fail.wav,
+stream,1199,streams/OFP/ofp1199.wav,
+stream,1218,streams/VFP/vfp1218.wav,
+stream,1219,streams/GF/intro.wav,
+stream,1227,streams/GB/Bird.wav,
+stream,1238,streams/OFP/ofp1199.wav,
+stream,1256,streams/KP/foxown.wav,
+stream,1257,streams/KP/shebeaut.wav,
+stream,1258,streams/GF/gf1258.wav,
+stream,1260,streams/CRF/crf1260.wav,
+stream,1270,streams/KP/kp1270.wav,
+stream,1271,streams/KP/kp1271.wav,
+stream,1275,streams/CC/htalka.wav,
+stream,1276,streams/CC/cc1276.wav,
+stream,1277,streams/CC/htalke.wav,
+stream,1278,streams/CC/htalkg.wav,
+stream,1283,streams/CC/htalkh.wav,
+stream,1285,streams/CC/htalkc.wav,
+stream,1296,streams/WC/wc1296.wav,
+stream,1301,streams/AN/an1301.wav,
+stream,1308,streams/DIM/foxgun.wav,
+stream,1318,streams/KP/kp1318.wav,
+stream,1319,streams/KP/kp1319.wav,
+stream,1320,streams/KP/kp1320.wav,
+stream,1330,streams/DIM/dim1330.wav,
+stream,1331,streams/LV/lv1331.wav,
+stream,1332,streams/LV/lv1331.wav,
+stream,1333,streams/LV/lv1331.wav,
+stream,1334,streams/LV/mommyrescue2.wav,
+stream,1335,streams/LV/mommyhelp3.wav,
+stream,1336,streams/LV/mommyrescue3.wav,
+stream,1341,streams/DIM/rescue.wav,
+stream,1342,streams/WC/wc1342.wav,
+stream,1343,streams/WC/wc1343.wav,
+stream,1344,streams/WC/wc1344.wav,
+stream,1345,streams/WC/wc1345.wav,
+stream,1346,streams/WC/wc1346.wav,
+stream,1348,streams/WC/wc1348.wav,
+stream,1352,streams/TTH/NoGift.wav,
+stream,1353,streams/AN/an1353.wav,
+stream,1361,streams/AN/an1361.wav,
+stream,1368,streams/TTH/pickup.wav,
+stream,1376,streams/TTH/tth243.wav,
+stream,1386,streams/DIM/vanished.wav,
+stream,1388,streams/DIM/dim1389.wav,
+stream,1389,streams/DIM/dim1389.wav,
+stream,1390,streams/DIM/platform.wav,
+stream,1393,streams/TTH/tth1393.wav,
+stream,1396,streams/KP/kp1401.wav,
+stream,1404,streams/TTH/tLanding.wav,
+stream,1409,streams/VFP/vfp1409.wav,
+stream,1410,streams/OFP/ofp1410.wav,
+stream,1413,streams/SW/shw1413.wav,
+stream,1414,streams/SW/shw1414.wav,
+stream,1415,streams/SW/shw1415.wav,
+stream,1416,streams/DIM/chest.wav,
+stream,1419,streams/LV/lv1419.wav,
+stream,1422,streams/TTH/tth1422.wav,
+stream,1423,streams/GNR/gnr1423.wav,
+stream,1426,streams/VFP/vfp1426.wav,
+stream,1429,streams/VFP/vfp1429.wav,
+stream,1434,streams/WC/wc1434.wav,
+stream,1436,streams/DR/dr1436.wav,
+stream,1437,streams/WC/wc1437.wav,
+stream,1438,streams/WC/wc1438.wav,
+stream,1439,streams/WC/wc1439.wav,
+stream,1440,streams/WC/wc1440.wav,
+stream,1441,streams/WC/wc1441.wav,
+stream,1442,streams/WC/wc1442.wav,
+stream,1443,streams/WC/wc1443.wav,
+stream,1444,streams/WC/wc1444.wav,
+stream,1445,streams/WC/wc1445.wav,
+stream,1446,streams/WC/wc1446.wav,
+stream,1447,streams/WC/wc1447.wav,
+stream,1448,streams/WC/wc1448.wav,
+stream,1449,streams/WC/wc1449.wav,
+stream,1450,streams/WC/wc1450.wav,
+stream,1451,streams/WC/wc10a.wav,
+stream,1452,streams/WC/wc10b.wav,
+stream,1453,streams/WC/wc10c.wav,
+stream,1454,streams/WC/wc10d.wav,
+stream,1455,streams/WC/wc10e.wav,
+stream,1456,streams/WC/wc10f.wav,
+stream,1457,streams/WC/wc1457.wav,
+stream,1458,streams/WC/wc1458.wav,
+stream,1459,streams/WC/wc1459.wav,
+stream,1460,streams/WC/wc1460.wav,
+stream,1461,streams/WC/wc1461.wav,
+stream,1462,streams/WC/wc1462.wav,
+stream,1463,streams/WC/wc1463.wav,
+stream,1464,streams/WC/wc1464.wav,
+stream,1465,streams/WC/wc1465.wav,
+stream,1466,streams/WC/wc1466.wav,
+stream,1467,streams/OFP/ofp882.wav,
+stream,1469,streams/WC/wc1469.wav,
+stream,1470,streams/WC/wc1470.wav,
+stream,1471,streams/WC/wc1471.wav,
+stream,1472,streams/WC/wc1472.wav,
+stream,1477,streams/OFP/ofp1477.wav,
+stream,1482,streams/KP/kp1319.wav,
+stream,10000,streams/COMM/cm01a_pe.wav,
+stream,10001,streams/COMM/cm01b_pe.wav,
+stream,10002,streams/COMM/cm01c_pe.wav,
+stream,10003,streams/COMM/cm01d_pe.wav,
+stream,10004,streams/COMM/cm01e_pe.wav,
+stream,10005,streams/COMM/cm01f_pe.wav,
+stream,10006,streams/COMM/cm01g_pe.wav,
+stream,10007,streams/COMM/cm01h_pe.wav,
+stream,10008,streams/COMM/cm01i_pe.wav,
+stream,10009,streams/COMM/cm01j_pe.wav,
+stream,10010,streams/COMM/cm01k_pe.wav,
+stream,10011,streams/COMM/cm01l_pe.wav,
+stream,10012,streams/COMM/cm01m_pe.wav,
+stream,10013,streams/COMM/cm01n_sl.wav,
+stream,10014,streams/COMM/cm01o_sl.wav,
+stream,10015,streams/COMM/cm01p_sl.wav,
+stream,10016,streams/COMM/cm01q_sl.wav,
+stream,10017,streams/COMM/cm01r_sl.wav,
+stream,10018,streams/COMM/cm01s_sl.wav,
+stream,10019,streams/COMM/cm01t_sl.wav,
+stream,10020,streams/COMM/cm01u_sl.wav,
+stream,10021,streams/COMM/cm01v_sl.wav,
+stream,10022,streams/COMM/cm01x_sl.wav,
+stream,10023,streams/COMM/cm01y_sl.wav,
+stream,10024,streams/COMM/cm01z_sl.wav,
+stream,10025,streams/COMM/cm02a_sl.wav,
+stream,10026,streams/COMM/cm02b_sl.wav,
+stream,10027,streams/COMM/cm02c_sl.wav,
+stream,10028,streams/COMM/cm02d_sl.wav,
+stream,10029,streams/COMM/cm02e_sl.wav,
+stream,10030,streams/COMM/cm02f_sl.wav,
+stream,10031,streams/COMM/cm02h_gp.wav,
+stream,10032,streams/COMM/cm02i_gp.wav,
+stream,10033,streams/COMM/cm02j_gp.wav,
+stream,10034,streams/COMM/cm02k_gp.wav,
+stream,10035,streams/COMM/cm02l_gp.wav,
+stream,10036,streams/COMM/cm02m_gp.wav,
+stream,10037,streams/COMM/cm02n_gp.wav,
+stream,10038,streams/COMM/cm02o_gp.wav,
+stream,10039,streams/COMM/cm02p_gp.wav,
+stream,10040,streams/COMM/cm02q_gp.wav,
+stream,10041,streams/COMM/cm02r_gp.wav,
+stream,10042,streams/COMM/cm02s_gp.wav,
+stream,10043,streams/COMM/cm02t_rb.wav,
+stream,10044,streams/COMM/cm02u_rb.wav,
+stream,10045,streams/COMM/cm02v_pe.wav,
+stream,10046,streams/COMM/cm02w_sl.wav,
+stream,10047,streams/COMM/cm02x_gp.wav,
+stream,10048,streams/CRF/cf01b_kt.wav,
+stream,10049,streams/CRF/cf02a_gn.wav,
+stream,10050,streams/CRF/cf02c_gn.wav,
+stream,10051,streams/CRF/cf02d_gn.wav,
+stream,10052,streams/CRF/cf02i_gn.wav,
+stream,10053,streams/CRF/cf02j_gn.wav,
+stream,10054,streams/CRF/cf03a_gn.wav,
+stream,10055,streams/CRF/cf03b_qu.wav,
+stream,10056,streams/CRF/cf03c_qu.wav,
+stream,10057,streams/CRF/cf03d_kt.wav,
+stream,10058,streams/CRF/cf03e_gn.wav,
+stream,10059,streams/CRF/cf03f_qu.wav,
+stream,10060,streams/CRF/cf03g_gn.wav,
+stream,10061,streams/CRF/cf03h_qu.wav,
+stream,10062,streams/CRF/cf03i_gn.wav,
+stream,10063,streams/CRF/cf03j_bh.wav,
+stream,10064,streams/CRF/cf03k_gn.wav,
+stream,10065,streams/CRF/cf03l_bh.wav,
+stream,10066,streams/CRF/cf03m_bh.wav,
+stream,10067,streams/CRF/cf03n_bh.wav,
+stream,10068,streams/CRF/cf03o_bh.wav,
+stream,10069,streams/CRF/cf03p_sa.wav,
+stream,10070,streams/CRF/cf03q_bh.wav,
+stream,10071,streams/CRF/cf03r_bh.wav,
+stream,10072,streams/CRF/cf03s_bh.wav,
+stream,10073,streams/CRF/cf03t_bh.wav,
+stream,10074,streams/CRF/cf04b_kr.wav,
+stream,10076,streams/CRF/cf04e_kt.wav,
+stream,10077,streams/CRF/cf04f_kt.wav,
+stream,10078,streams/CRF/cf04g_qu.wav,
+stream,10079,streams/CRF/cf04h_qu.wav,
+stream,10080,streams/CRF/cf04i_qu.wav,
+stream,10081,streams/CRF/cf05a_gn.wav,
+stream,10082,streams/CRF/cf05b_gn.wav,
+stream,10083,streams/CRF/cf05c_gn.wav,
+stream,10084,streams/CRF/cf05e_gn.wav,
+stream,10085,streams/CRF/cf05f_sc.wav,
+stream,10086,streams/CRF/cf05g_sa.wav,
+stream,10087,streams/CRF/cf05h_gn.wav,
+stream,10088,streams/CRF/cf05i_gn.wav,
+stream,10089,streams/CRF/cf05j_gs.wav,
+stream,10090,streams/CRF/cf05k_sa.wav,
+stream,10091,streams/CRF/cf05l_bh.wav,
+stream,10092,streams/CRF/cf05m_qu.wav,
+stream,10093,streams/CRF/cf05n_bh.wav,
+stream,10094,streams/CRF/cf05o_bh.wav,
+stream,10095,streams/CRF/cf05p_gn.wav,
+stream,10096,streams/CRF/cf07f_cr.wav,
+stream,10097,streams/CRF/cf07g_cr.wav,
+stream,10106,streams/CRF/cf08l_cb.wav,
+stream,10107,streams/CRF/cf08m_cb.wav,
+stream,10111,streams/CRF/cf09d_bh.wav,
+stream,10112,streams/CRF/cf09e_sc.wav,
+stream,10115,streams/DIM/dm02f_sh.wav,
+stream,10116,streams/DIM/dm02g_sh.wav,
+stream,10117,streams/DIM/dm02h_sh.wav,
+stream,10118,streams/DIM/dm02i_sh.wav,
+stream,10119,streams/DIM/dm02j_sh.wav,
+stream,10120,streams/DIM/dm02k_sh.wav,
+stream,10121,streams/DIM/dm02l_sh.wav,
+stream,10122,streams/DIM/dm02m_sh.wav,
+stream,10123,streams/DIM/dm03a_sf.wav,
+stream,10124,streams/DIM/dm03b_sf.wav,
+stream,10125,streams/DIM/dm03c_sa.wav,
+stream,10126,streams/DIM/dm03d_sf.wav,
+stream,10127,streams/DIM/dm03e_sf.wav,
+stream,10128,streams/DIM/dm04b_sa.wav,
+stream,10129,streams/DIM/dm05a_sa.wav,
+stream,10130,streams/DIM/dm05b_sh.wav,
+stream,10131,streams/DIM/dm06a_gd.wav,
+stream,10132,streams/DIM/dm06b_sa.wav,
+stream,10133,streams/DIM/dm06c_gd.wav,
+stream,10134,streams/DIM/dm06d_sa.wav,
+stream,10135,streams/DIM/dm06e_gd.wav,
+stream,10136,streams/DIM/dm06g_sa.wav,
+stream,10137,streams/DIM/dm06h_gd.wav,
+stream,10138,streams/DIM/dm07a_sa.wav,
+stream,10139,streams/DIM/dm07b_gd.wav,
+stream,10140,streams/DIM/dm07c_sa.wav,
+stream,10141,streams/DIM/dm07d_gd.wav,
+stream,10142,streams/DIM/dm07e_gd.wav,
+stream,10143,streams/DIM/dm07f_gd.wav,
+stream,10144,streams/DIM/dm10a_sa.wav,
+stream,10145,streams/DIM/dm10a_sh.wav,
+stream,10146,streams/DIM/dm10b_tr.wav,
+stream,10147,streams/DIM/dm10c_sa.wav,
+stream,10148,streams/DIM/dm10c_sh.wav,
+stream,10149,streams/DIM/dm10d_sh.wav,
+stream,10150,streams/DIM/dm10e_sa.wav,
+stream,10151,streams/DIM/dm10e_sh.wav,
+stream,10152,streams/DIM/dm10f_sa.wav,
+stream,10153,streams/DIM/dm10g_sn.wav,
+stream,10154,streams/DIM/dm10h_tr.wav,
+stream,10155,streams/DIM/dm10i_sa.wav,
+stream,10156,streams/DIM/dm10j_sh.wav,
+stream,10157,streams/DIM/dm10k_sa.wav,
+stream,10158,streams/DIM/dm10k_sh.wav,
+stream,10159,streams/DIM/dm10p_gd.wav,
+stream,10160,streams/DR/dr01a_sa.wav,
+stream,10161,streams/DR/dr01b_tr.wav,
+stream,10162,streams/DR/dr01c_sa.wav,
+stream,10163,streams/DR/dr01d_ew.wav,
+stream,10164,streams/DR/dr01f_tr.wav,
+stream,10165,streams/DR/dr01g_ew.wav,
+stream,10166,streams/DR/dr01h_ew.wav,
+stream,10167,streams/DR/dr01i_tr.wav,
+stream,10168,streams/DR/dr02a_ew.wav,
+stream,10169,streams/DR/dr02b_ew.wav,
+stream,10170,streams/DR/dr02d_ew.wav,
+stream,10171,streams/DR/dr03a_tr.wav,
+stream,10172,streams/DR/dr03b_sa.wav,
+stream,10173,streams/DR/dr03c_cr.wav,
+stream,10174,streams/DR/dr03d_sa.wav,
+stream,10175,streams/DR/dr03e_cr.wav,
+stream,10176,streams/DR/dr03f_cr.wav,
+stream,10177,streams/DR/dr03g_sa.wav,
+stream,10178,streams/DR/dr04d_ht.wav,
+stream,10179,streams/DR/dr04e_tr.wav,
+stream,10180,streams/DR/dr04h_ht.wav,
+stream,10181,streams/DR/dr04k_ht.wav,
+stream,10182,streams/DR/dr04m_ht.wav,
+stream,10183,streams/DR/dr04o_ht.wav,
+stream,10184,streams/DR/dr04p_ht.wav,
+stream,10185,streams/DR/dr05a_cr.wav,
+stream,10186,streams/DR/dr05b_sa.wav,
+stream,10187,streams/DR/dr06a_sa.wav,
+stream,10188,streams/DR/dr06b_cr.wav,
+stream,10189,streams/DR/dr06c_ew.wav,
+stream,10190,streams/DR/dr06d_sa.wav,
+stream,10191,streams/DR/dr06e_tr.wav,
+stream,10192,streams/DR/dr07d_ht.wav,
+stream,10193,streams/DR/dr07e_cr.wav,
+stream,10194,streams/DR/dr07f_cr.wav,
+stream,10195,streams/DR/dr07g_cr.wav,
+stream,10196,streams/DR/dr07i_ht.wav,
+stream,10197,streams/GB/gb01a_kr.wav,
+stream,10198,streams/GB/gb01b_kr.wav,
+stream,10199,streams/GB/gb01c_kr.wav,
+stream,10200,streams/GB/gb01e_gn.wav,
+stream,10201,streams/GB/gb01f_kr.wav,
+stream,10202,streams/GB/gb01h_kr.wav,
+stream,10203,streams/GB/gb01o_kr.wav,
+stream,10204,streams/GB/gb01p_kr.wav,
+stream,10205,streams/GB/gb01q_kr.wav,
+stream,10206,streams/GB/gb01r_kr.wav,
+stream,10207,streams/KP/kp01b_kr.wav,
+stream,10208,streams/KP/kp01e_kr.wav,
+stream,10209,streams/KP/kp03c_kr.wav,
+stream,10210,streams/KP/kp03e_kr.wav,
+stream,10211,streams/KP/kp03g_kr.wav,
+stream,10212,streams/KP/kp04b_kr.wav,
+stream,10213,streams/KP/kp04e_kr.wav,
+stream,10214,streams/KP/kp05b_kr.wav,
+stream,10215,streams/KP/kp09a_kr.wav,
+stream,10216,streams/KP/kp09c_kr.wav,
+stream,10217,streams/KP/kp09d_kr.wav,
+stream,10218,streams/KP/kp09f_kr.wav,
+stream,10219,streams/KP/kp10a_kr.wav,
+stream,10220,streams/KP/kp10c_kr.wav,
+stream,10221,streams/KP/kp10k_kr.wav,
+stream,10222,streams/KP/kp11b_kr.wav,
+stream,10223,streams/KP/kp11i_kr.wav,
+stream,10224,streams/KP/kp11n_kr.wav,
+stream,10225,streams/KP/kp11q_kr.wav,
+stream,10226,streams/KP/kp11s_kr.wav,
+stream,10227,streams/KS/ks01a_tr.wav,
+stream,10228,streams/KS/ks01b_sa.wav,
+stream,10229,streams/KS/ks01c_gn.wav,
+stream,10230,streams/KS/ks01d_gn.wav,
+stream,10231,streams/KS/ks01e_gn.wav,
+stream,10232,streams/MAP/wo01a_gp.wav,
+stream,10233,streams/MAP/wo01b_gp.wav,
+stream,10234,streams/MAP/wo01c_gp.wav,
+stream,10235,streams/MAP/wo01d_gp.wav,
+stream,10236,streams/MAP/wo01e_pe.wav,
+stream,10237,streams/MAP/wo01f_pe.wav,
+stream,10238,streams/MAP/wo01g_pe.wav,
+stream,10239,streams/MAP/wo01h_pe.wav,
+stream,10240,streams/MAP/wo01i_pe.wav,
+stream,10241,streams/MMP/mm01a_sc.wav,
+stream,10242,streams/MMP/mm02a_kr.wav,
+stream,10243,streams/MMP/mm02b_sa.wav,
+stream,10244,streams/MMP/mm02c_kr.wav,
+stream,10245,streams/MMP/mm02d_tr.wav,
+stream,10246,streams/MMP/mm02e_ka.wav,
+stream,10247,streams/MMP/mm02f_sa.wav,
+stream,10248,streams/MMP/mm02g_kr.wav,
+stream,10249,streams/MMP/mm02h_ka.wav,
+stream,10250,streams/MMP/mm02i_sa.wav,
+stream,10251,streams/MMP/mm02j_kr.wav,
+stream,10252,streams/MMP/mm02k_tr.wav,
+stream,10253,streams/MMP/mm02l_ka.wav,
+stream,10254,streams/MMP/mm02m_tr.wav,
+stream,10255,streams/MMP/mm02n_ka.wav,
+stream,10256,streams/MMP/mm02o_ka.wav,
+stream,10257,streams/MMP/mm02p_sa.wav,
+stream,10258,streams/MMP/mm03f_sa.wav,
+stream,10259,streams/MMP/mm03g_tr.wav,
+stream,10260,streams/MMP/mm05j_ka.wav,
+stream,10261,streams/MMP/mm05k_ka.wav,
+stream,10262,streams/MMP/mm05l_ka.wav,
+stream,10263,streams/OFP/of01a_pe.wav,
+stream,10264,streams/OFP/of01b_pe.wav,
+stream,10265,streams/OFP/of01c_gp.wav,
+stream,10266,streams/OFP/of01d_sa.wav,
+stream,10267,streams/OFP/of01e_tr.wav,
+stream,10268,streams/OFP/of01f_sa.wav,
+stream,10269,streams/OFP/of01g_sl.wav,
+stream,10270,streams/OFP/of01h_pe.wav,
+stream,10271,streams/OFP/of01i_sa.wav,
+stream,10272,streams/OFP/of01j_pe.wav,
+stream,10273,streams/OFP/of01j_tr.wav,
+stream,10274,streams/OFP/of01k_pe.wav,
+stream,10275,streams/OFP/of01l_sa.wav,
+stream,10276,streams/OFP/of01m_sa.wav,
+stream,10277,streams/SSH/landing.wav,
+stream,10278,streams/SSH/sh05u_tl.wav,
+stream,10279,streams/SSH/sh06a_tl.wav,
+stream,10280,streams/SSH/sh06b_tl.wav,
+stream,10281,streams/SSH/sh06c_tl.wav,
+stream,10282,streams/SSH/sh06d_tl.wav,
+stream,10283,streams/SSH/sh06e_tl.wav,
+stream,10284,streams/SSH/sh06f_tl.wav,
+stream,10285,streams/SSH/sh06g_tl.wav,
+stream,10286,streams/SSH/sh06h_tl.wav,
+stream,10287,streams/SSH/sh06i_tl.wav,
+stream,10288,streams/SSH/sh06j_tl.wav,
+stream,10289,streams/SSH/sh06k_tl.wav,
+stream,10290,streams/SSH/sh06q_tl.wav,
+stream,10291,streams/SSH/sh06r_tl.wav,
+stream,10292,streams/SSH/sh06t_tl.wav,
+stream,10293,streams/SSH/sh06w_tl.wav,
+stream,10294,streams/SSS/ss01a_sk.wav,
+stream,10295,streams/SSS/ss01b_sk.wav,
+stream,10296,streams/SSS/ss01d_sk.wav,
+stream,10297,streams/SSS/ss01f_sk.wav,
+stream,10298,streams/SSS/ss01g_sk.wav,
+stream,10299,streams/SSS/ss01h_sk.wav,
+stream,10300,streams/SSS/ss01i_sk.wav,
+stream,10301,streams/SSS/ss01j_sk.wav,
+stream,10302,streams/SSS/ss01k_sk.wav,
+stream,10303,streams/SSS/ss01l_sk.wav,
+stream,10304,streams/SSS/ss01m_sk.wav,
+stream,10305,streams/SSS/ss01n_cr.wav,
+stream,10306,streams/SSS/ss01o_cr.wav,
+stream,10307,streams/SSS/ss01p_cr.wav,
+stream,10308,streams/SSS/ss02a_sk.wav,
+stream,10309,streams/SSS/ss02b_sk.wav,
+stream,10310,streams/SSS/ss02c_sk.wav,
+stream,10311,streams/SSS/ss02d_sk.wav,
+stream,10312,streams/SSS/ss02e_sk.wav,
+stream,10313,streams/SSS/ss02f_sk.wav,
+stream,10314,streams/TREX/boss.wav,
+stream,10435,streams/VFP/vf01a_tr.wav,
+stream,10436,streams/VFP/vf01b_sa.wav,
+stream,10437,streams/VFP/vf01c_pe.wav,
+stream,10438,streams/VFP/vf01d_sa.wav,
+stream,10439,streams/VFP/vf01e_pe.wav,
+stream,10440,streams/WC/wc02a_ke.wav,
+stream,10441,streams/WC/wc02b_ke.wav,
+stream,10442,streams/WC/wc02c_sa.wav,
+stream,10443,streams/WC/wc02d_ke.wav,
+stream,10444,streams/WC/wc02e_ke.wav,
+stream,10445,streams/WC/wc02i_tr.wav,
+stream,10446,streams/WC/wc03a_ke.wav,
+stream,10447,streams/WC/wc03c_ke.wav,
+stream,10448,streams/WC/wc03d_ke.wav,
+stream,10449,streams/WC/wc03h_tr.wav,
+stream,10450,streams/WC/wc03j_tr.wav,
+stream,10451,streams/WC/wc04a_sa.wav,
+stream,10452,streams/WC/wc04b_tr.wav,
+stream,10453,streams/WC/wc04c_sa.wav,
+stream,10454,streams/WC/wc04d_sa.wav,
+stream,10455,streams/WC/wc04e_sa.wav,
+stream,10456,streams/WC/wc04f_sa.wav,
+stream,10457,streams/WC/wc04g_tr.wav,
+stream,10458,streams/WC/wc04t_tr.wav,
+stream,10459,streams/WC/wc05a_sa.wav,
+stream,10460,streams/WC/wc05b_gn.wav,
+stream,10461,streams/WC/wc05c_sa.wav,
+stream,10462,streams/WC/wc05d_gn.wav,
+stream,10463,streams/WC/wc05e_gn.wav,
+stream,10464,streams/WC/wc05f_fa.wav,
+stream,10465,streams/WC/wc05g_fa.wav,
+stream,10466,streams/WC/wc05h_sa.wav,
+stream,10467,streams/WC/wc05i_fa.wav,
+stream,10468,streams/WC/wc05j_fa.wav,
+stream,10469,streams/SSH/nowarp.wav,
+stream,10470,streams/SSH/krazoa.wav,
+stream,10471,streams/SSH/noshop.wav,
+stream,10472,streams/SSH/readyto.wav,
+stream,10473,streams/MAP/brief1.wav,
+stream,10474,streams/MAP/brief2.wav,
+stream,10475,streams/MAP/brief3.wav,
+stream,20506,streams/COMM/TTHollow.wav,
+stream,20508,streams/LV/pay_inst.wav,
+stream,20509,streams/LV/pay_no.wav,
+stream,20510,streams/LV/pay_yes.wav,
+stream,20770,streams/DR/dr02b_ew.wav,
+stream,20893,streams/DR/dr01d_ew.wav,
+stream,20897,streams/CR/shop1n.wav,
+stream,20898,streams/CR/shop1o.wav,
+stream,20899,streams/CR/shop1p.wav,
+stream,20900,streams/SK/shop1f.wav,
+stream,20901,streams/SK/shop1g.wav,
+stream,20903,streams/SK/shop1h.wav,
+stream,20904,streams/SK/shop1j.wav,
+stream,20905,streams/SK/shop1k.wav,
+stream,20906,streams/SK/shop1l.wav,
+stream,20907,streams/SK/shop1m.wav,
+stream,20908,streams/SK/shop2a.wav,
+stream,20909,streams/SK/shop2b.wav,
+stream,20910,streams/SK/shop2f.wav,
+stream,20911,streams/SK/shop2c.wav,
+stream,20914,streams/ARW/pe_keepon.wav,
+stream,20915,streams/ARW/pe_lookout.wav,
+stream,20916,streams/ARW/pe_enemy.wav,
+stream,20917,streams/ARW/pe_shoot.wav,
+stream,20918,streams/ARW/pe_usebomb.wav,
+stream,20919,streams/ARW/sl_goodjob.wav,
+stream,20920,streams/ARW/sl_missring.wav,
+stream,20921,streams/ARW/sl_mine.wav,
+stream,20922,streams/ARW/sl_careful.wav,
+stream,20923,streams/ARW/sl_danger.wav,
+stream,20924,streams/ARW/2planet.wav,
+stream,20925,streams/ARW/2darkice.wav,
+stream,20926,streams/ARW/2cloud.wav,
+stream,20927,streams/ARW/2walledcity.wav,
+stream,20928,streams/ARW/2dragrock.wav,
+stream,20929,streams/ARW/gp_goodfly.wav,
+stream,20930,streams/ARW/gp_newhigh.wav,
+stream,20931,streams/ARW/gp_force.wav,
+stream,20932,streams/ARW/gp_welldone.wav,
+stream,20933,streams/MAP/brief4.wav,
+stream,20934,streams/MAP/brief5.wav,
+stream,20935,streams/MAP/brief6.wav,
+stream,20936,streams/MAP/brief7.wav,
+stream,20937,streams/MAP/brief8.wav,
+stream,20938,streams/MAP/brief9.wav,
+stream,20939,streams/MAP/brief10.wav,
+stream,20940,streams/MAP/brief11.wav,
+stream,20941,streams/MAP/brief12.wav,
+stream,20942,streams/CRF/quencld.wav,
+stream,20943,streams/CR/shop1n.wav,
+stream,20944,streams/CR/shop1o.wav,
+stream,20945,streams/CR/shop1o.wav,
+stream,20960,streams/GNR/gnrdeath.wav,
+stream,20961,streams/GNR/gnrlife.wav,
+stream,20962,streams/MAP/brief13.wav,
+stream,20963,streams/MAP/brief14.wav,
+stream,20964,streams/MAP/brief15.wav,
+stream,20965,streams/MAP/brief16.wav,
+stream,20966,streams/MAP/brief17.wav,
+sfx_trigger,1,,vol=40 pitch=127 muestras=420;421;422;423
+sfx_trigger,2,,vol=40 pitch=127 muestras=436;437;438;439
+sfx_trigger,3,,vol=50 pitch=127 muestras=444;445;446;447
+sfx_trigger,4,,vol=55 pitch=127 muestras=452;453;454;455
+sfx_trigger,5,,vol=50 pitch=127 muestras=428;429;430;431
+sfx_trigger,6,,vol=40 pitch=127 muestras=482;483;484;485
+sfx_trigger,7,,vol=40 pitch=127 muestras=424;425;426;427
+sfx_trigger,8,,vol=40 pitch=127 muestras=440;441;442;443
+sfx_trigger,9,,vol=45 pitch=127 muestras=448;449;450;451
+sfx_trigger,10,,vol=55 pitch=127 muestras=456;457;458;459
+sfx_trigger,11,,vol=50 pitch=127 muestras=432;433;434;435
+sfx_trigger,12,,vol=40 pitch=127 muestras=486;487;488;489
+sfx_trigger,13,,vol=60 pitch=127 muestras=175;0;0;0
+sfx_trigger,14,,vol=85 pitch=127 muestras=564;565;566;567
+sfx_trigger,15,,vol=70 pitch=127 muestras=568;569;570;571
+sfx_trigger,16,,vol=55 pitch=127 muestras=468;469;470;471
+sfx_trigger,17,,vol=70 pitch=127 muestras=472;473;474;475
+sfx_trigger,18,,vol=100 pitch=127 muestras=625;626;627;628
+sfx_trigger,19,,vol=100 pitch=127 muestras=629;630;0;0
+sfx_trigger,20,,vol=100 pitch=127 muestras=631;632;633;634
+sfx_trigger,21,,vol=100 pitch=127 muestras=635;636;637;0
+sfx_trigger,22,,vol=100 pitch=127 muestras=638;639;640;641
+sfx_trigger,23,,vol=100 pitch=127 muestras=642;643;644;645
+sfx_trigger,24,,vol=100 pitch=127 muestras=646;647;0;0
+sfx_trigger,25,,vol=100 pitch=127 muestras=648;0;0;0
+sfx_trigger,26,,vol=80 pitch=127 muestras=343;344;345;0
+sfx_trigger,27,,vol=95 pitch=127 muestras=243;244;245;0
+sfx_trigger,28,,vol=100 pitch=127 muestras=246;247;248;0
+sfx_trigger,29,,vol=90 pitch=127 muestras=237;238;0;0
+sfx_trigger,30,,vol=60 pitch=127 muestras=573;574;575;0
+sfx_trigger,31,,vol=90 pitch=127 muestras=610;611;612;0
+sfx_trigger,32,,vol=85 pitch=127 muestras=613;614;615;0
+sfx_trigger,33,,vol=70 pitch=127 muestras=616;617;0;0
+sfx_trigger,34,,vol=85 pitch=127 muestras=347;348;349;0
+sfx_trigger,35,,vol=80 pitch=127 muestras=335;0;0;0
+sfx_trigger,36,,vol=95 pitch=127 muestras=239;240;241;0
+sfx_trigger,37,,vol=90 pitch=127 muestras=594;595;596;597
+sfx_trigger,38,,vol=95 pitch=127 muestras=242;0;0;0
+sfx_trigger,39,,vol=95 pitch=127 muestras=249;250;0;0
+sfx_trigger,40,,vol=95 pitch=127 muestras=579;580;0;0
+sfx_trigger,41,,vol=95 pitch=127 muestras=243;0;0;0
+sfx_trigger,42,,vol=95 pitch=127 muestras=249;250;0;0
+sfx_trigger,43,,vol=90 pitch=127 muestras=233;234;235;236
+sfx_trigger,44,,vol=85 pitch=127 muestras=351;0;0;0
+sfx_trigger,45,,vol=85 pitch=127 muestras=0;0;0;0
+sfx_trigger,46,,vol=95 pitch=127 muestras=588;589;590;591
+sfx_trigger,47,,vol=80 pitch=127 muestras=572;0;0;0
+sfx_trigger,48,,vol=100 pitch=127 muestras=0;0;0;0
+sfx_trigger,49,,vol=100 pitch=127 muestras=0;0;0;0
+sfx_trigger,50,,vol=100 pitch=127 muestras=658;659;660;0
+sfx_trigger,51,,vol=100 pitch=127 muestras=69;0;0;0
+sfx_trigger,52,,vol=100 pitch=127 muestras=61;0;0;0
+sfx_trigger,53,,vol=0 pitch=127 muestras=61;0;0;0
+sfx_trigger,54,,vol=105 pitch=127 muestras=331;0;0;0
+sfx_trigger,55,,vol=105 pitch=127 muestras=331;0;0;0
+sfx_trigger,56,,vol=100 pitch=127 muestras=330;0;0;0
+sfx_trigger,57,,vol=100 pitch=127 muestras=134;0;0;0
+sfx_trigger,58,,vol=100 pitch=127 muestras=324;0;0;0
+sfx_trigger,59,,vol=100 pitch=127 muestras=134;0;0;0
+sfx_trigger,60,,vol=95 pitch=127 muestras=330;0;0;0
+sfx_trigger,61,,vol=100 pitch=127 muestras=0;0;0;0
+sfx_trigger,62,,vol=100 pitch=127 muestras=0;0;0;0
+sfx_trigger,63,,vol=97 pitch=127 muestras=181;0;0;0
+sfx_trigger,64,,vol=100 pitch=127 muestras=0;0;0;0
+sfx_trigger,65,,vol=80 pitch=127 muestras=184;0;0;0
+sfx_trigger,66,,vol=80 pitch=127 muestras=185;0;0;0
+sfx_trigger,67,,vol=80 pitch=127 muestras=183;0;0;0
+sfx_trigger,68,,vol=100 pitch=127 muestras=182;0;0;0
+sfx_trigger,69,,vol=100 pitch=127 muestras=0;0;0;0
+sfx_trigger,70,,vol=100 pitch=127 muestras=0;0;0;0
+sfx_trigger,71,,vol=57 pitch=127 muestras=0;0;0;0
+sfx_trigger,72,,vol=90 pitch=127 muestras=325;0;0;0
+sfx_trigger,73,,vol=75 pitch=127 muestras=177;0;0;0
+sfx_trigger,74,,vol=95 pitch=127 muestras=326;0;0;0
+sfx_trigger,75,,vol=100 pitch=127 muestras=47;0;0;0
+sfx_trigger,76,,vol=37 pitch=127 muestras=45;0;0;0
+sfx_trigger,77,,vol=100 pitch=127 muestras=0;0;0;0
+sfx_trigger,78,,vol=75 pitch=127 muestras=170;0;0;0
+sfx_trigger,79,,vol=90 pitch=127 muestras=61;0;0;0
+sfx_trigger,80,,vol=100 pitch=127 muestras=169;0;0;0
+sfx_trigger,81,,vol=100 pitch=127 muestras=0;0;0;0
+sfx_trigger,82,,vol=100 pitch=127 muestras=59;0;0;0
+sfx_trigger,83,,vol=100 pitch=127 muestras=0;0;0;0
+sfx_trigger,84,,vol=100 pitch=127 muestras=134;0;0;0
+sfx_trigger,85,,vol=100 pitch=127 muestras=0;0;0;0
+sfx_trigger,86,,vol=70 pitch=127 muestras=72;0;0;0
+sfx_trigger,87,,vol=100 pitch=127 muestras=46;0;0;0
+sfx_trigger,88,,vol=75 pitch=127 muestras=170;0;0;0
+sfx_trigger,89,,vol=75 pitch=127 muestras=171;0;0;0
+sfx_trigger,90,,vol=75 pitch=127 muestras=172;0;0;0
+sfx_trigger,91,,vol=100 pitch=127 muestras=173;0;0;0
+sfx_trigger,92,,vol=85 pitch=127 muestras=145;0;0;0
+sfx_trigger,93,,vol=70 pitch=127 muestras=71;0;0;0
+sfx_trigger,94,,vol=80 pitch=127 muestras=0;0;0;0
+sfx_trigger,95,,vol=95 pitch=127 muestras=151;0;0;0
+sfx_trigger,96,,vol=95 pitch=127 muestras=150;0;0;0
+sfx_trigger,97,,vol=95 pitch=127 muestras=64;0;0;0
+sfx_trigger,98,,vol=85 pitch=127 muestras=333;0;0;0
+sfx_trigger,99,,vol=100 pitch=127 muestras=0;0;0;0
+sfx_trigger,100,,vol=100 pitch=127 muestras=32;0;0;0
+sfx_trigger,101,,vol=100 pitch=127 muestras=327;0;0;0
+sfx_trigger,102,,vol=100 pitch=127 muestras=60;0;0;0
+sfx_trigger,103,,vol=100 pitch=127 muestras=0;0;0;0
+sfx_trigger,104,,vol=100 pitch=127 muestras=139;0;0;0
+sfx_trigger,105,,vol=84 pitch=127 muestras=93;0;0;0
+sfx_trigger,106,,vol=60 pitch=127 muestras=0;0;0;0
+sfx_trigger,107,,vol=100 pitch=127 muestras=725;0;0;0
+sfx_trigger,108,,vol=57 pitch=127 muestras=0;0;0;0
+sfx_trigger,109,,vol=80 pitch=127 muestras=152;0;0;0
+sfx_trigger,110,,vol=105 pitch=127 muestras=541;0;0;0
+sfx_trigger,111,,vol=80 pitch=127 muestras=352;0;0;0
+sfx_trigger,112,,vol=57 pitch=127 muestras=0;0;0;0
+sfx_trigger,113,,vol=100 pitch=127 muestras=324;0;0;0
+sfx_trigger,114,,vol=70 pitch=127 muestras=159;0;0;0
+sfx_trigger,115,,vol=100 pitch=127 muestras=0;0;0;0
+sfx_trigger,116,,vol=100 pitch=127 muestras=0;0;0;0
+sfx_trigger,117,,vol=100 pitch=127 muestras=0;0;0;0
+sfx_trigger,118,,vol=100 pitch=127 muestras=0;0;0;0
+sfx_trigger,119,,vol=100 pitch=127 muestras=0;0;0;0
+sfx_trigger,120,,vol=100 pitch=127 muestras=0;0;0;0
+sfx_trigger,121,,vol=100 pitch=127 muestras=0;0;0;0
+sfx_trigger,122,,vol=100 pitch=127 muestras=328;0;0;0
+sfx_trigger,123,,vol=100 pitch=127 muestras=0;0;0;0
+sfx_trigger,124,,vol=100 pitch=127 muestras=0;0;0;0
+sfx_trigger,125,,vol=105 pitch=127 muestras=60;0;0;0
+sfx_trigger,126,,vol=80 pitch=127 muestras=179;0;0;0
+sfx_trigger,127,,vol=115 pitch=127 muestras=60;0;0;0
+sfx_trigger,128,,vol=100 pitch=127 muestras=36;0;0;0
+sfx_trigger,129,,vol=100 pitch=127 muestras=41;0;0;0
+sfx_trigger,130,,vol=90 pitch=127 muestras=318;0;0;0
+sfx_trigger,131,,vol=90 pitch=127 muestras=319;0;0;0
+sfx_trigger,132,,vol=90 pitch=127 muestras=317;0;0;0
+sfx_trigger,133,,vol=100 pitch=127 muestras=32;0;0;0
+sfx_trigger,134,,vol=109 pitch=127 muestras=19;0;0;0
+sfx_trigger,135,,vol=110 pitch=127 muestras=18;0;0;0
+sfx_trigger,136,,vol=110 pitch=127 muestras=17;0;0;0
+sfx_trigger,137,,vol=100 pitch=127 muestras=13;0;0;0
+sfx_trigger,138,,vol=100 pitch=127 muestras=38;0;0;0
+sfx_trigger,139,,vol=100 pitch=127 muestras=20;21;0;0
+sfx_trigger,140,,vol=100 pitch=127 muestras=15;16;0;0
+sfx_trigger,141,,vol=100 pitch=127 muestras=106;0;0;0
+sfx_trigger,142,,vol=100 pitch=127 muestras=10;0;0;0
+sfx_trigger,143,,vol=100 pitch=127 muestras=11;0;0;0
+sfx_trigger,144,,vol=105 pitch=127 muestras=14;0;0;0
+sfx_trigger,145,,vol=105 pitch=127 muestras=14;0;0;0
+sfx_trigger,146,,vol=105 pitch=127 muestras=14;0;0;0
+sfx_trigger,147,,vol=100 pitch=127 muestras=128;0;0;0
+sfx_trigger,148,,vol=100 pitch=127 muestras=347;348;349;0
+sfx_trigger,149,,vol=100 pitch=127 muestras=0;0;0;0
+sfx_trigger,150,,vol=85 pitch=127 muestras=377;0;0;0
+sfx_trigger,151,,vol=65 pitch=127 muestras=378;0;0;0
+sfx_trigger,152,,vol=50 pitch=127 muestras=381;0;0;0
+sfx_trigger,153,,vol=65 pitch=127 muestras=380;0;0;0
+sfx_trigger,154,,vol=90 pitch=127 muestras=63;0;0;0
+sfx_trigger,155,,vol=35 pitch=127 muestras=156;0;0;0
+sfx_trigger,156,,vol=80 pitch=127 muestras=0;0;0;0
+sfx_trigger,157,,vol=80 pitch=127 muestras=145;0;0;0
+sfx_trigger,158,,vol=105 pitch=127 muestras=65;0;0;0
+sfx_trigger,159,,vol=100 pitch=127 muestras=61;0;0;0
+sfx_trigger,160,,vol=100 pitch=127 muestras=50;0;0;0
+sfx_trigger,161,,vol=100 pitch=100 muestras=722;0;0;0
+sfx_trigger,162,,vol=90 pitch=127 muestras=48;0;0;0
+sfx_trigger,163,,vol=110 pitch=127 muestras=723;0;0;0
+sfx_trigger,164,,vol=100 pitch=127 muestras=55;0;0;0
+sfx_trigger,165,,vol=100 pitch=127 muestras=358;0;0;0
+sfx_trigger,166,,vol=110 pitch=127 muestras=139;0;0;0
+sfx_trigger,167,,vol=75 pitch=127 muestras=172;0;0;0
+sfx_trigger,168,,vol=90 pitch=127 muestras=513;0;0;0
+sfx_trigger,169,,vol=90 pitch=127 muestras=514;0;0;0
+sfx_trigger,170,,vol=100 pitch=127 muestras=0;0;0;0
+sfx_trigger,171,,vol=80 pitch=127 muestras=251;252;0;0
+sfx_trigger,172,,vol=0 pitch=127 muestras=252;0;0;0
+sfx_trigger,173,,vol=100 pitch=127 muestras=362;0;0;0
+sfx_trigger,174,,vol=100 pitch=127 muestras=0;0;0;0
+sfx_trigger,175,,vol=80 pitch=127 muestras=332;0;0;0
+sfx_trigger,176,,vol=100 pitch=127 muestras=38;0;0;0
+sfx_trigger,177,,vol=100 pitch=127 muestras=0;0;0;0
+sfx_trigger,178,,vol=100 pitch=127 muestras=0;0;0;0
+sfx_trigger,179,,vol=55 pitch=127 muestras=181;0;0;0
+sfx_trigger,180,,vol=100 pitch=127 muestras=336;0;0;0
+sfx_trigger,181,,vol=100 pitch=127 muestras=325;0;0;0
+sfx_trigger,182,,vol=100 pitch=127 muestras=0;0;0;0
+sfx_trigger,183,,vol=100 pitch=127 muestras=48;0;0;0
+sfx_trigger,184,,vol=100 pitch=127 muestras=0;0;0;0
+sfx_trigger,185,,vol=100 pitch=127 muestras=48;0;0;0
+sfx_trigger,186,,vol=100 pitch=127 muestras=455;0;0;0
+sfx_trigger,187,,vol=100 pitch=127 muestras=296;0;0;0
+sfx_trigger,188,,vol=100 pitch=127 muestras=0;0;0;0
+sfx_trigger,189,,vol=100 pitch=127 muestras=296;0;0;0
+sfx_trigger,190,,vol=100 pitch=127 muestras=292;0;0;0
+sfx_trigger,191,,vol=100 pitch=127 muestras=328;0;0;0
+sfx_trigger,192,,vol=90 pitch=127 muestras=350;0;0;0
+sfx_trigger,193,,vol=90 pitch=127 muestras=346;0;0;0
+sfx_trigger,194,,vol=100 pitch=127 muestras=356;0;0;0
+sfx_trigger,195,,vol=100 pitch=127 muestras=371;0;0;0
+sfx_trigger,196,,vol=80 pitch=127 muestras=0;0;0;0
+sfx_trigger,197,,vol=80 pitch=127 muestras=0;0;0;0
+sfx_trigger,198,,vol=100 pitch=127 muestras=0;0;0;0
+sfx_trigger,199,,vol=100 pitch=127 muestras=0;0;0;0
+sfx_trigger,200,,vol=100 pitch=127 muestras=60;0;0;0
+sfx_trigger,201,,vol=100 pitch=127 muestras=131;0;0;0
+sfx_trigger,202,,vol=80 pitch=127 muestras=178;0;0;0
+sfx_trigger,203,,vol=80 pitch=127 muestras=363;0;0;0
+sfx_trigger,204,,vol=50 pitch=127 muestras=36;0;0;0
+sfx_trigger,205,,vol=100 pitch=127 muestras=648;0;0;0
+sfx_trigger,206,,vol=100 pitch=127 muestras=58;0;0;0
+sfx_trigger,207,,vol=100 pitch=127 muestras=326;0;0;0
+sfx_trigger,208,,vol=90 pitch=127 muestras=325;0;0;0
+sfx_trigger,209,,vol=100 pitch=127 muestras=31;0;0;0
+sfx_trigger,210,,vol=90 pitch=127 muestras=721;0;0;0
+sfx_trigger,211,,vol=100 pitch=127 muestras=725;0;0;0
+sfx_trigger,212,,vol=86 pitch=127 muestras=373;374;375;0
+sfx_trigger,213,,vol=100 pitch=127 muestras=0;0;0;0
+sfx_trigger,214,,vol=100 pitch=127 muestras=41;0;0;0
+sfx_trigger,215,,vol=100 pitch=127 muestras=43;0;0;0
+sfx_trigger,216,,vol=100 pitch=127 muestras=341;0;0;0
+sfx_trigger,217,,vol=100 pitch=127 muestras=54;0;0;0
+sfx_trigger,218,,vol=100 pitch=127 muestras=0;0;0;0
+sfx_trigger,219,,vol=100 pitch=127 muestras=0;0;0;0
+sfx_trigger,220,,vol=100 pitch=127 muestras=0;0;0;0
+sfx_trigger,221,,vol=100 pitch=127 muestras=0;1;23;0
+sfx_trigger,222,,vol=100 pitch=127 muestras=0;1;23;0
+sfx_trigger,223,,vol=60 pitch=127 muestras=0;1;23;0
+sfx_trigger,224,,vol=40 pitch=127 muestras=507;0;0;0
+sfx_trigger,225,,vol=100 pitch=127 muestras=0;0;0;0
+sfx_trigger,226,,vol=100 pitch=127 muestras=49;0;0;0
+sfx_trigger,227,,vol=38 pitch=127 muestras=513;514;0;0
+sfx_trigger,228,,vol=100 pitch=127 muestras=0;0;0;0
+sfx_trigger,229,,vol=100 pitch=127 muestras=294;0;0;0
+sfx_trigger,230,,vol=100 pitch=127 muestras=0;0;0;0
+sfx_trigger,231,,vol=80 pitch=127 muestras=231;232;0;0
+sfx_trigger,232,,vol=60 pitch=127 muestras=294;0;0;0
+sfx_trigger,233,,vol=100 pitch=127 muestras=338;0;0;0
+sfx_trigger,234,,vol=100 pitch=127 muestras=324;0;0;0
+sfx_trigger,235,,vol=100 pitch=127 muestras=0;0;0;0
+sfx_trigger,236,,vol=100 pitch=127 muestras=340;0;0;0
+sfx_trigger,237,,vol=0 pitch=127 muestras=0;0;0;0
+sfx_trigger,238,,vol=127 pitch=127 muestras=389;0;0;0
+sfx_trigger,239,,vol=50 pitch=127 muestras=0;0;0;0
+sfx_trigger,240,,vol=100 pitch=127 muestras=0;0;0;0
+sfx_trigger,241,,vol=100 pitch=127 muestras=324;0;0;0
+sfx_trigger,242,,vol=100 pitch=127 muestras=55;0;0;0
+sfx_trigger,243,,vol=120 pitch=127 muestras=176;0;0;0
+sfx_trigger,244,,vol=100 pitch=127 muestras=176;0;0;0
+sfx_trigger,245,,vol=40 pitch=127 muestras=409;0;0;0
+sfx_trigger,246,,vol=40 pitch=127 muestras=409;0;0;0
+sfx_trigger,247,,vol=40 pitch=127 muestras=408;0;0;0
+sfx_trigger,248,,vol=100 pitch=127 muestras=410;0;0;0
+sfx_trigger,249,,vol=100 pitch=127 muestras=176;0;0;0
+sfx_trigger,250,,vol=100 pitch=127 muestras=0;0;0;0
+sfx_trigger,251,,vol=100 pitch=127 muestras=180;0;0;0
+sfx_trigger,252,,vol=40 pitch=127 muestras=407;0;0;0
+sfx_trigger,253,,vol=40 pitch=127 muestras=406;0;0;0
+sfx_trigger,254,,vol=100 pitch=127 muestras=0;0;0;0
+sfx_trigger,255,,vol=65 pitch=127 muestras=379;0;0;0
+sfx_trigger,256,,vol=60 pitch=127 muestras=382;0;0;0
+sfx_trigger,257,,vol=100 pitch=127 muestras=0;0;0;0
+sfx_trigger,258,,vol=100 pitch=127 muestras=0;0;0;0
+sfx_trigger,259,,vol=0 pitch=127 muestras=0;0;0;0
+sfx_trigger,260,,vol=100 pitch=127 muestras=0;0;0;0
+sfx_trigger,261,,vol=0 pitch=127 muestras=0;0;0;0
+sfx_trigger,262,,vol=80 pitch=127 muestras=326;0;0;0
+sfx_trigger,263,,vol=80 pitch=127 muestras=69;0;0;0
+sfx_trigger,264,,vol=100 pitch=127 muestras=63;0;0;0
+sfx_trigger,265,,vol=80 pitch=127 muestras=178;0;0;0
+sfx_trigger,266,,vol=40 pitch=127 muestras=0;0;0;0
+sfx_trigger,267,,vol=100 pitch=127 muestras=324;0;0;0
+sfx_trigger,268,,vol=80 pitch=127 muestras=0;0;0;0
+sfx_trigger,269,,vol=100 pitch=127 muestras=0;0;0;0
+sfx_trigger,270,,vol=100 pitch=127 muestras=0;0;0;0
+sfx_trigger,271,,vol=100 pitch=127 muestras=36;0;0;0
+sfx_trigger,272,,vol=100 pitch=127 muestras=159;0;0;0
+sfx_trigger,273,,vol=70 pitch=127 muestras=0;0;0;0
+sfx_trigger,274,,vol=100 pitch=127 muestras=0;0;0;0
+sfx_trigger,275,,vol=67 pitch=127 muestras=155;0;0;0
+sfx_trigger,276,,vol=70 pitch=127 muestras=362;0;0;0
+sfx_trigger,277,,vol=100 pitch=127 muestras=53;0;0;0
+sfx_trigger,278,,vol=70 pitch=127 muestras=0;0;0;0
+sfx_trigger,279,,vol=100 pitch=127 muestras=0;0;0;0
+sfx_trigger,280,,vol=100 pitch=127 muestras=55;0;0;0
+sfx_trigger,281,,vol=70 pitch=127 muestras=0;0;0;0
+sfx_trigger,282,,vol=85 pitch=127 muestras=313;0;0;0
+sfx_trigger,283,,vol=80 pitch=127 muestras=295;0;0;0
+sfx_trigger,284,,vol=0 pitch=127 muestras=0;0;0;0
+sfx_trigger,285,,vol=100 pitch=127 muestras=161;0;0;0
+sfx_trigger,286,,vol=100 pitch=127 muestras=0;0;0;0
+sfx_trigger,287,,vol=85 pitch=127 muestras=8;9;0;0
+sfx_trigger,288,,vol=100 pitch=127 muestras=0;0;0;0
+sfx_trigger,289,,vol=100 pitch=127 muestras=4;5;0;0
+sfx_trigger,290,,vol=100 pitch=127 muestras=129;138;0;0
+sfx_trigger,291,,vol=100 pitch=127 muestras=22;0;0;0
+sfx_trigger,292,,vol=100 pitch=127 muestras=0;363;0;0
+sfx_trigger,293,,vol=72 pitch=127 muestras=8;9;0;0
+sfx_trigger,294,,vol=105 pitch=127 muestras=161;0;0;0
+sfx_trigger,295,,vol=80 pitch=127 muestras=332;0;0;0
+sfx_trigger,296,,vol=100 pitch=127 muestras=452;453;454;455
+sfx_trigger,297,,vol=105 pitch=127 muestras=356;0;0;0
+sfx_trigger,298,,vol=85 pitch=127 muestras=40;0;0;0
+sfx_trigger,299,,vol=100 pitch=141 muestras=57;0;0;0
+sfx_trigger,300,,vol=100 pitch=127 muestras=57;0;0;0
+sfx_trigger,301,,vol=100 pitch=104 muestras=57;0;0;0
+sfx_trigger,302,,vol=60 pitch=127 muestras=649;0;0;0
+sfx_trigger,303,,vol=100 pitch=127 muestras=357;0;0;0
+sfx_trigger,304,,vol=100 pitch=127 muestras=357;0;0;0
+sfx_trigger,305,,vol=100 pitch=127 muestras=0;0;0;0
+sfx_trigger,306,,vol=100 pitch=127 muestras=0;0;0;0
+sfx_trigger,307,,vol=100 pitch=127 muestras=225;226;229;230
+sfx_trigger,308,,vol=100 pitch=127 muestras=226;227;224;225
+sfx_trigger,309,,vol=100 pitch=127 muestras=357;0;0;0
+sfx_trigger,310,,vol=100 pitch=127 muestras=342;0;0;0
+sfx_trigger,311,,vol=65 pitch=127 muestras=135;0;0;0
+sfx_trigger,312,,vol=100 pitch=127 muestras=356;0;0;0
+sfx_trigger,313,,vol=100 pitch=110 muestras=70;0;0;0
+sfx_trigger,314,,vol=100 pitch=127 muestras=233;234;235;236
+sfx_trigger,315,,vol=100 pitch=127 muestras=224;225;229;0
+sfx_trigger,316,,vol=100 pitch=127 muestras=751;0;0;0
+sfx_trigger,317,,vol=115 pitch=127 muestras=223;0;0;0
+sfx_trigger,319,,vol=100 pitch=127 muestras=160;0;0;0
+sfx_trigger,320,,vol=100 pitch=127 muestras=136;0;0;0
+sfx_trigger,321,,vol=100 pitch=127 muestras=154;0;0;0
+sfx_trigger,322,,vol=100 pitch=127 muestras=46;0;0;0
+sfx_trigger,323,,vol=112 pitch=127 muestras=300;0;0;0
+sfx_trigger,324,,vol=80 pitch=127 muestras=299;0;0;0
+sfx_trigger,325,,vol=80 pitch=127 muestras=298;0;0;0
+sfx_trigger,326,,vol=95 pitch=127 muestras=157;0;0;0
+sfx_trigger,327,,vol=100 pitch=127 muestras=140;0;0;0
+sfx_trigger,328,,vol=100 pitch=127 muestras=0;0;0;0
+sfx_trigger,329,,vol=100 pitch=127 muestras=0;0;0;0
+sfx_trigger,330,,vol=100 pitch=127 muestras=37;0;0;0
+sfx_trigger,331,,vol=100 pitch=127 muestras=0;0;0;0
+sfx_trigger,332,,vol=90 pitch=127 muestras=251;252;0;0
+sfx_trigger,333,,vol=100 pitch=127 muestras=0;0;0;0
+sfx_trigger,335,,vol=100 pitch=127 muestras=0;0;0;0
+sfx_trigger,336,,vol=100 pitch=127 muestras=266;267;0;0
+sfx_trigger,338,,vol=100 pitch=127 muestras=253;0;0;0
+sfx_trigger,339,,vol=100 pitch=127 muestras=41;0;0;0
+sfx_trigger,340,,vol=100 pitch=127 muestras=159;0;0;0
+sfx_trigger,341,,vol=100 pitch=127 muestras=0;0;0;0
+sfx_trigger,342,,vol=100 pitch=127 muestras=141;0;0;0
+sfx_trigger,343,,vol=100 pitch=127 muestras=0;0;0;0
+sfx_trigger,344,,vol=100 pitch=127 muestras=290;0;0;0
+sfx_trigger,345,,vol=100 pitch=127 muestras=328;0;0;0
+sfx_trigger,346,,vol=100 pitch=127 muestras=0;0;0;0
+sfx_trigger,347,,vol=0 pitch=127 muestras=0;0;0;0
+sfx_trigger,348,,vol=100 pitch=127 muestras=0;0;0;0
+sfx_trigger,349,,vol=100 pitch=127 muestras=0;0;0;0
+sfx_trigger,350,,vol=100 pitch=127 muestras=46;0;0;0
+sfx_trigger,351,,vol=67 pitch=127 muestras=0;0;0;0
+sfx_trigger,352,,vol=100 pitch=127 muestras=0;0;0;0
+sfx_trigger,353,,vol=100 pitch=127 muestras=0;0;0;0
+sfx_trigger,354,,vol=100 pitch=127 muestras=42;0;0;0
+sfx_trigger,355,,vol=100 pitch=127 muestras=43;0;0;0
+sfx_trigger,356,,vol=100 pitch=127 muestras=333;0;0;0
+sfx_trigger,357,,vol=100 pitch=127 muestras=0;0;0;0
+sfx_trigger,358,,vol=100 pitch=127 muestras=64;0;0;0
+sfx_trigger,359,,vol=70 pitch=127 muestras=332;0;0;0
+sfx_trigger,360,,vol=100 pitch=127 muestras=36;0;0;0
+sfx_trigger,361,,vol=30 pitch=127 muestras=0;0;0;0
+sfx_trigger,362,,vol=110 pitch=127 muestras=209;0;0;0
+sfx_trigger,363,,vol=80 pitch=127 muestras=45;0;0;0
+sfx_trigger,364,,vol=100 pitch=127 muestras=210;0;0;0
+sfx_trigger,365,,vol=100 pitch=127 muestras=332;0;0;0
+sfx_trigger,366,,vol=100 pitch=127 muestras=794;0;0;0
+sfx_trigger,367,,vol=100 pitch=127 muestras=363;0;0;0
+sfx_trigger,368,,vol=80 pitch=127 muestras=178;0;0;0
+sfx_trigger,369,,vol=100 pitch=127 muestras=0;0;0;0
+sfx_trigger,370,,vol=100 pitch=127 muestras=321;0;0;0
+sfx_trigger,371,,vol=100 pitch=127 muestras=0;0;0;0
+sfx_trigger,372,,vol=100 pitch=127 muestras=330;0;0;0
+sfx_trigger,373,,vol=100 pitch=127 muestras=335;0;348;349
+sfx_trigger,374,,vol=100 pitch=127 muestras=119;0;0;0
+sfx_trigger,375,,vol=100 pitch=127 muestras=0;0;0;0
+sfx_trigger,376,,vol=100 pitch=127 muestras=338;0;0;0
+sfx_trigger,377,,vol=100 pitch=127 muestras=340;0;0;0
+sfx_trigger,378,,vol=100 pitch=127 muestras=0;0;0;0
+sfx_trigger,379,,vol=100 pitch=127 muestras=129;0;0;0
+sfx_trigger,380,,vol=100 pitch=127 muestras=131;0;0;0
+sfx_trigger,381,,vol=100 pitch=127 muestras=106;0;0;0
+sfx_trigger,382,,vol=100 pitch=127 muestras=330;0;0;0
+sfx_trigger,383,,vol=100 pitch=127 muestras=102;103;104;105
+sfx_trigger,384,,vol=100 pitch=127 muestras=108;109;0;0
+sfx_trigger,386,,vol=100 pitch=127 muestras=108;0;0;0
+sfx_trigger,387,,vol=100 pitch=127 muestras=109;0;0;0
+sfx_trigger,388,,vol=100 pitch=127 muestras=110;0;0;0
+sfx_trigger,389,,vol=100 pitch=127 muestras=111;0;0;0
+sfx_trigger,390,,vol=90 pitch=127 muestras=119;0;0;0
+sfx_trigger,391,,vol=100 pitch=127 muestras=107;0;0;0
+sfx_trigger,392,,vol=85 pitch=127 muestras=36;0;0;0
+sfx_trigger,393,,vol=115 pitch=127 muestras=114;0;0;0
+sfx_trigger,394,,vol=100 pitch=127 muestras=347;348;349;0
+sfx_trigger,395,,vol=48 pitch=127 muestras=108;0;0;0
+sfx_trigger,396,,vol=100 pitch=127 muestras=104;0;0;0
+sfx_trigger,397,,vol=50 pitch=127 muestras=0;0;0;0
+sfx_trigger,398,,vol=100 pitch=127 muestras=0;0;0;0
+sfx_trigger,399,,vol=100 pitch=127 muestras=0;0;0;0
+sfx_trigger,400,,vol=100 pitch=127 muestras=0;0;0;0
+sfx_trigger,401,,vol=100 pitch=127 muestras=330;0;0;0
+sfx_trigger,402,,vol=100 pitch=127 muestras=132;0;0;0
+sfx_trigger,403,,vol=100 pitch=127 muestras=147;0;0;0
+sfx_trigger,404,,vol=110 pitch=127 muestras=155;0;0;0
+sfx_trigger,405,,vol=100 pitch=127 muestras=64;0;0;0
+sfx_trigger,406,,vol=100 pitch=127 muestras=0;0;0;0
+sfx_trigger,407,,vol=100 pitch=127 muestras=324;0;0;0
+sfx_trigger,408,,vol=100 pitch=127 muestras=133;0;0;0
+sfx_trigger,409,,vol=127 pitch=127 muestras=143;144;0;0
+sfx_trigger,410,,vol=100 pitch=127 muestras=327;0;0;0
+sfx_trigger,411,,vol=100 pitch=127 muestras=128;0;0;0
+sfx_trigger,412,,vol=100 pitch=127 muestras=38;0;0;0
+sfx_trigger,413,,vol=100 pitch=127 muestras=0;0;0;0
+sfx_trigger,414,,vol=57 pitch=127 muestras=0;0;0;0
+sfx_trigger,415,,vol=100 pitch=127 muestras=0;0;0;0
+sfx_trigger,416,,vol=100 pitch=127 muestras=0;0;0;0
+sfx_trigger,417,,vol=100 pitch=127 muestras=31;0;0;0
+sfx_trigger,418,,vol=100 pitch=127 muestras=38;0;0;0
+sfx_trigger,419,,vol=100 pitch=127 muestras=10;0;0;0
+sfx_trigger,420,,vol=100 pitch=127 muestras=138;0;0;0
+sfx_trigger,421,,vol=100 pitch=127 muestras=61;0;0;0
+sfx_trigger,422,,vol=100 pitch=127 muestras=65;0;0;0
+sfx_trigger,423,,vol=100 pitch=127 muestras=52;0;0;0
+sfx_trigger,424,,vol=100 pitch=127 muestras=39;0;0;0
+sfx_trigger,425,,vol=100 pitch=127 muestras=0;0;0;0
+sfx_trigger,426,,vol=100 pitch=127 muestras=0;0;0;0
+sfx_trigger,427,,vol=90 pitch=127 muestras=323;0;0;0
+sfx_trigger,428,,vol=110 pitch=127 muestras=322;0;0;0
+sfx_trigger,429,,vol=83 pitch=127 muestras=0;0;0;0
+sfx_trigger,430,,vol=100 pitch=127 muestras=298;0;0;0
+sfx_trigger,431,,vol=100 pitch=127 muestras=0;0;0;0
+sfx_trigger,432,,vol=100 pitch=127 muestras=0;0;0;0
+sfx_trigger,433,,vol=100 pitch=127 muestras=0;0;0;0
+sfx_trigger,434,,vol=100 pitch=127 muestras=0;0;0;0
+sfx_trigger,435,,vol=80 pitch=127 muestras=0;0;0;0
+sfx_trigger,436,,vol=100 pitch=127 muestras=0;0;0;0
+sfx_trigger,437,,vol=100 pitch=127 muestras=0;0;0;0
+sfx_trigger,438,,vol=100 pitch=127 muestras=424;425;426;427
+sfx_trigger,439,,vol=100 pitch=127 muestras=68;0;0;0
+sfx_trigger,440,,vol=100 pitch=127 muestras=0;0;0;0
+sfx_trigger,441,,vol=100 pitch=127 muestras=0;0;0;0
+sfx_trigger,442,,vol=115 pitch=127 muestras=209;0;0;0
+sfx_trigger,443,,vol=100 pitch=127 muestras=223;0;0;0
+sfx_trigger,444,,vol=100 pitch=127 muestras=0;0;0;0
+sfx_trigger,445,,vol=100 pitch=127 muestras=66;0;0;0
+sfx_trigger,446,,vol=100 pitch=127 muestras=36;0;0;0
+sfx_trigger,447,,vol=100 pitch=127 muestras=150;0;0;0
+sfx_trigger,448,,vol=100 pitch=127 muestras=0;0;0;0
+sfx_trigger,449,,vol=100 pitch=127 muestras=142;0;0;0
+sfx_trigger,450,,vol=100 pitch=127 muestras=0;0;0;0
+sfx_trigger,451,,vol=75 pitch=127 muestras=64;0;0;0
+sfx_trigger,452,,vol=100 pitch=127 muestras=0;0;0;0
+sfx_trigger,453,,vol=100 pitch=127 muestras=0;0;0;0
+sfx_trigger,454,,vol=75 pitch=127 muestras=0;0;0;0
+sfx_trigger,455,,vol=100 pitch=127 muestras=153;0;0;0
+sfx_trigger,456,,vol=115 pitch=127 muestras=60;0;0;0
+sfx_trigger,457,,vol=100 pitch=127 muestras=329;0;0;0
+sfx_trigger,458,,vol=100 pitch=127 muestras=321;0;0;0
+sfx_trigger,459,,vol=87 pitch=127 muestras=158;0;0;0
+sfx_trigger,460,,vol=100 pitch=127 muestras=65;0;0;0
+sfx_trigger,461,,vol=100 pitch=127 muestras=134;0;0;0
+sfx_trigger,462,,vol=100 pitch=127 muestras=0;0;0;0
+sfx_trigger,463,,vol=120 pitch=127 muestras=153;0;0;0
+sfx_trigger,464,,vol=110 pitch=127 muestras=131;0;0;0
+sfx_trigger,465,,vol=100 pitch=127 muestras=152;0;0;0
+sfx_trigger,466,,vol=100 pitch=127 muestras=0;0;0;0
+sfx_trigger,467,,vol=100 pitch=127 muestras=36;0;0;0
+sfx_trigger,468,,vol=100 pitch=127 muestras=363;0;0;0
+sfx_trigger,469,,vol=100 pitch=127 muestras=0;0;0;0
+sfx_trigger,470,,vol=100 pitch=127 muestras=0;0;0;0
+sfx_trigger,471,,vol=100 pitch=127 muestras=0;0;0;0
+sfx_trigger,472,,vol=100 pitch=127 muestras=0;0;0;0
+sfx_trigger,473,,vol=100 pitch=127 muestras=341;0;0;0
+sfx_trigger,474,,vol=100 pitch=127 muestras=0;0;0;0
+sfx_trigger,475,,vol=100 pitch=127 muestras=56;0;0;0
+sfx_trigger,476,,vol=100 pitch=127 muestras=0;0;0;0
+sfx_trigger,477,,vol=100 pitch=127 muestras=51;0;0;0
+sfx_trigger,478,,vol=100 pitch=127 muestras=0;0;0;0
+sfx_trigger,479,,vol=100 pitch=127 muestras=130;0;0;0
+sfx_trigger,480,,vol=100 pitch=127 muestras=137;0;0;0
+sfx_trigger,481,,vol=60 pitch=93 muestras=420;421;422;423
+sfx_trigger,482,,vol=100 pitch=127 muestras=130;131;0;0
+sfx_trigger,483,,vol=100 pitch=127 muestras=0;0;0;0
+sfx_trigger,484,,vol=100 pitch=127 muestras=0;0;0;0
+sfx_trigger,485,,vol=100 pitch=127 muestras=317;0;0;0
+sfx_trigger,486,,vol=100 pitch=127 muestras=31;0;0;0
+sfx_trigger,487,,vol=100 pitch=127 muestras=0;0;0;0
+sfx_trigger,488,,vol=100 pitch=127 muestras=70;0;0;0
+sfx_trigger,489,,vol=100 pitch=127 muestras=0;0;0;0
+sfx_trigger,490,,vol=100 pitch=127 muestras=113;0;0;0
+sfx_trigger,491,,vol=100 pitch=127 muestras=112;0;0;0
+sfx_trigger,492,,vol=100 pitch=127 muestras=661;663;655;0
+sfx_trigger,493,,vol=100 pitch=127 muestras=98;99;100;0
+sfx_trigger,494,,vol=100 pitch=127 muestras=122;0;0;0
+sfx_trigger,495,,vol=100 pitch=127 muestras=121;0;0;0
+sfx_trigger,496,,vol=100 pitch=127 muestras=0;0;0;0
+sfx_trigger,497,,vol=100 pitch=127 muestras=0;0;0;0
+sfx_trigger,498,,vol=80 pitch=127 muestras=347;348;349;0
+sfx_trigger,499,,vol=100 pitch=127 muestras=0;0;0;0
+sfx_trigger,500,,vol=100 pitch=127 muestras=0;0;0;0
+sfx_trigger,501,,vol=104 pitch=127 muestras=158;0;0;0
+sfx_trigger,502,,vol=100 pitch=127 muestras=0;0;0;0
+sfx_trigger,503,,vol=100 pitch=127 muestras=0;0;0;0
+sfx_trigger,504,,vol=100 pitch=127 muestras=44;0;0;0
+sfx_trigger,505,,vol=100 pitch=127 muestras=32;0;0;0
+sfx_trigger,506,,vol=100 pitch=127 muestras=52;0;0;0
+sfx_trigger,507,,vol=80 pitch=127 muestras=38;0;0;0
+sfx_trigger,508,,vol=100 pitch=127 muestras=38;0;0;0
+sfx_trigger,509,,vol=90 pitch=127 muestras=290;0;0;0
+sfx_trigger,510,,vol=70 pitch=127 muestras=292;0;0;0
+sfx_trigger,511,,vol=127 pitch=127 muestras=297;0;0;0
+sfx_trigger,512,,vol=100 pitch=127 muestras=289;0;0;0
+sfx_trigger,513,,vol=70 pitch=127 muestras=296;0;0;0
+sfx_trigger,514,,vol=0 pitch=127 muestras=292;0;0;0
+sfx_trigger,515,,vol=85 pitch=127 muestras=341;0;0;0
+sfx_trigger,516,,vol=100 pitch=127 muestras=37;0;0;0
+sfx_trigger,517,,vol=100 pitch=127 muestras=0;0;0;0
+sfx_trigger,518,,vol=100 pitch=127 muestras=326;0;0;0
+sfx_trigger,519,,vol=100 pitch=127 muestras=326;0;0;0
+sfx_trigger,520,,vol=100 pitch=127 muestras=0;0;0;0
+sfx_trigger,521,,vol=85 pitch=127 muestras=0;0;0;0
+sfx_trigger,522,,vol=85 pitch=127 muestras=332;0;0;0
+sfx_trigger,523,,vol=70 pitch=127 muestras=550;0;0;0
+sfx_trigger,524,,vol=100 pitch=127 muestras=376;0;0;0
+sfx_trigger,525,,vol=70 pitch=127 muestras=481;0;0;0
+sfx_trigger,526,,vol=85 pitch=127 muestras=583;0;0;0
+sfx_trigger,527,,vol=55 pitch=127 muestras=476;0;0;0
+sfx_trigger,528,,vol=100 pitch=127 muestras=142;0;0;0
+sfx_trigger,529,,vol=60 pitch=127 muestras=149;0;0;0
+sfx_trigger,530,,vol=87 pitch=127 muestras=139;0;0;0
+sfx_trigger,531,,vol=110 pitch=127 muestras=139;0;0;0
+sfx_trigger,532,,vol=100 pitch=127 muestras=130;0;0;0
+sfx_trigger,533,,vol=90 pitch=127 muestras=547;0;0;0
+sfx_trigger,534,,vol=90 pitch=127 muestras=548;0;0;0
+sfx_trigger,535,,vol=90 pitch=127 muestras=546;0;0;0
+sfx_trigger,536,,vol=80 pitch=127 muestras=549;0;0;0
+sfx_trigger,537,,vol=85 pitch=127 muestras=592;0;0;0
+sfx_trigger,538,,vol=85 pitch=127 muestras=545;0;0;0
+sfx_trigger,539,,vol=85 pitch=127 muestras=544;0;0;0
+sfx_trigger,540,,vol=100 pitch=127 muestras=0;0;0;0
+sfx_trigger,541,,vol=40 pitch=127 muestras=460;0;0;0
+sfx_trigger,542,,vol=40 pitch=127 muestras=462;0;0;0
+sfx_trigger,543,,vol=40 pitch=127 muestras=466;0;0;0
+sfx_trigger,544,,vol=40 pitch=127 muestras=452;0;0;0
+sfx_trigger,545,,vol=65 pitch=127 muestras=464;0;0;0
+sfx_trigger,546,,vol=40 pitch=127 muestras=462;0;0;0
+sfx_trigger,547,,vol=50 pitch=127 muestras=63;0;0;0
+sfx_trigger,549,,vol=100 pitch=127 muestras=0;0;0;0
+sfx_trigger,550,,vol=50 pitch=127 muestras=0;0;0;0
+sfx_trigger,551,,vol=75 pitch=127 muestras=0;0;0;0
+sfx_trigger,552,,vol=100 pitch=127 muestras=0;0;0;0
+sfx_trigger,553,,vol=50 pitch=127 muestras=0;0;0;0
+sfx_trigger,554,,vol=75 pitch=127 muestras=0;0;0;0
+sfx_trigger,555,,vol=100 pitch=127 muestras=0;0;0;0
+sfx_trigger,556,,vol=50 pitch=127 muestras=0;0;0;0
+sfx_trigger,557,,vol=75 pitch=127 muestras=0;0;0;0
+sfx_trigger,558,,vol=100 pitch=127 muestras=0;0;0;0
+sfx_trigger,559,,vol=100 pitch=127 muestras=0;0;0;0
+sfx_trigger,560,,vol=100 pitch=127 muestras=0;0;0;0
+sfx_trigger,561,,vol=100 pitch=127 muestras=0;0;0;0
+sfx_trigger,562,,vol=70 pitch=127 muestras=72;0;0;0
+sfx_trigger,563,,vol=95 pitch=127 muestras=363;0;0;0
+sfx_trigger,564,,vol=50 pitch=127 muestras=657;0;0;0
+sfx_trigger,565,,vol=0 pitch=127 muestras=568;569;570;571
+sfx_trigger,566,,vol=90 pitch=127 muestras=62;0;0;0
+sfx_trigger,567,,vol=0 pitch=127 muestras=22;0;0;0
+sfx_trigger,568,,vol=100 pitch=127 muestras=0;0;0;0
+sfx_trigger,569,,vol=100 pitch=127 muestras=353;354;355;0
+sfx_trigger,570,,vol=100 pitch=127 muestras=67;0;0;0
+sfx_trigger,571,,vol=100 pitch=127 muestras=0;0;0;0
+sfx_trigger,572,,vol=100 pitch=127 muestras=337;0;0;0
+sfx_trigger,573,,vol=100 pitch=127 muestras=329;0;0;0
+sfx_trigger,574,,vol=70 pitch=127 muestras=353;354;355;0
+sfx_trigger,575,,vol=95 pitch=127 muestras=347;348;349;0
+sfx_trigger,576,,vol=100 pitch=127 muestras=631;632;633;634
+sfx_trigger,577,,vol=40 pitch=127 muestras=648;0;0;0
+sfx_trigger,578,,vol=100 pitch=127 muestras=626;0;0;0
+sfx_trigger,579,,vol=100 pitch=127 muestras=0;0;0;0
+sfx_trigger,580,,vol=100 pitch=127 muestras=0;0;0;0
+sfx_trigger,581,,vol=80 pitch=127 muestras=654;0;0;0
+sfx_trigger,582,,vol=90 pitch=127 muestras=655;0;0;0
+sfx_trigger,583,,vol=90 pitch=127 muestras=656;0;0;0
+sfx_trigger,584,,vol=100 pitch=127 muestras=0;0;0;0
+sfx_trigger,585,,vol=100 pitch=127 muestras=0;0;0;0
+sfx_trigger,586,,vol=100 pitch=127 muestras=0;0;0;0
+sfx_trigger,587,,vol=80 pitch=127 muestras=665;0;0;0
+sfx_trigger,588,,vol=80 pitch=127 muestras=664;0;0;0
+sfx_trigger,589,,vol=100 pitch=127 muestras=672;0;0;0
+sfx_trigger,590,,vol=100 pitch=127 muestras=673;674;0;0
+sfx_trigger,591,,vol=100 pitch=127 muestras=663;0;0;0
+sfx_trigger,592,,vol=100 pitch=127 muestras=145;0;0;0
+sfx_trigger,593,,vol=100 pitch=127 muestras=0;0;0;0
+sfx_trigger,594,,vol=100 pitch=127 muestras=0;0;0;0
+sfx_trigger,595,,vol=100 pitch=127 muestras=0;0;0;0
+sfx_trigger,596,,vol=100 pitch=127 muestras=661;0;0;0
+sfx_trigger,597,,vol=75 pitch=127 muestras=353;0;0;0
+sfx_trigger,598,,vol=100 pitch=127 muestras=648;0;0;0
+sfx_trigger,599,,vol=100 pitch=127 muestras=626;0;0;0
+sfx_trigger,600,,vol=100 pitch=127 muestras=662;0;0;0
+sfx_trigger,601,,vol=100 pitch=127 muestras=667;0;0;0
+sfx_trigger,602,,vol=100 pitch=127 muestras=668;717;718;719
+sfx_trigger,603,,vol=100 pitch=127 muestras=669;0;0;0
+sfx_trigger,604,,vol=100 pitch=127 muestras=115;0;0;0
+sfx_trigger,605,,vol=100 pitch=127 muestras=0;0;0;0
+sfx_trigger,606,,vol=100 pitch=127 muestras=0;0;0;0
+sfx_trigger,607,,vol=100 pitch=127 muestras=0;0;0;0
+sfx_trigger,608,,vol=95 pitch=127 muestras=669;0;0;0
+sfx_trigger,609,,vol=120 pitch=127 muestras=115;0;0;0
+sfx_trigger,610,,vol=80 pitch=127 muestras=681;682;683;0
+sfx_trigger,611,,vol=85 pitch=127 muestras=22;0;0;0
+sfx_trigger,612,,vol=85 pitch=127 muestras=0;0;0;0
+sfx_trigger,613,,vol=29 pitch=127 muestras=0;0;0;0
+sfx_trigger,614,,vol=75 pitch=127 muestras=672;0;0;0
+sfx_trigger,615,,vol=80 pitch=127 muestras=0;0;0;0
+sfx_trigger,616,,vol=85 pitch=127 muestras=661;0;0;0
+sfx_trigger,617,,vol=70 pitch=127 muestras=658;659;660;0
+sfx_trigger,618,,vol=85 pitch=127 muestras=119;0;0;0
+sfx_trigger,619,,vol=100 pitch=127 muestras=672;0;0;0
+sfx_trigger,620,,vol=72 pitch=127 muestras=0;0;0;0
+sfx_trigger,621,,vol=100 pitch=127 muestras=120;0;0;0
+sfx_trigger,622,,vol=100 pitch=127 muestras=0;0;0;0
+sfx_trigger,623,,vol=100 pitch=127 muestras=0;0;0;0
+sfx_trigger,624,,vol=85 pitch=127 muestras=118;0;0;0
+sfx_trigger,625,,vol=85 pitch=127 muestras=117;118;116;0
+sfx_trigger,626,,vol=80 pitch=127 muestras=0;0;0;0
+sfx_trigger,627,,vol=95 pitch=127 muestras=118;0;0;0
+sfx_trigger,628,,vol=105 pitch=127 muestras=116;117;118;0
+sfx_trigger,629,,vol=90 pitch=127 muestras=101;0;0;0
+sfx_trigger,630,,vol=85 pitch=127 muestras=317;0;0;0
+sfx_trigger,631,,vol=85 pitch=127 muestras=0;0;0;0
+sfx_trigger,632,,vol=0 pitch=127 muestras=361;0;0;0
+sfx_trigger,633,,vol=60 pitch=127 muestras=119;0;0;0
+sfx_trigger,634,,vol=100 pitch=127 muestras=98;0;0;0
+sfx_trigger,635,,vol=100 pitch=127 muestras=146;0;0;0
+sfx_trigger,636,,vol=100 pitch=127 muestras=22;0;0;0
+sfx_trigger,637,,vol=55 pitch=127 muestras=40;0;0;0
+sfx_trigger,638,,vol=80 pitch=127 muestras=148;0;0;0
+sfx_trigger,639,,vol=75 pitch=127 muestras=0;0;0;0
+sfx_trigger,640,,vol=90 pitch=127 muestras=356;0;0;0
+sfx_trigger,641,,vol=100 pitch=127 muestras=0;0;0;0
+sfx_trigger,642,,vol=100 pitch=127 muestras=0;0;0;0
+sfx_trigger,643,,vol=75 pitch=127 muestras=0;0;0;0
+sfx_trigger,644,,vol=75 pitch=127 muestras=0;0;0;0
+sfx_trigger,645,,vol=60 pitch=127 muestras=34;35;0;0
+sfx_trigger,646,,vol=70 pitch=127 muestras=168;0;0;0
+sfx_trigger,647,,vol=70 pitch=127 muestras=191;0;0;0
+sfx_trigger,648,,vol=28 pitch=127 muestras=187;0;0;0
+sfx_trigger,649,,vol=40 pitch=127 muestras=175;0;0;0
+sfx_trigger,650,,vol=60 pitch=127 muestras=174;0;0;0
+sfx_trigger,651,,vol=45 pitch=127 muestras=194;0;0;0
+sfx_trigger,652,,vol=75 pitch=127 muestras=188;0;0;0
+sfx_trigger,653,,vol=100 pitch=127 muestras=189;0;0;0
+sfx_trigger,654,,vol=100 pitch=127 muestras=7;6;0;0
+sfx_trigger,655,,vol=100 pitch=127 muestras=2;3;0;0
+sfx_trigger,656,,vol=100 pitch=127 muestras=4;5;0;0
+sfx_trigger,657,,vol=100 pitch=127 muestras=0;0;0;0
+sfx_trigger,658,,vol=100 pitch=127 muestras=373;374;375;0
+sfx_trigger,659,,vol=100 pitch=127 muestras=0;0;0;0
+sfx_trigger,660,,vol=100 pitch=127 muestras=10;11;0;0
+sfx_trigger,661,,vol=100 pitch=127 muestras=631;632;633;634
+sfx_trigger,662,,vol=100 pitch=127 muestras=372;0;0;0
+sfx_trigger,663,,vol=60 pitch=127 muestras=373;374;375;0
+sfx_trigger,664,,vol=100 pitch=127 muestras=747;0;0;0
+sfx_trigger,665,,vol=100 pitch=127 muestras=217;218;0;0
+sfx_trigger,666,,vol=100 pitch=127 muestras=219;220;221;222
+sfx_trigger,667,,vol=100 pitch=127 muestras=211;212;213;0
+sfx_trigger,668,,vol=100 pitch=127 muestras=214;215;216;0
+sfx_trigger,669,,vol=70 pitch=127 muestras=291;0;0;0
+sfx_trigger,670,,vol=85 pitch=127 muestras=385;0;0;0
+sfx_trigger,671,,vol=65 pitch=127 muestras=392;0;0;0
+sfx_trigger,672,,vol=105 pitch=127 muestras=384;0;0;0
+sfx_trigger,673,,vol=90 pitch=127 muestras=393;0;0;0
+sfx_trigger,674,,vol=68 pitch=127 muestras=395;0;0;0
+sfx_trigger,675,,vol=110 pitch=127 muestras=388;0;0;0
+sfx_trigger,676,,vol=90 pitch=127 muestras=386;0;0;0
+sfx_trigger,677,,vol=115 pitch=127 muestras=387;0;0;0
+sfx_trigger,678,,vol=95 pitch=127 muestras=402;0;0;0
+sfx_trigger,679,,vol=95 pitch=127 muestras=401;0;0;0
+sfx_trigger,680,,vol=95 pitch=127 muestras=400;0;0;0
+sfx_trigger,681,,vol=95 pitch=127 muestras=399;0;0;0
+sfx_trigger,682,,vol=95 pitch=127 muestras=398;0;0;0
+sfx_trigger,683,,vol=95 pitch=127 muestras=397;0;0;0
+sfx_trigger,684,,vol=100 pitch=127 muestras=384;0;0;0
+sfx_trigger,685,,vol=80 pitch=127 muestras=73;0;0;0
+sfx_trigger,686,,vol=85 pitch=127 muestras=573;574;575;0
+sfx_trigger,687,,vol=70 pitch=127 muestras=63;0;0;0
+sfx_trigger,688,,vol=75 pitch=127 muestras=515;516;0;0
+sfx_trigger,689,,vol=100 pitch=127 muestras=0;0;0;0
+sfx_trigger,690,,vol=70 pitch=127 muestras=66;0;0;0
+sfx_trigger,691,,vol=95 pitch=127 muestras=396;0;0;0
+sfx_trigger,692,,vol=75 pitch=127 muestras=394;0;0;0
+sfx_trigger,693,,vol=75 pitch=127 muestras=320;0;0;0
+sfx_trigger,694,,vol=120 pitch=127 muestras=389;0;0;0
+sfx_trigger,695,,vol=120 pitch=127 muestras=390;0;0;0
+sfx_trigger,696,,vol=40 pitch=127 muestras=33;0;0;0
+sfx_trigger,697,,vol=110 pitch=127 muestras=131;0;0;0
+sfx_trigger,698,,vol=90 pitch=127 muestras=254;255;256;257
+sfx_trigger,700,,vol=117 pitch=127 muestras=736;0;0;0
+sfx_trigger,701,,vol=100 pitch=127 muestras=737;738;0;0
+sfx_trigger,702,,vol=115 pitch=127 muestras=738;0;0;0
+sfx_trigger,703,,vol=121 pitch=127 muestras=60;0;0;0
+sfx_trigger,704,,vol=90 pitch=127 muestras=391;0;0;0
+sfx_trigger,705,,vol=90 pitch=127 muestras=51;0;0;0
+sfx_trigger,706,,vol=105 pitch=127 muestras=511;512;0;0
+sfx_trigger,707,,vol=80 pitch=127 muestras=555;0;0;0
+sfx_trigger,708,,vol=100 pitch=127 muestras=169;0;0;0
+sfx_trigger,709,,vol=100 pitch=127 muestras=254;255;0;0
+sfx_trigger,710,,vol=127 pitch=127 muestras=359;0;0;0
+sfx_trigger,711,,vol=105 pitch=23 muestras=307;0;0;0
+sfx_trigger,712,,vol=100 pitch=127 muestras=37;0;0;0
+sfx_trigger,713,,vol=60 pitch=127 muestras=305;0;0;0
+sfx_trigger,714,,vol=100 pitch=127 muestras=0;0;0;0
+sfx_trigger,715,,vol=85 pitch=127 muestras=614;0;0;0
+sfx_trigger,716,,vol=85 pitch=127 muestras=619;0;0;0
+sfx_trigger,717,,vol=85 pitch=127 muestras=610;611;612;0
+sfx_trigger,718,,vol=100 pitch=127 muestras=335;0;0;0
+sfx_trigger,719,,vol=85 pitch=127 muestras=613;614;615;0
+sfx_trigger,720,,vol=85 pitch=127 muestras=620;0;0;0
+sfx_trigger,721,,vol=85 pitch=127 muestras=613;0;0;0
+sfx_trigger,722,,vol=100 pitch=127 muestras=130;0;0;0
+sfx_trigger,723,,vol=85 pitch=127 muestras=618;0;0;0
+sfx_trigger,724,,vol=85 pitch=127 muestras=243;244;245;0
+sfx_trigger,725,,vol=85 pitch=127 muestras=613;614;615;0
+sfx_trigger,726,,vol=85 pitch=127 muestras=243;244;245;0
+sfx_trigger,727,,vol=85 pitch=127 muestras=613;614;615;0
+sfx_trigger,728,,vol=85 pitch=127 muestras=254;255;256;257
+sfx_trigger,729,,vol=100 pitch=127 muestras=349;0;0;0
+sfx_trigger,730,,vol=100 pitch=127 muestras=349;348;347;0
+sfx_trigger,731,,vol=100 pitch=127 muestras=349;0;0;0
+sfx_trigger,732,,vol=100 pitch=127 muestras=620;0;0;0
+sfx_trigger,733,,vol=100 pitch=127 muestras=329;0;0;0
+sfx_trigger,734,,vol=100 pitch=127 muestras=0;0;0;0
+sfx_trigger,735,,vol=100 pitch=127 muestras=0;0;0;0
+sfx_trigger,736,,vol=100 pitch=127 muestras=693;0;0;0
+sfx_trigger,737,,vol=100 pitch=127 muestras=0;0;0;0
+sfx_trigger,738,,vol=100 pitch=127 muestras=0;0;0;0
+sfx_trigger,739,,vol=100 pitch=127 muestras=0;0;0;0
+sfx_trigger,740,,vol=100 pitch=127 muestras=0;0;0;0
+sfx_trigger,741,,vol=100 pitch=127 muestras=0;0;0;0
+sfx_trigger,742,,vol=100 pitch=127 muestras=0;0;0;0
+sfx_trigger,743,,vol=100 pitch=127 muestras=0;0;0;0
+sfx_trigger,744,,vol=100 pitch=127 muestras=0;0;0;0
+sfx_trigger,745,,vol=100 pitch=127 muestras=0;0;0;0
+sfx_trigger,746,,vol=100 pitch=127 muestras=0;0;0;0
+sfx_trigger,747,,vol=100 pitch=127 muestras=0;0;0;0
+sfx_trigger,748,,vol=100 pitch=127 muestras=0;0;0;0
+sfx_trigger,749,,vol=100 pitch=127 muestras=0;0;0;0
+sfx_trigger,750,,vol=100 pitch=127 muestras=0;0;0;0
+sfx_trigger,751,,vol=100 pitch=127 muestras=0;0;0;0
+sfx_trigger,752,,vol=100 pitch=127 muestras=0;0;0;0
+sfx_trigger,753,,vol=100 pitch=127 muestras=735;0;0;0
+sfx_trigger,754,,vol=100 pitch=127 muestras=0;0;0;0
+sfx_trigger,756,,vol=100 pitch=127 muestras=736;0;0;0
+sfx_trigger,757,,vol=100 pitch=127 muestras=0;0;0;0
+sfx_trigger,758,,vol=115 pitch=127 muestras=735;0;0;0
+sfx_trigger,759,,vol=100 pitch=127 muestras=0;0;0;0
+sfx_trigger,760,,vol=100 pitch=127 muestras=0;0;0;0
+sfx_trigger,761,,vol=100 pitch=127 muestras=387;0;0;0
+sfx_trigger,762,,vol=75 pitch=127 muestras=816;0;0;0
+sfx_trigger,763,,vol=100 pitch=127 muestras=821;0;0;0
+sfx_trigger,764,,vol=100 pitch=127 muestras=671;0;0;0
+sfx_trigger,765,,vol=100 pitch=127 muestras=0;0;0;0
+sfx_trigger,766,,vol=100 pitch=127 muestras=0;0;0;0
+sfx_trigger,767,,vol=100 pitch=127 muestras=0;0;0;0
+sfx_trigger,768,,vol=100 pitch=127 muestras=0;0;0;0
+sfx_trigger,769,,vol=100 pitch=127 muestras=0;0;0;0
+sfx_trigger,770,,vol=100 pitch=127 muestras=0;0;0;0
+sfx_trigger,771,,vol=100 pitch=127 muestras=0;0;0;0
+sfx_trigger,772,,vol=100 pitch=127 muestras=0;0;0;0
+sfx_trigger,773,,vol=100 pitch=127 muestras=0;0;0;0
+sfx_trigger,774,,vol=100 pitch=127 muestras=0;0;0;0
+sfx_trigger,775,,vol=100 pitch=127 muestras=0;0;0;0
+sfx_trigger,776,,vol=100 pitch=127 muestras=0;0;0;0
+sfx_trigger,777,,vol=100 pitch=127 muestras=0;0;0;0
+sfx_trigger,778,,vol=100 pitch=127 muestras=0;0;0;0
+sfx_trigger,779,,vol=100 pitch=127 muestras=0;0;0;0
+sfx_trigger,780,,vol=100 pitch=127 muestras=0;0;0;0
+sfx_trigger,781,,vol=100 pitch=127 muestras=0;0;0;0
+sfx_trigger,782,,vol=100 pitch=127 muestras=0;0;0;0
+sfx_trigger,783,,vol=100 pitch=127 muestras=0;0;0;0
+sfx_trigger,784,,vol=100 pitch=127 muestras=0;0;0;0
+sfx_trigger,785,,vol=100 pitch=127 muestras=383;0;0;0
+sfx_trigger,786,,vol=90 pitch=127 muestras=61;0;0;0
+sfx_trigger,787,,vol=75 pitch=127 muestras=304;0;0;0
+sfx_trigger,788,,vol=90 pitch=127 muestras=301;302;303;0
+sfx_trigger,789,,vol=127 pitch=127 muestras=143;144;0;0
+sfx_trigger,790,,vol=90 pitch=127 muestras=373;374;375;0
+sfx_trigger,791,,vol=96 pitch=127 muestras=306;0;0;0
+sfx_trigger,792,,vol=85 pitch=127 muestras=598;599;600;601
+sfx_trigger,793,,vol=85 pitch=127 muestras=299;298;0;0
+sfx_trigger,794,,vol=100 pitch=127 muestras=352;0;0;0
+sfx_trigger,795,,vol=100 pitch=127 muestras=94;0;0;0
+sfx_trigger,796,,vol=100 pitch=127 muestras=0;0;0;0
+sfx_trigger,797,,vol=105 pitch=127 muestras=331;0;0;0
+sfx_trigger,798,,vol=100 pitch=127 muestras=0;0;0;0
+sfx_trigger,799,,vol=90 pitch=127 muestras=721;0;0;0
+sfx_trigger,800,,vol=95 pitch=127 muestras=615;0;0;0
+sfx_trigger,801,,vol=40 pitch=127 muestras=461;0;0;0
+sfx_trigger,802,,vol=45 pitch=127 muestras=463;0;0;0
+sfx_trigger,803,,vol=50 pitch=127 muestras=467;0;0;0
+sfx_trigger,804,,vol=50 pitch=127 muestras=465;0;0;0
+sfx_trigger,805,,vol=40 pitch=127 muestras=456;0;0;0
+sfx_trigger,806,,vol=40 pitch=127 muestras=500;0;0;0
+sfx_trigger,807,,vol=95 pitch=127 muestras=610;0;0;0
+sfx_trigger,808,,vol=100 pitch=127 muestras=720;0;0;0
+sfx_trigger,809,,vol=110 pitch=127 muestras=334;0;0;0
+sfx_trigger,810,,vol=100 pitch=127 muestras=62;0;0;0
+sfx_trigger,811,,vol=100 pitch=127 muestras=0;0;0;0
+sfx_trigger,812,,vol=100 pitch=127 muestras=36;0;0;0
+sfx_trigger,813,,vol=120 pitch=127 muestras=61;0;0;0
+sfx_trigger,814,,vol=0 pitch=127 muestras=36;0;0;0
+sfx_trigger,815,,vol=100 pitch=127 muestras=0;0;0;0
+sfx_trigger,816,,vol=100 pitch=127 muestras=0;0;0;0
+sfx_trigger,817,,vol=100 pitch=127 muestras=58;0;0;0
+sfx_trigger,818,,vol=100 pitch=127 muestras=0;0;0;0
+sfx_trigger,819,,vol=100 pitch=127 muestras=0;0;0;0
+sfx_trigger,820,,vol=127 pitch=127 muestras=115;0;0;0
+sfx_trigger,821,,vol=100 pitch=127 muestras=254;0;0;0
+sfx_trigger,822,,vol=100 pitch=127 muestras=255;0;0;0
+sfx_trigger,823,,vol=100 pitch=127 muestras=256;0;0;0
+sfx_trigger,824,,vol=100 pitch=127 muestras=257;0;0;0
+sfx_trigger,825,,vol=100 pitch=127 muestras=558;0;0;0
+sfx_trigger,826,,vol=45 pitch=127 muestras=490;491;492;493
+sfx_trigger,827,,vol=45 pitch=127 muestras=494;495;496;497
+sfx_trigger,828,,vol=35 pitch=127 muestras=498;0;0;0
+sfx_trigger,829,,vol=40 pitch=127 muestras=499;0;0;0
+sfx_trigger,830,,vol=100 pitch=127 muestras=64;0;0;0
+sfx_trigger,831,,vol=100 pitch=127 muestras=54;0;0;0
+sfx_trigger,832,,vol=100 pitch=127 muestras=155;0;0;0
+sfx_trigger,833,,vol=100 pitch=127 muestras=384;0;0;0
+sfx_trigger,834,,vol=100 pitch=127 muestras=798;799;0;0
+sfx_trigger,835,,vol=85 pitch=127 muestras=794;795;796;797
+sfx_trigger,836,,vol=100 pitch=127 muestras=793;0;0;0
+sfx_trigger,837,,vol=100 pitch=127 muestras=794;795;796;797
+sfx_trigger,838,,vol=40 pitch=127 muestras=420;421;422;423
+sfx_trigger,839,,vol=40 pitch=127 muestras=436;437;438;439
+sfx_trigger,840,,vol=40 pitch=127 muestras=444;445;446;447
+sfx_trigger,841,,vol=40 pitch=127 muestras=452;453;454;455
+sfx_trigger,842,,vol=40 pitch=127 muestras=428;429;430;431
+sfx_trigger,843,,vol=40 pitch=127 muestras=482;483;484;485
+sfx_trigger,844,,vol=40 pitch=127 muestras=490;491;492;493
+sfx_trigger,845,,vol=100 pitch=127 muestras=742;0;0;0
+sfx_trigger,846,,vol=100 pitch=127 muestras=743;0;0;0
+sfx_trigger,847,,vol=100 pitch=127 muestras=744;0;0;0
+sfx_trigger,848,,vol=100 pitch=127 muestras=745;0;0;0
+sfx_trigger,849,,vol=100 pitch=127 muestras=746;0;0;0
+sfx_trigger,850,,vol=100 pitch=127 muestras=747;0;0;0
+sfx_trigger,851,,vol=100 pitch=127 muestras=748;0;0;0
+sfx_trigger,852,,vol=100 pitch=127 muestras=748;0;0;0
+sfx_trigger,853,,vol=100 pitch=127 muestras=749;0;0;0
+sfx_trigger,854,,vol=100 pitch=127 muestras=750;0;0;0
+sfx_trigger,855,,vol=100 pitch=127 muestras=751;0;0;0
+sfx_trigger,856,,vol=100 pitch=127 muestras=752;0;0;0
+sfx_trigger,857,,vol=100 pitch=127 muestras=753;0;0;0
+sfx_trigger,858,,vol=100 pitch=127 muestras=754;0;0;0
+sfx_trigger,859,,vol=100 pitch=127 muestras=755;0;0;0
+sfx_trigger,860,,vol=100 pitch=127 muestras=756;0;0;0
+sfx_trigger,861,,vol=100 pitch=127 muestras=757;0;0;0
+sfx_trigger,862,,vol=100 pitch=127 muestras=758;0;0;0
+sfx_trigger,863,,vol=100 pitch=127 muestras=759;0;0;0
+sfx_trigger,864,,vol=100 pitch=127 muestras=760;0;0;0
+sfx_trigger,865,,vol=100 pitch=127 muestras=762;761;0;0
+sfx_trigger,866,,vol=100 pitch=127 muestras=763;0;0;0
+sfx_trigger,867,,vol=100 pitch=127 muestras=764;0;0;0
+sfx_trigger,868,,vol=100 pitch=127 muestras=765;0;0;0
+sfx_trigger,869,,vol=100 pitch=127 muestras=766;0;0;0
+sfx_trigger,870,,vol=80 pitch=127 muestras=47;0;0;0
+sfx_trigger,871,,vol=100 pitch=127 muestras=581;582;602;603
+sfx_trigger,872,,vol=92 pitch=127 muestras=775;776;777;0
+sfx_trigger,873,,vol=100 pitch=127 muestras=779;0;0;0
+sfx_trigger,874,,vol=100 pitch=127 muestras=780;0;0;0
+sfx_trigger,875,,vol=110 pitch=127 muestras=781;0;0;0
+sfx_trigger,876,,vol=85 pitch=127 muestras=782;0;0;0
+sfx_trigger,877,,vol=110 pitch=127 muestras=778;0;0;0
+sfx_trigger,878,,vol=100 pitch=127 muestras=646;647;0;0
+sfx_trigger,879,,vol=100 pitch=127 muestras=670;0;0;0
+sfx_trigger,880,,vol=85 pitch=127 muestras=783;0;0;0
+sfx_trigger,881,,vol=65 pitch=127 muestras=380;0;0;0
+sfx_trigger,882,,vol=80 pitch=127 muestras=63;0;0;0
+sfx_trigger,883,,vol=84 pitch=127 muestras=66;0;0;0
+sfx_trigger,884,,vol=100 pitch=127 muestras=542;543;0;0
+sfx_trigger,885,,vol=90 pitch=127 muestras=518;532;0;0
+sfx_trigger,886,,vol=90 pitch=127 muestras=554;0;0;0
+sfx_trigger,887,,vol=100 pitch=127 muestras=553;0;0;0
+sfx_trigger,888,,vol=65 pitch=127 muestras=477;478;479;480
+sfx_trigger,889,,vol=100 pitch=127 muestras=248;0;0;0
+sfx_trigger,890,,vol=100 pitch=127 muestras=0;0;0;0
+sfx_trigger,891,,vol=45 pitch=127 muestras=411;0;0;0
+sfx_trigger,892,,vol=50 pitch=127 muestras=405;0;0;0
+sfx_trigger,893,,vol=100 pitch=127 muestras=552;0;0;0
+sfx_trigger,894,,vol=80 pitch=127 muestras=551;0;0;0
+sfx_trigger,895,,vol=80 pitch=127 muestras=404;0;0;0
+sfx_trigger,896,,vol=70 pitch=127 muestras=31;0;0;0
+sfx_trigger,897,,vol=115 pitch=127 muestras=403;0;0;0
+sfx_trigger,898,,vol=85 pitch=127 muestras=360;0;0;0
+sfx_trigger,899,,vol=100 pitch=127 muestras=130;0;0;0
+sfx_trigger,900,,vol=100 pitch=127 muestras=517;0;0;0
+sfx_trigger,901,,vol=85 pitch=127 muestras=123;0;0;0
+sfx_trigger,902,,vol=85 pitch=127 muestras=224;225;226;227
+sfx_trigger,903,,vol=100 pitch=127 muestras=724;0;0;0
+sfx_trigger,905,,vol=95 pitch=127 muestras=557;0;0;0
+sfx_trigger,906,,vol=120 pitch=127 muestras=520;0;0;0
+sfx_trigger,907,,vol=90 pitch=127 muestras=521;0;0;0
+sfx_trigger,908,,vol=100 pitch=127 muestras=306;0;0;0
+sfx_trigger,909,,vol=32 pitch=127 muestras=186;0;0;0
+sfx_trigger,910,,vol=110 pitch=127 muestras=78;0;0;0
+sfx_trigger,911,,vol=100 pitch=127 muestras=79;0;0;0
+sfx_trigger,912,,vol=85 pitch=127 muestras=768;0;0;0
+sfx_trigger,913,,vol=85 pitch=127 muestras=769;0;0;0
+sfx_trigger,914,,vol=100 pitch=127 muestras=767;0;0;0
+sfx_trigger,915,,vol=40 pitch=127 muestras=36;0;0;0
+sfx_trigger,916,,vol=100 pitch=127 muestras=501;0;0;0
+sfx_trigger,917,,vol=90 pitch=127 muestras=502;0;0;0
+sfx_trigger,919,,vol=38 pitch=127 muestras=190;0;0;0
+sfx_trigger,920,,vol=90 pitch=127 muestras=621;622;0;0
+sfx_trigger,921,,vol=95 pitch=127 muestras=623;624;0;0
+sfx_trigger,923,,vol=80 pitch=127 muestras=75;0;0;0
+sfx_trigger,924,,vol=100 pitch=127 muestras=124;0;0;0
+sfx_trigger,925,,vol=100 pitch=127 muestras=125;0;0;0
+sfx_trigger,926,,vol=100 pitch=127 muestras=126;0;0;0
+sfx_trigger,927,,vol=100 pitch=127 muestras=127;0;0;0
+sfx_trigger,928,,vol=110 pitch=127 muestras=123;0;0;0
+sfx_trigger,929,,vol=110 pitch=127 muestras=76;0;0;0
+sfx_trigger,930,,vol=100 pitch=127 muestras=77;0;0;0
+sfx_trigger,931,,vol=80 pitch=127 muestras=258;259;260;261
+sfx_trigger,932,,vol=95 pitch=127 muestras=522;0;0;0
+sfx_trigger,933,,vol=100 pitch=127 muestras=523;0;0;0
+sfx_trigger,934,,vol=100 pitch=127 muestras=768;0;0;0
+sfx_trigger,935,,vol=100 pitch=127 muestras=769;0;0;0
+sfx_trigger,936,,vol=45 pitch=127 muestras=188;0;0;0
+sfx_trigger,937,,vol=50 pitch=127 muestras=189;0;0;0
+sfx_trigger,938,,vol=100 pitch=127 muestras=672;0;0;0
+sfx_trigger,939,,vol=100 pitch=127 muestras=673;674;0;0
+sfx_trigger,940,,vol=100 pitch=127 muestras=675;0;0;0
+sfx_trigger,941,,vol=100 pitch=127 muestras=164;0;0;0
+sfx_trigger,942,,vol=100 pitch=127 muestras=0;0;0;0
+sfx_trigger,943,,vol=100 pitch=127 muestras=165;0;0;0
+sfx_trigger,944,,vol=100 pitch=127 muestras=726;0;0;0
+sfx_trigger,945,,vol=100 pitch=127 muestras=0;0;0;0
+sfx_trigger,946,,vol=100 pitch=127 muestras=0;0;0;0
+sfx_trigger,947,,vol=100 pitch=127 muestras=519;0;0;0
+sfx_trigger,951,,vol=100 pitch=127 muestras=558;0;0;0
+sfx_trigger,952,,vol=100 pitch=127 muestras=163;0;0;0
+sfx_trigger,953,,vol=30 pitch=127 muestras=809;0;0;0
+sfx_trigger,954,,vol=100 pitch=127 muestras=74;0;0;0
+sfx_trigger,955,,vol=75 pitch=127 muestras=308;0;0;0
+sfx_trigger,956,,vol=90 pitch=127 muestras=308;0;0;0
+sfx_trigger,957,,vol=100 pitch=127 muestras=162;0;0;0
+sfx_trigger,958,,vol=90 pitch=127 muestras=294;0;0;0
+sfx_trigger,959,,vol=120 pitch=127 muestras=309;0;0;0
+sfx_trigger,960,,vol=120 pitch=127 muestras=310;0;0;0
+sfx_trigger,961,,vol=85 pitch=127 muestras=244;245;0;0
+sfx_trigger,962,,vol=35 pitch=127 muestras=503;504;505;506
+sfx_trigger,963,,vol=90 pitch=127 muestras=556;0;0;0
+sfx_trigger,964,,vol=90 pitch=127 muestras=47;0;0;0
+sfx_trigger,965,,vol=100 pitch=127 muestras=393;0;0;0
+sfx_trigger,966,,vol=100 pitch=127 muestras=387;0;0;0
+sfx_trigger,967,,vol=100 pitch=127 muestras=584;0;0;0
+sfx_trigger,968,,vol=90 pitch=127 muestras=323;0;0;0
+sfx_trigger,969,,vol=100 pitch=127 muestras=390;0;0;0
+sfx_trigger,970,,vol=100 pitch=127 muestras=389;0;0;0
+sfx_trigger,971,,vol=85 pitch=127 muestras=317;0;0;0
+sfx_trigger,972,,vol=75 pitch=127 muestras=387;0;0;0
+sfx_trigger,973,,vol=95 pitch=127 muestras=339;0;0;0
+sfx_trigger,974,,vol=90 pitch=127 muestras=613;0;0;0
+sfx_trigger,975,,vol=100 pitch=127 muestras=0;0;0;0
+sfx_trigger,976,,vol=100 pitch=127 muestras=804;0;0;0
+sfx_trigger,977,,vol=100 pitch=127 muestras=805;0;0;0
+sfx_trigger,978,,vol=100 pitch=127 muestras=806;0;0;0
+sfx_trigger,979,,vol=100 pitch=127 muestras=807;0;0;0
+sfx_trigger,980,,vol=100 pitch=127 muestras=808;0;0;0
+sfx_trigger,981,,vol=100 pitch=127 muestras=809;0;0;0
+sfx_trigger,982,,vol=100 pitch=127 muestras=811;0;0;0
+sfx_trigger,983,,vol=100 pitch=127 muestras=812;0;0;0
+sfx_trigger,984,,vol=60 pitch=127 muestras=810;0;0;0
+sfx_trigger,985,,vol=100 pitch=127 muestras=813;0;0;0
+sfx_trigger,986,,vol=90 pitch=127 muestras=727;0;0;0
+sfx_trigger,987,,vol=85 pitch=127 muestras=36;0;0;0
+sfx_trigger,988,,vol=90 pitch=127 muestras=61;0;0;0
+sfx_trigger,989,,vol=95 pitch=127 muestras=36;0;0;0
+sfx_trigger,990,,vol=100 pitch=127 muestras=362;0;0;0
+sfx_trigger,991,,vol=100 pitch=127 muestras=155;0;0;0
+sfx_trigger,992,,vol=70 pitch=127 muestras=163;0;0;0
+sfx_trigger,993,,vol=100 pitch=127 muestras=326;0;0;0
+sfx_trigger,994,,vol=100 pitch=127 muestras=393;0;0;0
+sfx_trigger,995,,vol=100 pitch=127 muestras=316;0;0;0
+sfx_trigger,996,,vol=65 pitch=127 muestras=196;0;0;0
+sfx_trigger,997,,vol=55 pitch=127 muestras=412;0;0;0
+sfx_trigger,998,,vol=90 pitch=127 muestras=524;525;0;0
+sfx_trigger,1000,,vol=100 pitch=127 muestras=676;0;0;0
+sfx_trigger,1001,,vol=100 pitch=127 muestras=677;678;679;0
+sfx_trigger,1002,,vol=100 pitch=127 muestras=680;0;0;0
+sfx_trigger,1003,,vol=50 pitch=127 muestras=804;0;0;0
+sfx_trigger,1004,,vol=50 pitch=127 muestras=805;0;0;0
+sfx_trigger,1005,,vol=40 pitch=127 muestras=806;0;0;0
+sfx_trigger,1006,,vol=40 pitch=127 muestras=807;0;0;0
+sfx_trigger,1007,,vol=40 pitch=127 muestras=808;0;0;0
+sfx_trigger,1008,,vol=50 pitch=127 muestras=809;0;0;0
+sfx_trigger,1009,,vol=43 pitch=127 muestras=813;0;0;0
+sfx_trigger,1010,,vol=55 pitch=127 muestras=413;0;0;0
+sfx_trigger,1011,,vol=45 pitch=127 muestras=195;0;0;0
+sfx_trigger,1012,,vol=50 pitch=127 muestras=811;0;0;0
+sfx_trigger,1013,,vol=50 pitch=127 muestras=812;0;0;0
+sfx_trigger,1014,,vol=100 pitch=127 muestras=810;0;0;0
+sfx_trigger,1015,,vol=95 pitch=127 muestras=604;0;0;0
+sfx_trigger,1016,,vol=95 pitch=127 muestras=605;0;0;0
+sfx_trigger,1017,,vol=95 pitch=127 muestras=606;0;0;0
+sfx_trigger,1018,,vol=95 pitch=127 muestras=607;0;0;0
+sfx_trigger,1019,,vol=95 pitch=127 muestras=608;0;0;0
+sfx_trigger,1020,,vol=95 pitch=127 muestras=609;0;0;0
+sfx_trigger,1021,,vol=65 pitch=127 muestras=706;0;0;0
+sfx_trigger,1022,,vol=70 pitch=127 muestras=730;0;0;0
+sfx_trigger,1023,,vol=35 pitch=127 muestras=197;0;0;0
+sfx_trigger,1024,,vol=35 pitch=127 muestras=198;0;0;0
+sfx_trigger,1025,,vol=35 pitch=127 muestras=200;0;0;0
+sfx_trigger,1026,,vol=35 pitch=127 muestras=199;0;0;0
+sfx_trigger,1027,,vol=80 pitch=127 muestras=731;0;0;0
+sfx_trigger,1028,,vol=60 pitch=127 muestras=509;0;0;0
+sfx_trigger,1029,,vol=45 pitch=127 muestras=806;0;0;0
+sfx_trigger,1030,,vol=75 pitch=127 muestras=728;0;0;0
+sfx_trigger,1031,,vol=85 pitch=127 muestras=729;0;0;0
+sfx_trigger,1032,,vol=50 pitch=127 muestras=414;0;0;0
+sfx_trigger,1033,,vol=80 pitch=127 muestras=178;0;0;0
+sfx_trigger,1034,,vol=100 pitch=127 muestras=559;0;0;0
+sfx_trigger,1035,,vol=75 pitch=127 muestras=560;0;0;0
+sfx_trigger,1036,,vol=70 pitch=127 muestras=561;0;0;0
+sfx_trigger,1037,,vol=110 pitch=127 muestras=262;263;264;265
+sfx_trigger,1038,,vol=100 pitch=127 muestras=192;0;0;0
+sfx_trigger,1039,,vol=100 pitch=127 muestras=193;0;0;0
+sfx_trigger,1040,,vol=80 pitch=127 muestras=526;527;0;0
+sfx_trigger,1041,,vol=80 pitch=127 muestras=528;529;0;0
+sfx_trigger,1042,,vol=80 pitch=127 muestras=785;0;0;0
+sfx_trigger,1043,,vol=80 pitch=127 muestras=786;0;0;0
+sfx_trigger,1044,,vol=80 pitch=127 muestras=787;0;0;0
+sfx_trigger,1045,,vol=90 pitch=127 muestras=739;0;0;0
+sfx_trigger,1046,,vol=95 pitch=127 muestras=740;0;0;0
+sfx_trigger,1047,,vol=95 pitch=127 muestras=741;0;0;0
+sfx_trigger,1048,,vol=55 pitch=127 muestras=415;0;0;0
+sfx_trigger,1049,,vol=55 pitch=127 muestras=416;0;0;0
+sfx_trigger,1050,,vol=60 pitch=127 muestras=417;0;0;0
+sfx_trigger,1051,,vol=80 pitch=127 muestras=418;0;0;0
+sfx_trigger,1052,,vol=80 pitch=127 muestras=419;0;0;0
+sfx_trigger,1053,,vol=100 pitch=127 muestras=791;0;0;0
+sfx_trigger,1054,,vol=105 pitch=127 muestras=366;367;368;0
+sfx_trigger,1055,,vol=100 pitch=127 muestras=331;0;0;0
+sfx_trigger,1056,,vol=110 pitch=127 muestras=0;0;0;0
+sfx_trigger,1057,,vol=100 pitch=127 muestras=792;0;0;0
+sfx_trigger,1058,,vol=70 pitch=127 muestras=0;0;0;0
+sfx_trigger,1059,,vol=85 pitch=127 muestras=207;0;0;0
+sfx_trigger,1060,,vol=80 pitch=127 muestras=576;577;578;0
+sfx_trigger,1061,,vol=70 pitch=127 muestras=63;0;0;0
+sfx_trigger,1062,,vol=80 pitch=127 muestras=788;789;790;0
+sfx_trigger,1063,,vol=95 pitch=127 muestras=510;0;0;0
+sfx_trigger,1064,,vol=95 pitch=127 muestras=508;0;0;0
+sfx_trigger,1065,,vol=95 pitch=127 muestras=508;0;0;0
+sfx_trigger,1066,,vol=95 pitch=127 muestras=508;0;0;0
+sfx_trigger,1067,,vol=95 pitch=127 muestras=508;0;0;0
+sfx_trigger,1068,,vol=80 pitch=127 muestras=93;0;0;0
+sfx_trigger,1069,,vol=75 pitch=127 muestras=201;0;0;0
+sfx_trigger,1070,,vol=70 pitch=127 muestras=312;0;0;0
+sfx_trigger,1071,,vol=100 pitch=127 muestras=0;0;0;0
+sfx_trigger,1072,,vol=100 pitch=127 muestras=24;0;0;0
+sfx_trigger,1073,,vol=100 pitch=127 muestras=25;0;0;0
+sfx_trigger,1074,,vol=100 pitch=127 muestras=26;0;0;0
+sfx_trigger,1075,,vol=65 pitch=127 muestras=568;569;570;571
+sfx_trigger,1076,,vol=65 pitch=127 muestras=564;565;566;567
+sfx_trigger,1077,,vol=100 pitch=127 muestras=268;0;0;0
+sfx_trigger,1078,,vol=110 pitch=127 muestras=315;0;0;0
+sfx_trigger,1079,,vol=40 pitch=127 muestras=81;0;0;0
+sfx_trigger,1080,,vol=60 pitch=127 muestras=732;0;0;0
+sfx_trigger,1081,,vol=80 pitch=127 muestras=733;0;0;0
+sfx_trigger,1082,,vol=80 pitch=127 muestras=533;534;535;536
+sfx_trigger,1083,,vol=50 pitch=127 muestras=734;0;0;0
+sfx_trigger,1084,,vol=90 pitch=127 muestras=269;270;271;272
+sfx_trigger,1085,,vol=100 pitch=127 muestras=770;0;0;0
+sfx_trigger,1086,,vol=90 pitch=127 muestras=771;772;773;774
+sfx_trigger,1087,,vol=105 pitch=127 muestras=685;686;687;688
+sfx_trigger,1088,,vol=95 pitch=127 muestras=689;690;691;692
+sfx_trigger,1089,,vol=95 pitch=127 muestras=684;0;0;0
+sfx_trigger,1090,,vol=90 pitch=127 muestras=693;0;0;0
+sfx_trigger,1091,,vol=70 pitch=127 muestras=83;0;0;0
+sfx_trigger,1092,,vol=70 pitch=127 muestras=82;0;0;0
+sfx_trigger,1093,,vol=90 pitch=127 muestras=84;0;0;0
+sfx_trigger,1094,,vol=90 pitch=127 muestras=85;0;0;0
+sfx_trigger,1095,,vol=80 pitch=127 muestras=86;0;0;0
+sfx_trigger,1096,,vol=127 pitch=127 muestras=87;0;0;0
+sfx_trigger,1097,,vol=80 pitch=127 muestras=207;0;0;0
+sfx_trigger,1098,,vol=105 pitch=127 muestras=537;0;0;0
+sfx_trigger,1099,,vol=90 pitch=127 muestras=95;0;0;0
+sfx_trigger,1100,,vol=70 pitch=127 muestras=202;0;0;0
+sfx_trigger,1101,,vol=90 pitch=127 muestras=89;0;0;0
+sfx_trigger,1102,,vol=82 pitch=127 muestras=404;0;0;0
+sfx_trigger,1103,,vol=50 pitch=127 muestras=203;0;0;0
+sfx_trigger,1104,,vol=80 pitch=127 muestras=63;0;0;0
+sfx_trigger,1105,,vol=80 pitch=127 muestras=159;0;0;0
+sfx_trigger,1106,,vol=80 pitch=127 muestras=584;585;586;587
+sfx_trigger,1107,,vol=127 pitch=127 muestras=80;0;0;0
+sfx_trigger,1108,,vol=110 pitch=127 muestras=12;0;0;0
+sfx_trigger,1109,,vol=80 pitch=127 muestras=501;0;0;0
+sfx_trigger,1110,,vol=80 pitch=127 muestras=798;799;0;0
+sfx_trigger,1111,,vol=90 pitch=127 muestras=64;0;0;0
+sfx_trigger,1112,,vol=70 pitch=127 muestras=73;0;0;0
+sfx_trigger,1113,,vol=100 pitch=127 muestras=70;0;0;0
+sfx_trigger,1114,,vol=100 pitch=127 muestras=70;0;0;0
+sfx_trigger,1115,,vol=90 pitch=127 muestras=64;0;0;0
+sfx_trigger,1116,,vol=40 pitch=127 muestras=406;0;0;0
+sfx_trigger,1117,,vol=100 pitch=127 muestras=27;28;29;0
+sfx_trigger,1118,,vol=100 pitch=127 muestras=320;0;0;0
+sfx_trigger,1119,,vol=120 pitch=127 muestras=390;0;0;0
+sfx_trigger,1120,,vol=45 pitch=127 muestras=188;0;0;0
+sfx_trigger,1121,,vol=80 pitch=127 muestras=52;0;0;0
+sfx_trigger,1122,,vol=80 pitch=127 muestras=36;0;0;0
+sfx_trigger,1123,,vol=80 pitch=127 muestras=73;0;0;0
+sfx_trigger,1124,,vol=90 pitch=127 muestras=275;276;0;0
+sfx_trigger,1125,,vol=90 pitch=127 muestras=277;0;0;0
+sfx_trigger,1126,,vol=110 pitch=127 muestras=817;0;0;0
+sfx_trigger,1127,,vol=127 pitch=127 muestras=818;0;0;0
+sfx_trigger,1128,,vol=110 pitch=127 muestras=819;0;0;0
+sfx_trigger,1129,,vol=110 pitch=127 muestras=820;0;0;0
+sfx_trigger,1130,,vol=40 pitch=127 muestras=821;0;0;0
+sfx_trigger,1131,,vol=100 pitch=127 muestras=816;0;0;0
+sfx_trigger,1132,,vol=100 pitch=127 muestras=827;0;0;0
+sfx_trigger,1133,,vol=105 pitch=127 muestras=822;0;0;0
+sfx_trigger,1134,,vol=120 pitch=127 muestras=823;0;0;0
+sfx_trigger,1135,,vol=127 pitch=127 muestras=824;0;0;0
+sfx_trigger,1136,,vol=120 pitch=127 muestras=826;0;0;0
+sfx_trigger,1137,,vol=110 pitch=127 muestras=814;0;0;0
+sfx_trigger,1138,,vol=100 pitch=127 muestras=815;0;0;0
+sfx_trigger,1139,,vol=90 pitch=127 muestras=54;0;0;0
+sfx_trigger,1140,,vol=80 pitch=127 muestras=538;539;540;0
+sfx_trigger,1141,,vol=80 pitch=127 muestras=90;0;0;0
+sfx_trigger,1142,,vol=80 pitch=127 muestras=91;0;0;0
+sfx_trigger,1143,,vol=100 pitch=127 muestras=830;831;0;0
+sfx_trigger,1144,,vol=100 pitch=127 muestras=828;829;0;0
+sfx_trigger,1145,,vol=100 pitch=127 muestras=825;0;0;0
+sfx_trigger,1146,,vol=100 pitch=127 muestras=369;0;0;0
+sfx_trigger,1147,,vol=100 pitch=127 muestras=370;0;0;0
+sfx_trigger,1148,,vol=50 pitch=127 muestras=204;0;0;0
+sfx_trigger,1149,,vol=80 pitch=127 muestras=694;0;0;0
+sfx_trigger,1150,,vol=50 pitch=127 muestras=205;0;0;0
+sfx_trigger,1151,,vol=90 pitch=127 muestras=30;0;0;0
+sfx_trigger,1152,,vol=50 pitch=127 muestras=87;0;0;0
+sfx_trigger,1153,,vol=127 pitch=127 muestras=161;0;0;0
+sfx_trigger,1154,,vol=85 pitch=127 muestras=155;0;0;0
+sfx_trigger,1155,,vol=85 pitch=127 muestras=384;0;0;0
+sfx_trigger,1156,,vol=85 pitch=127 muestras=385;0;0;0
+sfx_trigger,1157,,vol=85 pitch=127 muestras=31;0;0;0
+sfx_trigger,1158,,vol=105 pitch=127 muestras=329;0;0;0
+sfx_trigger,1159,,vol=60 pitch=127 muestras=206;0;0;0
+sfx_trigger,1160,,vol=100 pitch=127 muestras=278;0;0;0
+sfx_trigger,1161,,vol=90 pitch=127 muestras=63;0;0;0
+sfx_trigger,1162,,vol=90 pitch=127 muestras=66;0;0;0
+sfx_trigger,1163,,vol=50 pitch=127 muestras=208;0;0;0
+sfx_trigger,1164,,vol=80 pitch=127 muestras=335;0;0;0
+sfx_trigger,1165,,vol=105 pitch=127 muestras=695;696;697;698
+sfx_trigger,1166,,vol=95 pitch=127 muestras=699;0;0;0
+sfx_trigger,1167,,vol=90 pitch=127 muestras=593;0;0;0
+sfx_trigger,1168,,vol=80 pitch=127 muestras=96;0;0;0
+sfx_trigger,1169,,vol=120 pitch=127 muestras=314;0;0;0
+sfx_trigger,1170,,vol=85 pitch=127 muestras=364;365;0;0
+sfx_trigger,1171,,vol=100 pitch=127 muestras=64;0;0;0
+sfx_trigger,1172,,vol=127 pitch=127 muestras=80;0;0;0
+sfx_trigger,1173,,vol=90 pitch=127 muestras=562;0;0;0
+sfx_trigger,1174,,vol=100 pitch=127 muestras=385;0;0;0
+sfx_trigger,1175,,vol=110 pitch=127 muestras=341;0;0;0
+sfx_trigger,1176,,vol=90 pitch=127 muestras=700;0;0;0
+sfx_trigger,1177,,vol=90 pitch=127 muestras=701;0;0;0
+sfx_trigger,1178,,vol=90 pitch=127 muestras=702;0;0;0
+sfx_trigger,1179,,vol=90 pitch=127 muestras=703;0;0;0
+sfx_trigger,1180,,vol=90 pitch=127 muestras=704;0;0;0
+sfx_trigger,1181,,vol=90 pitch=127 muestras=707;708;709;0
+sfx_trigger,1182,,vol=90 pitch=127 muestras=710;0;0;0
+sfx_trigger,1183,,vol=30 pitch=127 muestras=705;0;0;0
+sfx_trigger,1184,,vol=95 pitch=127 muestras=800;801;802;0
+sfx_trigger,1185,,vol=50 pitch=127 muestras=803;0;0;0
+sfx_trigger,1186,,vol=70 pitch=127 muestras=563;0;0;0
+sfx_trigger,1187,,vol=80 pitch=127 muestras=650;651;652;653
+sfx_trigger,1188,,vol=100 pitch=127 muestras=650;651;652;653
+sfx_trigger,1189,,vol=80 pitch=127 muestras=97;0;0;0
+sfx_trigger,1190,,vol=119 pitch=127 muestras=832;0;0;0
+sfx_trigger,1191,,vol=70 pitch=127 muestras=166;0;0;0
+sfx_trigger,1192,,vol=100 pitch=127 muestras=711;0;0;0
+sfx_trigger,1193,,vol=120 pitch=127 muestras=712;713;0;0
+sfx_trigger,1194,,vol=115 pitch=127 muestras=714;715;0;0
+sfx_trigger,1195,,vol=70 pitch=127 muestras=716;0;0;0
+sfx_trigger,1196,,vol=70 pitch=127 muestras=36;0;0;0
+sfx_trigger,1197,,vol=80 pitch=127 muestras=61;0;0;0
+sfx_trigger,1198,,vol=110 pitch=127 muestras=36;0;0;0
+sfx_trigger,1199,,vol=90 pitch=127 muestras=333;0;0;0
+sfx_trigger,1200,,vol=90 pitch=127 muestras=181;0;0;0
+sfx_trigger,1201,,vol=110 pitch=127 muestras=333;0;0;0
+sfx_trigger,1202,,vol=80 pitch=127 muestras=181;0;0;0
+sfx_trigger,1203,,vol=90 pitch=127 muestras=269;270;271;272
+sfx_trigger,1204,,vol=100 pitch=127 muestras=208;0;0;0
+sfx_trigger,1205,,vol=100 pitch=127 muestras=208;0;0;0
+sfx_trigger,1206,,vol=110 pitch=127 muestras=31;0;0;0
+sfx_trigger,1207,,vol=80 pitch=127 muestras=73;0;0;0
+sfx_trigger,1208,,vol=95 pitch=127 muestras=341;0;0;0
+sfx_trigger,1209,,vol=80 pitch=127 muestras=92;0;0;0
+sfx_trigger,1210,,vol=80 pitch=127 muestras=155;0;0;0
+sfx_trigger,1211,,vol=100 pitch=127 muestras=384;0;0;0
+sfx_trigger,1212,,vol=100 pitch=127 muestras=167;0;0;0
+sfx_trigger,1213,,vol=100 pitch=127 muestras=178;0;0;0
+sfx_trigger,1214,,vol=90 pitch=127 muestras=282;283;284;285
+sfx_trigger,1215,,vol=70 pitch=127 muestras=341;0;0;0
+sfx_trigger,1216,,vol=80 pitch=127 muestras=98;100;0;0
+sfx_trigger,1217,,vol=100 pitch=127 muestras=60;0;0;0
+sfx_trigger,1218,,vol=60 pitch=127 muestras=341;0;0;0
+sfx_trigger,1219,,vol=60 pitch=127 muestras=328;0;0;0
+musyx_muestra,0,musyx/starfoxm/0000_SFXdn_boar1_c.wav,
+musyx_muestra,1,musyx/starfoxm/0001_SFXdn_boar3_c.wav,
+musyx_muestra,2,musyx/starfoxm/0002_SFXdn_earthbref111.wav,
+musyx_muestra,3,musyx/starfoxm/0003_SFXdn_earthbref211.wav,
+musyx_muestra,4,musyx/starfoxm/0004_SFXdn_earthhuff111.wav,
+musyx_muestra,5,musyx/starfoxm/0005_SFXdn_earthhuff211.wav,
+musyx_muestra,6,musyx/starfoxm/0006_SFXdn_earthscream16.wav,
+musyx_muestra,7,musyx/starfoxm/0007_SFXdn_eleph1_c.wav,
+musyx_muestra,8,musyx/starfoxm/0008_SFXdn_gscsc1_c.wav,
+musyx_muestra,9,musyx/starfoxm/0009_SFXdn_gscsc2_c.wav,
+musyx_muestra,10,musyx/starfoxm/0010_SFXdn_rexbreathin11.wav,
+musyx_muestra,11,musyx/starfoxm/0011_SFXdn_rexbreathout11.wav,
+musyx_muestra,12,musyx/starfoxm/0012_SFXdn_rexelctro11.wav,
+musyx_muestra,13,musyx/starfoxm/0013_SFXdn_rexexhale16.wav,
+musyx_muestra,14,musyx/starfoxm/0014_SFXdn_rexfoot11.wav,
+musyx_muestra,15,musyx/starfoxm/0015_SFXdn_rexhurt12.wav,
+musyx_muestra,16,musyx/starfoxm/0016_SFXdn_rexhurt13.wav,
+musyx_muestra,17,musyx/starfoxm/0017_SFXdn_rexroarlng11.wav,
+musyx_muestra,18,musyx/starfoxm/0018_SFXdn_rexroarmed11.wav,
+musyx_muestra,19,musyx/starfoxm/0019_SFXdn_rexroarsht11.wav,
+musyx_muestra,20,musyx/starfoxm/0020_SFXdn_rexthrash11.wav,
+musyx_muestra,21,musyx/starfoxm/0021_SFXdn_rexthrash12.wav,
+musyx_muestra,22,musyx/starfoxm/0022_SFXdn_seal4_c.wav,
+musyx_muestra,23,musyx/starfoxm/0023_SFXdn_boar5_c.wav,
+musyx_muestra,24,musyx/starfoxm/0024_SFXdn_hightop_ambi1.wav,
+musyx_muestra,25,musyx/starfoxm/0025_SFXdn_hightop_ambi2.wav,
+musyx_muestra,26,musyx/starfoxm/0026_SFXdn_hightop_ambi3.wav,
+musyx_muestra,27,musyx/starfoxm/0027_SFXdn_hightop_hurt1.wav,
+musyx_muestra,28,musyx/starfoxm/0028_SFXdn_hightop_hurt2.wav,
+musyx_muestra,29,musyx/starfoxm/0029_SFXdn_hightop_hurt3.wav,
+musyx_muestra,30,musyx/starfoxm/0030_SFXdn_hightop_fstep.wav,
+musyx_muestra,31,musyx/starfoxm/0031_SFXen_barrelblow11.wav,
+musyx_muestra,32,musyx/starfoxm/0032_SFXen_birdymornin11.wav,
+musyx_muestra,33,musyx/starfoxm/0033_SFXen_birdynight11.wav,
+musyx_muestra,34,musyx/starfoxm/0034_SFXen_blkscrp6.wav,
+musyx_muestra,35,musyx/starfoxm/0035_SFXen_cavedirt22.wav,
+musyx_muestra,36,musyx/starfoxm/0036_SFXen_cvdrip1c.wav,
+musyx_muestra,37,musyx/starfoxm/0037_SFXen_cvdrip4c.wav,
+musyx_muestra,38,musyx/starfoxm/0038_SFXen_fireup_c.wav,
+musyx_muestra,39,musyx/starfoxm/0039_SFXen_frbhit_6.wav,
+musyx_muestra,40,musyx/starfoxm/0040_SFXen_gland2_c.wav,
+musyx_muestra,41,musyx/starfoxm/0041_SFXen_icecrk16.wav,
+musyx_muestra,42,musyx/starfoxm/0042_SFXen_leafrustler16.wav,
+musyx_muestra,43,musyx/starfoxm/0043_SFXen_lflsh1_c.wav,
+musyx_muestra,44,musyx/starfoxm/0044_SFXen_lflsh2_b.wav,
+musyx_muestra,45,musyx/starfoxm/0045_SFXen_lflsh3_c.wav,
+musyx_muestra,46,musyx/starfoxm/0046_SFXen_liftstpc.wav,
+musyx_muestra,47,musyx/starfoxm/0047_SFXen_littletink22.wav,
+musyx_muestra,48,musyx/starfoxm/0048_SFXen_majring2.wav,
+musyx_muestra,49,musyx/starfoxm/0049_SFXen_mazewall.wav,
+musyx_muestra,50,musyx/starfoxm/0050_SFXen_mushrele16.wav,
+musyx_muestra,51,musyx/starfoxm/0051_SFXen_mushsporedisp22.wav,
+musyx_muestra,52,musyx/starfoxm/0052_SFXen_nlite1_c.wav,
+musyx_muestra,53,musyx/starfoxm/0053_SFXen_ripefruit11.wav,
+musyx_muestra,54,musyx/starfoxm/0054_SFXen_rockshat16.wav,
+musyx_muestra,55,musyx/starfoxm/0055_SFXen_sbalhis6.wav,
+musyx_muestra,56,musyx/starfoxm/0056_SFXen_scrap1_c.wav,
+musyx_muestra,57,musyx/starfoxm/0057_SFXen_sdrstp_c.wav,
+musyx_muestra,58,musyx/starfoxm/0058_SFXen_stite1_c.wav,
+musyx_muestra,59,musyx/starfoxm/0059_SFXen_tranch_6.wav,
+musyx_muestra,60,musyx/starfoxm/0060_SFXen_treedrum16.wav,
+musyx_muestra,61,musyx/starfoxm/0061_SFXen_trpopn_c.wav,
+musyx_muestra,62,musyx/starfoxm/0062_SFXen_twiggysnap11.wav,
+musyx_muestra,63,musyx/starfoxm/0063_SFXen_diallp_c.wav,
+musyx_muestra,64,musyx/starfoxm/0064_SFXen_firlp6.wav,
+musyx_muestra,65,musyx/starfoxm/0065_SFXen_forcecryslp11.wav,
+musyx_muestra,66,musyx/starfoxm/0066_SFXen_gasleak.wav,
+musyx_muestra,67,musyx/starfoxm/0067_SFXen_grumb4_c.wav,
+musyx_muestra,68,musyx/starfoxm/0068_SFXen_lpcrk2_c.wav,
+musyx_muestra,69,musyx/starfoxm/0069_SFXen_lwfl1_c.wav,
+musyx_muestra,70,musyx/starfoxm/0070_SFXen_mossyloop16.wav,
+musyx_muestra,71,musyx/starfoxm/0071_SFXen_neonbuzzlp16.wav,
+musyx_muestra,72,musyx/starfoxm/0072_SFXen_rfall5_c.wav,
+musyx_muestra,73,musyx/starfoxm/0073_SFXen_treadlpc.wav,
+musyx_muestra,74,musyx/starfoxm/0074_SFXen_weetinklp22.wav,
+musyx_muestra,75,musyx/starfoxm/0075_SFXen_weetinkoneshot.wav,
+musyx_muestra,76,musyx/starfoxm/0076_SFXen_riverloop11.wav,
+musyx_muestra,77,musyx/starfoxm/0077_SFXen_trpcls_c.wav,
+musyx_muestra,78,musyx/starfoxm/0078_SFXen_generic_placeobj.wav,
+musyx_muestra,79,musyx/starfoxm/0079_SFXen_gate_squeak.wav,
+musyx_muestra,80,musyx/starfoxm/0080_SFXen_gate_stops.wav,
+musyx_muestra,81,musyx/starfoxm/0081_SFXen_bridge_extends_lp.wav,
+musyx_muestra,82,musyx/starfoxm/0082_SFXen_bridge_stops.wav,
+musyx_muestra,83,musyx/starfoxm/0083_SFXen_celldoor_opens.wav,
+musyx_muestra,84,musyx/starfoxm/0084_SFXen_flybuzz_loop.wav,
+musyx_muestra,85,musyx/starfoxm/0085_SFXen_statue_waterfall.wav,
+musyx_muestra,86,musyx/starfoxm/0086_SFXen_statue_wave.wav,
+musyx_muestra,87,musyx/starfoxm/0087_SFXen_waterblock_wave.wav,
+musyx_muestra,88,musyx/starfoxm/0088_SFXen_waterblock_stop.wav,
+musyx_muestra,89,musyx/starfoxm/0089_SFXen_tiles_lightup.wav,
+musyx_muestra,90,musyx/starfoxm/0090_SFXen_tile_buzzlp.wav,
+musyx_muestra,91,musyx/starfoxm/0091_SFXen_ocean_beamlp.wav,
+musyx_muestra,92,musyx/starfoxm/0092_SFXen_waterblock_hit.wav,
+musyx_muestra,93,musyx/starfoxm/0093_SFXen_lrope_powerup.wav,
+musyx_muestra,94,musyx/starfoxm/0094_SFXen_lrope_powerdown.wav,
+musyx_muestra,95,musyx/starfoxm/0095_SFXms_holorays16.wav,
+musyx_muestra,96,musyx/starfoxm/0096_SFXms_roboshield.wav,
+musyx_muestra,97,musyx/starfoxm/0097_SFXms_baddie_beamin.wav,
+musyx_muestra,98,musyx/starfoxm/0098_SFXms_windlift_loop.wav,
+musyx_muestra,99,musyx/starfoxm/0099_SFXmn_cling01.wav,
+musyx_muestra,100,musyx/starfoxm/0100_SFXmn_cling02.wav,
+musyx_muestra,101,musyx/starfoxm/0101_SFXmn_cling03.wav,
+musyx_muestra,102,musyx/starfoxm/0102_SFXmn_craterspit11.wav,
+musyx_muestra,103,musyx/starfoxm/0103_SFXmn_dimbos16.wav,
+musyx_muestra,104,musyx/starfoxm/0104_SFXmn_dimbos26.wav,
+musyx_muestra,105,musyx/starfoxm/0105_SFXmn_dimbos36.wav,
+musyx_muestra,106,musyx/starfoxm/0106_SFXmn_dimbos46.wav,
+musyx_muestra,107,musyx/starfoxm/0107_SFXmn_dimexp01.wav,
+musyx_muestra,108,musyx/starfoxm/0108_SFXmn_dimprup6.wav,
+musyx_muestra,109,musyx/starfoxm/0109_SFXmn_dimraw26.wav,
+musyx_muestra,110,musyx/starfoxm/0110_SFXmn_dimraw36.wav,
+musyx_muestra,111,musyx/starfoxm/0111_SFXmn_dimraw56.wav,
+musyx_muestra,112,musyx/starfoxm/0112_SFXmn_dimspit6.wav,
+musyx_muestra,113,musyx/starfoxm/0113_SFXmn_eggylaugh116.wav,
+musyx_muestra,114,musyx/starfoxm/0114_SFXmn_eggylaugh216.wav,
+musyx_muestra,115,musyx/starfoxm/0115_SFXmn_heart1_c.wav,
+musyx_muestra,116,musyx/starfoxm/0116_SFXmn_impyflap16.wav,
+musyx_muestra,117,musyx/starfoxm/0117_SFXmn_lummy111.wav,
+musyx_muestra,118,musyx/starfoxm/0118_SFXmn_lummy211.wav,
+musyx_muestra,119,musyx/starfoxm/0119_SFXmn_lummy311.wav,
+musyx_muestra,120,musyx/starfoxm/0120_SFXmn_spdrcollapse11.wav,
+musyx_muestra,121,musyx/starfoxm/0121_SFXmn_spdrmove11.wav,
+musyx_muestra,122,musyx/starfoxm/0122_SFXmn_spithit6.wav,
+musyx_muestra,123,musyx/starfoxm/0123_SFXmn_swatk4_6.wav,
+musyx_muestra,124,musyx/starfoxm/0124_SFXmn_swdvot_c.wav,
+musyx_muestra,125,musyx/starfoxm/0125_SFXmn_crusty9c.wav,
+musyx_muestra,126,musyx/starfoxm/0126_SFXmn_sml_trex_fstep.wav,
+musyx_muestra,127,musyx/starfoxm/0127_SFXmn_sml_trex_roar.wav,
+musyx_muestra,128,musyx/starfoxm/0128_SFXmn_sml_trex_snap1.wav,
+musyx_muestra,129,musyx/starfoxm/0129_SFXmn_sml_trex_snap2.wav,
+musyx_muestra,130,musyx/starfoxm/0130_SFXmn_sml_trex_snap3.wav,
+musyx_muestra,131,musyx/starfoxm/0131_SFXmv_bflconc1.wav,
+musyx_muestra,132,musyx/starfoxm/0132_SFXmv_blkhit_c.wav,
+musyx_muestra,133,musyx/starfoxm/0133_SFXmv_bodyf2_c.wav,
+musyx_muestra,134,musyx/starfoxm/0134_SFXmv_bodyf4_c.wav,
+musyx_muestra,135,musyx/starfoxm/0135_SFXmv_cagerat01.wav,
+musyx_muestra,136,musyx/starfoxm/0136_SFXmv_cagesqk11.wav,
+musyx_muestra,137,musyx/starfoxm/0137_SFXmv_canras_c.wav,
+musyx_muestra,138,musyx/starfoxm/0138_SFXmv_cogstr_c.wav,
+musyx_muestra,139,musyx/starfoxm/0139_SFXmv_curtainopen16.wav,
+musyx_muestra,140,musyx/starfoxm/0140_SFXmv_deaththud16.wav,
+musyx_muestra,141,musyx/starfoxm/0141_SFXmv_dinostomp1.wav,
+musyx_muestra,142,musyx/starfoxm/0142_SFXmv_dive4_c.wav,
+musyx_muestra,143,musyx/starfoxm/0143_SFXmv_gdtur2_c.wav,
+musyx_muestra,144,musyx/starfoxm/0144_SFXmv_icesmash16.wav,
+musyx_muestra,145,musyx/starfoxm/0145_SFXmv_ladderslide16.wav,
+musyx_muestra,146,musyx/starfoxm/0146_SFXmv_persquk1.wav,
+musyx_muestra,147,musyx/starfoxm/0147_SFXmv_persquk2.wav,
+musyx_muestra,148,musyx/starfoxm/0148_SFXmv_roothack16.wav,
+musyx_muestra,149,musyx/starfoxm/0149_SFXmv_ropecreak22.wav,
+musyx_muestra,150,musyx/starfoxm/0150_SFXmv_sliftstop11.wav,
+musyx_muestra,151,musyx/starfoxm/0151_SFXmv_tumbleweed16.wav,
+musyx_muestra,152,musyx/starfoxm/0152_SFXmv_vineclimb116.wav,
+musyx_muestra,153,musyx/starfoxm/0153_SFXmv_wickdestroy16.wav,
+musyx_muestra,154,musyx/starfoxm/0154_SFXmv_wickhit16.wav,
+musyx_muestra,155,musyx/starfoxm/0155_SFXmv_wickpickup16.wav,
+musyx_muestra,156,musyx/starfoxm/0156_SFXmv_cagelp_c.wav,
+musyx_muestra,157,musyx/starfoxm/0157_SFXmv_curtainloop16.wav,
+musyx_muestra,158,musyx/starfoxm/0158_SFXmv_liftloop.wav,
+musyx_muestra,159,musyx/starfoxm/0159_SFXmv_mushdizzylp12.wav,
+musyx_muestra,160,musyx/starfoxm/0160_SFXmv_propsp_6.wav,
+musyx_muestra,161,musyx/starfoxm/0161_SFXmv_sliftloop11.wav,
+musyx_muestra,162,musyx/starfoxm/0162_SFXmv_torclp_6.wav,
+musyx_muestra,163,musyx/starfoxm/0163_SFXmv_curtainrustle.wav,
+musyx_muestra,164,musyx/starfoxm/0164_SFXmv_cflap2_c.wav,
+musyx_muestra,165,musyx/starfoxm/0165_SFXmv_blockscrape_lp.wav,
+musyx_muestra,166,musyx/starfoxm/0166_SFXmv_missingcog_lp.wav,
+musyx_muestra,167,musyx/starfoxm/0167_SFXmv_totem_slide.wav,
+musyx_muestra,168,musyx/starfoxm/0168_SFXmv_totem_stop.wav,
+musyx_muestra,169,musyx/starfoxm/0169_SFXmv_totem_rotate.wav,
+musyx_muestra,170,musyx/starfoxm/0170_SFXsc_cam90_c.wav,
+musyx_muestra,171,musyx/starfoxm/0171_SFXsc_eatthefood16.wav,
+musyx_muestra,172,musyx/starfoxm/0172_SFXsc_gemrun0122.wav,
+musyx_muestra,173,musyx/starfoxm/0173_SFXsc_gemrun0222.wav,
+musyx_muestra,174,musyx/starfoxm/0174_SFXsc_gemrun0522.wav,
+musyx_muestra,175,musyx/starfoxm/0175_SFXsc_gemrun1022.wav,
+musyx_muestra,176,musyx/starfoxm/0176_SFXsc_lockedon22.wav,
+musyx_muestra,177,musyx/starfoxm/0177_SFXsc_lockoff22.wav,
+musyx_muestra,178,musyx/starfoxm/0178_SFXsc_menuups16k.wav,
+musyx_muestra,179,musyx/starfoxm/0179_SFXsc_mpick1_b.wav,
+musyx_muestra,180,musyx/starfoxm/0180_SFXsc_npu_116.wav,
+musyx_muestra,181,musyx/starfoxm/0181_SFXsc_npu_216.wav,
+musyx_muestra,182,musyx/starfoxm/0182_SFXsc_objselectyeah22.wav,
+musyx_muestra,183,musyx/starfoxm/0183_SFXsc_projhitneg22.wav,
+musyx_muestra,184,musyx/starfoxm/0184_SFXsc_scablong32.wav,
+musyx_muestra,185,musyx/starfoxm/0185_SFXsc_scablongish32.wav,
+musyx_muestra,186,musyx/starfoxm/0186_SFXsc_scabshort32.wav,
+musyx_muestra,187,musyx/starfoxm/0187_SFXsc_scabshortish32.wav,
+musyx_muestra,188,musyx/starfoxm/0188_SFXsc_commsbleep.wav,
+musyx_muestra,189,musyx/starfoxm/0189_SFXsc_lockon22.wav,
+musyx_muestra,190,musyx/starfoxm/0190_SFXsc_clock_loop.wav,
+musyx_muestra,191,musyx/starfoxm/0191_SFXsc_clock_timesup.wav,
+musyx_muestra,192,musyx/starfoxm/0192_SFXsc_text_appears_lp.wav,
+musyx_muestra,193,musyx/starfoxm/0193_SFXsc_nolock.wav,
+musyx_muestra,194,musyx/starfoxm/0194_SFXsc_shop_priceup.wav,
+musyx_muestra,195,musyx/starfoxm/0195_SFXsc_shop_pricedown.wav,
+musyx_muestra,196,musyx/starfoxm/0196_SFXsc_headcam_in.wav,
+musyx_muestra,197,musyx/starfoxm/0197_SFXsc_headcam_out.wav,
+musyx_muestra,198,musyx/starfoxm/0198_SFXsc_strafe_active.wav,
+musyx_muestra,199,musyx/starfoxm/0199_SFXsc_lockon2_on.wav,
+musyx_muestra,200,musyx/starfoxm/0200_SFXsc_lockon2_off.wav,
+musyx_muestra,201,musyx/starfoxm/0201_SFXsc_lockon3_on.wav,
+musyx_muestra,202,musyx/starfoxm/0202_SFXsc_lockon3_off.wav,
+musyx_muestra,203,musyx/starfoxm/0203_SFXsc_lifeforcedoor.wav,
+musyx_muestra,204,musyx/starfoxm/0204_SFXsc_golfbar_swipe.wav,
+musyx_muestra,205,musyx/starfoxm/0205_SFXsc_fox_commbeep.wav,
+musyx_muestra,206,musyx/starfoxm/0206_SFXsc_lowoxy_beep.wav,
+musyx_muestra,207,musyx/starfoxm/0207_SFXsc_fox_commdown.wav,
+musyx_muestra,208,musyx/starfoxm/0208_SFXsc_negative.wav,
+musyx_muestra,209,musyx/starfoxm/0209_SFXsk_bapt11_c.wav,
+musyx_muestra,210,musyx/starfoxm/0210_SFXsk_baptr1_c.wav,
+musyx_muestra,211,musyx/starfoxm/0211_SFXsk_baptr6_c.wav,
+musyx_muestra,212,musyx/starfoxm/0212_SFXsk_baptr9_c.wav,
+musyx_muestra,213,musyx/starfoxm/0213_SFXsk_planteater11.wav,
+musyx_muestra,214,musyx/starfoxm/0214_SFXsk_toysq2_c.wav,
+musyx_muestra,215,musyx/starfoxm/0215_SFXsk_trbark1.wav,
+musyx_muestra,216,musyx/starfoxm/0216_SFXsk_trbark2.wav,
+musyx_muestra,217,musyx/starfoxm/0217_SFXsk_trbark3.wav,
+musyx_muestra,218,musyx/starfoxm/0218_SFXsk_trbrth1.wav,
+musyx_muestra,219,musyx/starfoxm/0219_SFXsk_trbrth2.wav,
+musyx_muestra,220,musyx/starfoxm/0220_SFXsk_trbrth3.wav,
+musyx_muestra,221,musyx/starfoxm/0221_SFXsk_trgrwl1.wav,
+musyx_muestra,222,musyx/starfoxm/0222_SFXsk_trgrwl2.wav,
+musyx_muestra,223,musyx/starfoxm/0223_SFXsk_trwhin1.wav,
+musyx_muestra,224,musyx/starfoxm/0224_SFXsk_trwhin2.wav,
+musyx_muestra,225,musyx/starfoxm/0225_SFXsk_trwhin3.wav,
+musyx_muestra,226,musyx/starfoxm/0226_SFXsk_trwhin4.wav,
+musyx_muestra,227,musyx/starfoxm/0227_SFXsk_doggydig11.wav,
+musyx_muestra,228,musyx/starfoxm/0228_SFXsp_literun111.wav,
+musyx_muestra,229,musyx/starfoxm/0229_SFXsp_literun112.wav,
+musyx_muestra,230,musyx/starfoxm/0230_SFXsp_literun113.wav,
+musyx_muestra,231,musyx/starfoxm/0231_SFXsp_literun114.wav,
+musyx_muestra,232,musyx/starfoxm/0232_SFXsp_literun115.wav,
+musyx_muestra,233,musyx/starfoxm/0233_SFXsp_literun116.wav,
+musyx_muestra,234,musyx/starfoxm/0234_SFXsp_literun117.wav,
+musyx_muestra,235,musyx/starfoxm/0235_SFXsp_rgarb3_c.wav,
+musyx_muestra,236,musyx/starfoxm/0236_SFXsp_rgarb4_c.wav,
+musyx_muestra,237,musyx/starfoxm/0237_SFXsp_sabrepush161.wav,
+musyx_muestra,238,musyx/starfoxm/0238_SFXsp_sabrepush162.wav,
+musyx_muestra,239,musyx/starfoxm/0239_SFXsp_sabrepush163.wav,
+musyx_muestra,240,musyx/starfoxm/0240_SFXsp_sabrepush164.wav,
+musyx_muestra,241,musyx/starfoxm/0241_SFXsp_sa_climb01.wav,
+musyx_muestra,242,musyx/starfoxm/0242_SFXsp_sa_climb02.wav,
+musyx_muestra,243,musyx/starfoxm/0243_SFXsp_sa_def01.wav,
+musyx_muestra,244,musyx/starfoxm/0244_SFXsp_sa_def02.wav,
+musyx_muestra,245,musyx/starfoxm/0245_SFXsp_sa_def03.wav,
+musyx_muestra,246,musyx/starfoxm/0246_SFXsp_sa_fall01.wav,
+musyx_muestra,247,musyx/starfoxm/0247_SFXsp_sa_jump01.wav,
+musyx_muestra,248,musyx/starfoxm/0248_SFXsp_sa_jump02.wav,
+musyx_muestra,249,musyx/starfoxm/0249_SFXsp_sa_jump03.wav,
+musyx_muestra,250,musyx/starfoxm/0250_SFXsp_sa_off01.wav,
+musyx_muestra,251,musyx/starfoxm/0251_SFXsp_sa_off02.wav,
+musyx_muestra,252,musyx/starfoxm/0252_SFXsp_sa_off03.wav,
+musyx_muestra,253,musyx/starfoxm/0253_SFXsp_sa_wall01.wav,
+musyx_muestra,254,musyx/starfoxm/0254_SFXsp_sa_wall02.wav,
+musyx_muestra,255,musyx/starfoxm/0255_SFXsp_snrin2_c.wav,
+musyx_muestra,256,musyx/starfoxm/0256_SFXsp_snrot1_c.wav,
+musyx_muestra,257,musyx/starfoxm/0257_SFXsp_trickyshout16.wav,
+musyx_muestra,258,musyx/starfoxm/0258_SFXqu_longsob1.wav,
+musyx_muestra,259,musyx/starfoxm/0259_SFXqu_longsob2.wav,
+musyx_muestra,260,musyx/starfoxm/0260_SFXqu_shortsob1.wav,
+musyx_muestra,261,musyx/starfoxm/0261_SFXqu_shortsob2.wav,
+musyx_muestra,262,musyx/starfoxm/0262_SFXsp_lf_mutter1.wav,
+musyx_muestra,263,musyx/starfoxm/0263_SFXsp_lf_mutter2.wav,
+musyx_muestra,264,musyx/starfoxm/0264_SFXsp_lf_mutter3.wav,
+musyx_muestra,265,musyx/starfoxm/0265_SFXsp_lf_mutter4.wav,
+musyx_muestra,266,musyx/starfoxm/0266_SFXsp_skeep_mumb1.wav,
+musyx_muestra,267,musyx/starfoxm/0267_SFXsp_skeep_mumb2.wav,
+musyx_muestra,268,musyx/starfoxm/0268_SFXsp_skeep_mumb3.wav,
+musyx_muestra,269,musyx/starfoxm/0269_SFXsp_skeep_mumb4.wav,
+musyx_muestra,270,musyx/starfoxm/0270_SFXsp_mam_getmeout.wav,
+musyx_muestra,271,musyx/starfoxm/0271_SFXsp_guardian_call1.wav,
+musyx_muestra,272,musyx/starfoxm/0272_SFXsp_guardian_call2.wav,
+musyx_muestra,273,musyx/starfoxm/0273_SFXsp_lfoot_treasure.wav,
+musyx_muestra,274,musyx/starfoxm/0274_SFXsp_lfoot_taunt2.wav,
+musyx_muestra,275,musyx/starfoxm/0275_SFXsp_lfoot_taunt3.wav,
+musyx_muestra,276,musyx/starfoxm/0276_SFXsp_lfoot_taunt4.wav,
+musyx_muestra,277,musyx/starfoxm/0277_SFXsp_lfoot_taunt5.wav,
+musyx_muestra,278,musyx/starfoxm/0278_SFXsp_lfoot_taunt6.wav,
+musyx_muestra,279,musyx/starfoxm/0279_SFXsp_lfoot_taunt7.wav,
+musyx_muestra,280,musyx/starfoxm/0280_SFXsp_crun_help1.wav,
+musyx_muestra,281,musyx/starfoxm/0281_SFXsp_crun_help2.wav,
+musyx_muestra,282,musyx/starfoxm/0282_SFXsp_htop_hurry1.wav,
+musyx_muestra,283,musyx/starfoxm/0283_SFXsp_htop_hurry2.wav,
+musyx_muestra,284,musyx/starfoxm/0284_SFXtr_cnpltht1.wav,
+musyx_muestra,285,musyx/starfoxm/0285_SFXtr_cnshot6.wav,
+musyx_muestra,286,musyx/starfoxm/0286_SFXtr_cnflyby6.wav,
+musyx_muestra,287,musyx/starfoxm/0287_SFXtr_cndrht11.wav,
+musyx_muestra,288,musyx/starfoxm/0288_SFXtr_jwhinelp16.wav,
+musyx_muestra,289,musyx/starfoxm/0289_SFXtr_rhum2_c.wav,
+musyx_muestra,290,musyx/starfoxm/0290_SFXtr_jrumbalp.wav,
+musyx_muestra,291,musyx/starfoxm/0291_SFXtr_cndrlp11.wav,
+musyx_muestra,292,musyx/starfoxm/0292_SFXtr_cnplarlp.wav,
+musyx_muestra,293,musyx/starfoxm/0293_SFXtr_bcrek2_c.wav,
+musyx_muestra,294,musyx/starfoxm/0294_SFXtr_bcrek1_c.wav,
+musyx_muestra,295,musyx/starfoxm/0295_SFXtr_gal_rumblelp11.wav,
+musyx_muestra,296,musyx/starfoxm/0296_SFXtr_gal_sailflap1.wav,
+musyx_muestra,297,musyx/starfoxm/0297_SFXtr_gal_sailflap2.wav,
+musyx_muestra,298,musyx/starfoxm/0298_SFXtr_gal_sailflap3.wav,
+musyx_muestra,299,musyx/starfoxm/0299_SFXtr_gal_crateslide.wav,
+musyx_muestra,300,musyx/starfoxm/0300_SFXtr_gal_lightning.wav,
+musyx_muestra,301,musyx/starfoxm/0301_SFXtr_gal_doorslide.wav,
+musyx_muestra,302,musyx/starfoxm/0302_SFXtr_gal_prophit.wav,
+musyx_muestra,303,musyx/starfoxm/0303_SFXtr_jbike_rockhit.wav,
+musyx_muestra,304,musyx/starfoxm/0304_SFXtr_jbike_snowhit.wav,
+musyx_muestra,305,musyx/starfoxm/0305_SFXtr_barrelgrabber_suck.wav,
+musyx_muestra,306,musyx/starfoxm/0306_SFXtr_barrelgrabber_grab.wav,
+musyx_muestra,307,musyx/starfoxm/0307_SFXtr_barrelgrabber_eloop.wav,
+musyx_muestra,308,musyx/starfoxm/0308_SFXtr_jbike_bombbeep.wav,
+musyx_muestra,309,musyx/starfoxm/0309_SFXtr_jbike_snowspray.wav,
+musyx_muestra,310,musyx/starfoxm/0310_SFXtr_jbike_boost.wav,
+musyx_muestra,311,musyx/starfoxm/0311_SFXtr_jbike_whine2.wav,
+musyx_muestra,312,musyx/starfoxm/0312_SFXtr_gal_prophitbird.wav,
+musyx_muestra,313,musyx/starfoxm/0313_SFXtr_jbike_sclaweng.wav,
+musyx_muestra,314,musyx/starfoxm/0314_SFXtr_jbike_lowfuel.wav,
+musyx_muestra,315,musyx/starfoxm/0315_SFXtr_jbike_basketcrash.wav,
+musyx_muestra,316,musyx/starfoxm/0316_SFXwp_beamfizz16.wav,
+musyx_muestra,317,musyx/starfoxm/0317_SFXwp_beamgenlp16.wav,
+musyx_muestra,318,musyx/starfoxm/0318_SFXwp_beamhit16.wav,
+musyx_muestra,319,musyx/starfoxm/0319_SFXwp_blaserflyby16.wav,
+musyx_muestra,320,musyx/starfoxm/0320_SFXwp_blaserhit16.wav,
+musyx_muestra,321,musyx/starfoxm/0321_SFXwp_blaserrecoil16.wav,
+musyx_muestra,322,musyx/starfoxm/0322_SFXwp_blasershot11.wav,
+musyx_muestra,323,musyx/starfoxm/0323_SFXwp_cahit2_c.wav,
+musyx_muestra,324,musyx/starfoxm/0324_SFXwp_crthit6.wav,
+musyx_muestra,325,musyx/starfoxm/0325_SFXwp_crtsmsh6.wav,
+musyx_muestra,326,musyx/starfoxm/0326_SFXwp_dsmk2_c.wav,
+musyx_muestra,327,musyx/starfoxm/0327_SFXwp_espar5_c.wav,
+musyx_muestra,328,musyx/starfoxm/0328_SFXwp_espk2_c.wav,
+musyx_muestra,329,musyx/starfoxm/0329_SFXwp_fball2_c.wav,
+musyx_muestra,330,musyx/starfoxm/0330_SFXwp_gcexp1_c.wav,
+musyx_muestra,331,musyx/starfoxm/0331_SFXwp_gcfir1_c.wav,
+musyx_muestra,332,musyx/starfoxm/0332_SFXwp_hitpos_6.wav,
+musyx_muestra,333,musyx/starfoxm/0333_SFXwp_mpwru1.wav,
+musyx_muestra,334,musyx/starfoxm/0334_SFXwp_mzap2_c.wav,
+musyx_muestra,335,musyx/starfoxm/0335_SFXwp_pole1_c.wav,
+musyx_muestra,336,musyx/starfoxm/0336_SFXwp_pswordhit22.wav,
+musyx_muestra,337,musyx/starfoxm/0337_SFXwp_robolaser16.wav,
+musyx_muestra,338,musyx/starfoxm/0338_SFXwp_rolovr_6.wav,
+musyx_muestra,339,musyx/starfoxm/0339_SFXwp_rserv1_c.wav,
+musyx_muestra,340,musyx/starfoxm/0340_SFXwp_rserv2_c.wav,
+musyx_muestra,341,musyx/starfoxm/0341_SFXwp_sexpl2_c.wav,
+musyx_muestra,342,musyx/starfoxm/0342_SFXwp_simp1_c.wav,
+musyx_muestra,343,musyx/starfoxm/0343_SFXwp_sswsh1_c.wav,
+musyx_muestra,344,musyx/starfoxm/0344_SFXwp_sswsh2_c.wav,
+musyx_muestra,345,musyx/starfoxm/0345_SFXwp_sswsh3_c.wav,
+musyx_muestra,346,musyx/starfoxm/0346_SFXwp_stapo1_b.wav,
+musyx_muestra,347,musyx/starfoxm/0347_SFXwp_stftest122.wav,
+musyx_muestra,348,musyx/starfoxm/0348_SFXwp_stftest222.wav,
+musyx_muestra,349,musyx/starfoxm/0349_SFXwp_stftest322.wav,
+musyx_muestra,350,musyx/starfoxm/0350_SFXwp_stpos4_b.wav,
+musyx_muestra,351,musyx/starfoxm/0351_SFXwp_swddirt16.wav,
+musyx_muestra,352,musyx/starfoxm/0352_SFXwp_swdhit16.wav,
+musyx_muestra,353,musyx/starfoxm/0353_SFXwp_swdout1.wav,
+musyx_muestra,354,musyx/starfoxm/0354_SFXwp_swdstone16.wav,
+musyx_muestra,355,musyx/starfoxm/0355_SFXwp_swdtest122.wav,
+musyx_muestra,356,musyx/starfoxm/0356_SFXwp_swdtest222.wav,
+musyx_muestra,357,musyx/starfoxm/0357_SFXwp_swdtest322.wav,
+musyx_muestra,358,musyx/starfoxm/0358_SFXwp_swdwood16.wav,
+musyx_muestra,359,musyx/starfoxm/0359_SFXwp_swtst1_c.wav,
+musyx_muestra,360,musyx/starfoxm/0360_SFXwp_whit3_c.wav,
+musyx_muestra,361,musyx/starfoxm/0361_SFXwp_whiz3_c.wav,
+musyx_muestra,362,musyx/starfoxm/0362_SFXwp_gprop2_c.wav,
+musyx_muestra,363,musyx/starfoxm/0363_SFXwp_iceywindlp16.wav,
+musyx_muestra,364,musyx/starfoxm/0364_SFXwp_jetlp2_c.wav,
+musyx_muestra,365,musyx/starfoxm/0365_SFXwp_mflop7_c.wav,
+musyx_muestra,366,musyx/starfoxm/0366_SFXwp_mfin2_c.wav,
+musyx_muestra,367,musyx/starfoxm/0367_SFXwp_roboalarm.wav,
+musyx_muestra,368,musyx/starfoxm/0368_SFXwp_fox_kick1.wav,
+musyx_muestra,369,musyx/starfoxm/0369_SFXwp_fox_kick2.wav,
+musyx_muestra,370,musyx/starfoxm/0370_SFXwp_barrel_bounce1.wav,
+musyx_muestra,371,musyx/starfoxm/0371_SFXwp_barrel_bounce2.wav,
+musyx_muestra,372,musyx/starfoxm/0372_SFXwp_barrel_bounce3.wav,
+musyx_muestra,373,musyx/starfoxm/0373_SFXwp_ice_freeze.wav,
+musyx_muestra,374,musyx/starfoxm/0374_SFXwp_ice_smash.wav,
+musyx_muestra,375,musyx/starfoxm/0375_SFXcrf_babyreply.wav,
+musyx_muestra,376,musyx/starfoxm/0376_SFXcrf_babyambi1.wav,
+musyx_muestra,377,musyx/starfoxm/0377_SFXcrf_babyambi2.wav,
+musyx_muestra,378,musyx/starfoxm/0378_SFXcrf_babyambi3.wav,
+musyx_muestra,379,musyx/starfoxm/0379_SFXcrf_babyflute.wav,
+musyx_muestra,380,musyx/starfoxm/0380_SFXwmap_greatfox_lp.wav,
+musyx_muestra,381,musyx/starfoxm/0381_SFXwmap_swoosh.wav,
+musyx_muestra,382,musyx/starfoxm/0382_SFXwmap_name.wav,
+musyx_muestra,383,musyx/starfoxm/0383_SFXwmap_deselect.wav,
+musyx_muestra,384,musyx/starfoxm/0384_SFXwmap_select.wav,
+musyx_muestra,385,musyx/starfoxm/0385_SFXwmap_nameoff.wav,
+musyx_muestra,386,musyx/starfoxm/0386_SFXwmap_arwingflyby.wav,
+musyx_muestra,387,musyx/starfoxm/0387_SFXar_awghitobj16.wav,
+musyx_muestra,388,musyx/starfoxm/0388_SFXar_badhit16.wav,
+musyx_muestra,389,musyx/starfoxm/0389_SFXar_barrel16.wav,
+musyx_muestra,390,musyx/starfoxm/0390_SFXar_bblast16.wav,
+musyx_muestra,391,musyx/starfoxm/0391_SFXar_blaunch16.wav,
+musyx_muestra,392,musyx/starfoxm/0392_SFXar_boost16.wav,
+musyx_muestra,393,musyx/starfoxm/0393_SFXar_brakes16.wav,
+musyx_muestra,394,musyx/starfoxm/0394_SFXar_deflect16.wav,
+musyx_muestra,395,musyx/starfoxm/0395_SFXar_englp16.wav,
+musyx_muestra,396,musyx/starfoxm/0396_SFXar_laser116.wav,
+musyx_muestra,397,musyx/starfoxm/0397_SFXar_laser216.wav,
+musyx_muestra,398,musyx/starfoxm/0398_SFXar_laser316.wav,
+musyx_muestra,399,musyx/starfoxm/0399_SFXar_lsrhitobj16.wav,
+musyx_muestra,400,musyx/starfoxm/0400_SFXar_smallenergy_pickup.wav,
+musyx_muestra,401,musyx/starfoxm/0401_SFXar_largeenergy_pickup.wav,
+musyx_muestra,402,musyx/starfoxm/0402_SFXar_ring_pickup.wav,
+musyx_muestra,403,musyx/starfoxm/0403_SFXar_generic_pickup.wav,
+musyx_muestra,404,musyx/starfoxm/0404_SFXar_bomb_pickup.wav,
+musyx_muestra,405,musyx/starfoxm/0405_SFXar_laser_pickup.wav,
+musyx_muestra,406,musyx/starfoxm/0406_SFXar_noboost.wav,
+musyx_muestra,407,musyx/starfoxm/0407_SFXar_warningloop.wav,
+musyx_muestra,408,musyx/starfoxm/0408_SFXmenu_fox_inventory_up.wav,
+musyx_muestra,409,musyx/starfoxm/0409_SFXmenu_fox_exit.wav,
+musyx_muestra,410,musyx/starfoxm/0410_SFXmenu_fox_scrolls.wav,
+musyx_muestra,411,musyx/starfoxm/0411_SFXmenu_fox_select.wav,
+musyx_muestra,412,musyx/starfoxm/0412_SFXmenu_fox_sidekick_up.wav,
+musyx_muestra,413,musyx/starfoxm/0413_SFXmenu_fox_weapons_up.wav,
+musyx_muestra,414,musyx/starfoxm/0414_SFXmenu_spin.wav,
+musyx_muestra,415,musyx/starfoxm/0415_SFXmenu_pause_up.wav,
+musyx_muestra,416,musyx/starfoxm/0416_SFXmenu_pause_down.wav,
+musyx_muestra,417,musyx/starfoxm/0417_SFXmenu_assign_to_y.wav,
+musyx_muestra,418,musyx/starfoxm/0418_SFXmenu_fend_forward.wav,
+musyx_muestra,419,musyx/starfoxm/0419_SFXmenu_fend_back.wav,
+musyx_muestra,420,musyx/starfoxm/0420_SFXmenu_fend_name.wav,
+musyx_muestra,421,musyx/starfoxm/0421_SFXmenu_pause_hliteup.wav,
+musyx_muestra,422,musyx/starfoxm/0422_SFXmenu_pause_hlitedown.wav,
+musyx_muestra,423,musyx/starfoxm/0423_SFXfoot_dirt_walk_1.wav,
+musyx_muestra,424,musyx/starfoxm/0424_SFXfoot_dirt_walk_2.wav,
+musyx_muestra,425,musyx/starfoxm/0425_SFXfoot_dirt_walk_3.wav,
+musyx_muestra,426,musyx/starfoxm/0426_SFXfoot_dirt_walk_4.wav,
+musyx_muestra,427,musyx/starfoxm/0427_SFXfoot_dirt_run_1.wav,
+musyx_muestra,428,musyx/starfoxm/0428_SFXfoot_dirt_run_2.wav,
+musyx_muestra,429,musyx/starfoxm/0429_SFXfoot_dirt_run_3.wav,
+musyx_muestra,430,musyx/starfoxm/0430_SFXfoot_dirt_run_4.wav,
+musyx_muestra,431,musyx/starfoxm/0431_SFXfoot_stone_walk_1.wav,
+musyx_muestra,432,musyx/starfoxm/0432_SFXfoot_stone_walk_2.wav,
+musyx_muestra,433,musyx/starfoxm/0433_SFXfoot_stone_walk_3.wav,
+musyx_muestra,434,musyx/starfoxm/0434_SFXfoot_stone_walk_4.wav,
+musyx_muestra,435,musyx/starfoxm/0435_SFXfoot_stone_run_1.wav,
+musyx_muestra,436,musyx/starfoxm/0436_SFXfoot_stone_run_2.wav,
+musyx_muestra,437,musyx/starfoxm/0437_SFXfoot_stone_run_3.wav,
+musyx_muestra,438,musyx/starfoxm/0438_SFXfoot_stone_run_4.wav,
+musyx_muestra,439,musyx/starfoxm/0439_SFXfoot_snow_walk_1.wav,
+musyx_muestra,440,musyx/starfoxm/0440_SFXfoot_snow_walk_2.wav,
+musyx_muestra,441,musyx/starfoxm/0441_SFXfoot_snow_walk_3.wav,
+musyx_muestra,442,musyx/starfoxm/0442_SFXfoot_snow_walk_4.wav,
+musyx_muestra,443,musyx/starfoxm/0443_SFXfoot_snow_run_1.wav,
+musyx_muestra,444,musyx/starfoxm/0444_SFXfoot_snow_run_2.wav,
+musyx_muestra,445,musyx/starfoxm/0445_SFXfoot_snow_run_3.wav,
+musyx_muestra,446,musyx/starfoxm/0446_SFXfoot_snow_run_4.wav,
+musyx_muestra,447,musyx/starfoxm/0447_SFXfoot_wood_walk_1.wav,
+musyx_muestra,448,musyx/starfoxm/0448_SFXfoot_wood_walk_2.wav,
+musyx_muestra,449,musyx/starfoxm/0449_SFXfoot_wood_walk_3.wav,
+musyx_muestra,450,musyx/starfoxm/0450_SFXfoot_wood_walk_4.wav,
+musyx_muestra,451,musyx/starfoxm/0451_SFXfoot_wood_run_1.wav,
+musyx_muestra,452,musyx/starfoxm/0452_SFXfoot_wood_run_2.wav,
+musyx_muestra,453,musyx/starfoxm/0453_SFXfoot_wood_run_3.wav,
+musyx_muestra,454,musyx/starfoxm/0454_SFXfoot_wood_run_4.wav,
+musyx_muestra,455,musyx/starfoxm/0455_SFXfoot_water_walk_1.wav,
+musyx_muestra,456,musyx/starfoxm/0456_SFXfoot_water_walk_2.wav,
+musyx_muestra,457,musyx/starfoxm/0457_SFXfoot_water_walk_3.wav,
+musyx_muestra,458,musyx/starfoxm/0458_SFXfoot_water_walk_4.wav,
+musyx_muestra,459,musyx/starfoxm/0459_SFXfoot_water_run_1.wav,
+musyx_muestra,460,musyx/starfoxm/0460_SFXfoot_water_run_2.wav,
+musyx_muestra,461,musyx/starfoxm/0461_SFXfoot_water_run_3.wav,
+musyx_muestra,462,musyx/starfoxm/0462_SFXfoot_water_run_4.wav,
+musyx_muestra,463,musyx/starfoxm/0463_SFXfoot_dirt_land.wav,
+musyx_muestra,464,musyx/starfoxm/0464_SFXfoot_dirt_scuff.wav,
+musyx_muestra,465,musyx/starfoxm/0465_SFXfoot_snow_land.wav,
+musyx_muestra,466,musyx/starfoxm/0466_SFXfoot_snow_scuff.wav,
+musyx_muestra,467,musyx/starfoxm/0467_SFXfoot_stone_land.wav,
+musyx_muestra,468,musyx/starfoxm/0468_SFXfoot_stone_scuff.wav,
+musyx_muestra,469,musyx/starfoxm/0469_SFXfoot_wood_land.wav,
+musyx_muestra,470,musyx/starfoxm/0470_SFXfoot_wood_scuff.wav,
+musyx_muestra,471,musyx/starfoxm/0471_SFXfoot_climb_1.wav,
+musyx_muestra,472,musyx/starfoxm/0472_SFXfoot_climb_2.wav,
+musyx_muestra,473,musyx/starfoxm/0473_SFXfoot_climb_3.wav,
+musyx_muestra,474,musyx/starfoxm/0474_SFXfoot_climb_4.wav,
+musyx_muestra,475,musyx/starfoxm/0475_SFXfoot_ladder1.wav,
+musyx_muestra,476,musyx/starfoxm/0476_SFXfoot_ladder2.wav,
+musyx_muestra,477,musyx/starfoxm/0477_SFXfoot_ladder3.wav,
+musyx_muestra,478,musyx/starfoxm/0478_SFXfoot_ladder4.wav,
+musyx_muestra,479,musyx/starfoxm/0479_SFXfox_standsup.wav,
+musyx_muestra,480,musyx/starfoxm/0480_SFXfoot_crawl1.wav,
+musyx_muestra,481,musyx/starfoxm/0481_SFXfoot_crawl2.wav,
+musyx_muestra,482,musyx/starfoxm/0482_SFXfoot_crawl3.wav,
+musyx_muestra,483,musyx/starfoxm/0483_SFXfoot_crawl4.wav,
+musyx_muestra,484,musyx/starfoxm/0484_SFXfox_bigfallcrunch.wav,
+musyx_muestra,485,musyx/starfoxm/0485_SFXfoot_ice_walk_1.wav,
+musyx_muestra,486,musyx/starfoxm/0486_SFXfoot_ice_walk_2.wav,
+musyx_muestra,487,musyx/starfoxm/0487_SFXfoot_ice_walk_3.wav,
+musyx_muestra,488,musyx/starfoxm/0488_SFXfoot_ice_walk_4.wav,
+musyx_muestra,489,musyx/starfoxm/0489_SFXfoot_ice_run_1.wav,
+musyx_muestra,490,musyx/starfoxm/0490_SFXfoot_ice_run_2.wav,
+musyx_muestra,491,musyx/starfoxm/0491_SFXfoot_ice_run_3.wav,
+musyx_muestra,492,musyx/starfoxm/0492_SFXfoot_ice_run_4.wav,
+musyx_muestra,493,musyx/starfoxm/0493_SFXfoot_metal_walk_1.wav,
+musyx_muestra,494,musyx/starfoxm/0494_SFXfoot_metal_walk_2.wav,
+musyx_muestra,495,musyx/starfoxm/0495_SFXfoot_metal_walk_3.wav,
+musyx_muestra,496,musyx/starfoxm/0496_SFXfoot_metal_walk_4.wav,
+musyx_muestra,497,musyx/starfoxm/0497_SFXfoot_metal_run_1.wav,
+musyx_muestra,498,musyx/starfoxm/0498_SFXfoot_metal_run_2.wav,
+musyx_muestra,499,musyx/starfoxm/0499_SFXfoot_metal_run_3.wav,
+musyx_muestra,500,musyx/starfoxm/0500_SFXfoot_metal_run_4.wav,
+musyx_muestra,501,musyx/starfoxm/0501_SFXfoot_metal_scuff.wav,
+musyx_muestra,502,musyx/starfoxm/0502_SFXfoot_metal_land.wav,
+musyx_muestra,503,musyx/starfoxm/0503_SFXfoot_ice_scuff.wav,
+musyx_muestra,504,musyx/starfoxm/0504_SFXchar_on_firelp.wav,
+musyx_muestra,505,musyx/starfoxm/0505_SFXchar_puts_out_fire.wav,
+musyx_muestra,506,musyx/starfoxm/0506_SFXfoot_run_jingle1.wav,
+musyx_muestra,507,musyx/starfoxm/0507_SFXfoot_run_jingle2.wav,
+musyx_muestra,508,musyx/starfoxm/0508_SFXfoot_run_jingle3.wav,
+musyx_muestra,509,musyx/starfoxm/0509_SFXfoot_run_jingle4.wav,
+musyx_muestra,510,musyx/starfoxm/0510_SFXfoot_dinostep.wav,
+musyx_muestra,511,musyx/starfoxm/0511_SFXfoot_shallow_splash.wav,
+musyx_muestra,512,musyx/starfoxm/0512_SFXfoot_char_wallbump.wav,
+musyx_muestra,513,musyx/starfoxm/0513_SFXfoot_water_roll.wav,
+musyx_muestra,514,musyx/starfoxm/0514_SFXthorntail_annoyed1.wav,
+musyx_muestra,515,musyx/starfoxm/0515_SFXthorntail_annoyed2.wav,
+musyx_muestra,516,musyx/starfoxm/0516_SFXthorntail_snore_in.wav,
+musyx_muestra,517,musyx/starfoxm/0517_SFXthorntail_snore_out.wav,
+musyx_muestra,518,musyx/starfoxm/0518_SFXthorntail_chew1.wav,
+musyx_muestra,519,musyx/starfoxm/0519_SFXthorntail_chew2.wav,
+musyx_muestra,520,musyx/starfoxm/0520_SFXmammoth_snowstep.wav,
+musyx_muestra,521,musyx/starfoxm/0521_SFXmammoth_annoyed.wav,
+musyx_muestra,522,musyx/starfoxm/0522_SFXmammoth_attacks.wav,
+musyx_muestra,523,musyx/starfoxm/0523_SFXmammoth_suck.wav,
+musyx_muestra,524,musyx/starfoxm/0524_SFXmammoth_slurp.wav,
+musyx_muestra,525,musyx/starfoxm/0525_SFXmammoth_woodstep.wav,
+musyx_muestra,526,musyx/starfoxm/0526_SFXthorntail_footstep.wav,
+musyx_muestra,527,musyx/starfoxm/0527_SFXthorntail_injured1.wav,
+musyx_muestra,528,musyx/starfoxm/0528_SFXthorntail_injured2.wav,
+musyx_muestra,529,musyx/starfoxm/0529_SFXthorntail_snort1.wav,
+musyx_muestra,530,musyx/starfoxm/0530_SFXthorntail_snort2.wav,
+musyx_muestra,531,musyx/starfoxm/0531_SFXttail_queen_breathin.wav,
+musyx_muestra,532,musyx/starfoxm/0532_SFXttail_queen_breathout.wav,
+musyx_muestra,533,musyx/starfoxm/0533_SFXhightop_call1.wav,
+musyx_muestra,534,musyx/starfoxm/0534_SFXhightop_call2.wav,
+musyx_muestra,535,musyx/starfoxm/0535_SFXmammoth_annoyed2.wav,
+musyx_muestra,536,musyx/starfoxm/0536_SFXmammoth_breath1.wav,
+musyx_muestra,537,musyx/starfoxm/0537_SFXmammoth_breath2.wav,
+musyx_muestra,538,musyx/starfoxm/0538_SFXmammoth_huff1.wav,
+musyx_muestra,539,musyx/starfoxm/0539_SFXmammoth_huff2.wav,
+musyx_muestra,540,musyx/starfoxm/0540_SFXmammoth_dirtstep.wav,
+musyx_muestra,541,musyx/starfoxm/0541_SFXmammoth_grunt1.wav,
+musyx_muestra,542,musyx/starfoxm/0542_SFXmammoth_grunt2.wav,
+musyx_muestra,543,musyx/starfoxm/0543_SFXmammoth_grunt3.wav,
+musyx_muestra,544,musyx/starfoxm/0544_SFXstaff_boulder_drops.wav,
+musyx_muestra,545,musyx/starfoxm/0545_SFXstaff_boulder_move1.wav,
+musyx_muestra,546,musyx/starfoxm/0546_SFXstaff_boulder_move2.wav,
+musyx_muestra,547,musyx/starfoxm/0547_SFXstaff_quake_powerup.wav,
+musyx_muestra,548,musyx/starfoxm/0548_SFXstaff_quake_strike.wav,
+musyx_muestra,549,musyx/starfoxm/0549_SFXstaff_rocket_boost.wav,
+musyx_muestra,550,musyx/starfoxm/0550_SFXstaff_rocket_hitdirt.wav,
+musyx_muestra,551,musyx/starfoxm/0551_SFXstaff_rocket_powerup.wav,
+musyx_muestra,552,musyx/starfoxm/0552_SFXstaff_boulder_prise.wav,
+musyx_muestra,553,musyx/starfoxm/0553_SFXstaff_rapidfire.wav,
+musyx_muestra,554,musyx/starfoxm/0554_SFXrecrate_hit.wav,
+musyx_muestra,555,musyx/starfoxm/0555_SFXrecrate_smash.wav,
+musyx_muestra,556,musyx/starfoxm/0556_SFXstaff_lever.wav,
+musyx_muestra,557,musyx/starfoxm/0557_SFXstaff_slidein.wav,
+musyx_muestra,558,musyx/starfoxm/0558_SFXstaff_stoneflip.wav,
+musyx_muestra,559,musyx/starfoxm/0559_SFXstaff_slideout.wav,
+musyx_muestra,560,musyx/starfoxm/0560_SFXstaff_swipes_short.wav,
+musyx_muestra,561,musyx/starfoxm/0561_SFXstaff_swipes_long.wav,
+musyx_muestra,562,musyx/starfoxm/0562_SFXdoor_unlocked.wav,
+musyx_muestra,563,musyx/starfoxm/0563_SFXdoor_creak.wav,
+musyx_muestra,564,musyx/starfoxm/0564_SFXstaff_proj_select.wav,
+musyx_muestra,565,musyx/starfoxm/0565_SFXstaff_proj_putaway.wav,
+musyx_muestra,566,musyx/starfoxm/0566_SFXstaff_proj_outofmagic.wav,
+musyx_muestra,567,musyx/starfoxm/0567_SFXfox_treadwater122.wav,
+musyx_muestra,568,musyx/starfoxm/0568_SFXfox_treadwater222.wav,
+musyx_muestra,569,musyx/starfoxm/0569_SFXfox_treadwater322.wav,
+musyx_muestra,570,musyx/starfoxm/0570_SFXfox_treadwater422.wav,
+musyx_muestra,571,musyx/starfoxm/0571_SFXfox_swimstroke122.wav,
+musyx_muestra,572,musyx/starfoxm/0572_SFXfox_swimstroke222.wav,
+musyx_muestra,573,musyx/starfoxm/0573_SFXfox_swimstroke322.wav,
+musyx_muestra,574,musyx/starfoxm/0574_SFXfox_swimstroke422.wav,
+musyx_muestra,575,musyx/starfoxm/0575_SFXfox_outofwater122.wav,
+musyx_muestra,576,musyx/starfoxm/0576_SFXwatery_lap1.wav,
+musyx_muestra,577,musyx/starfoxm/0577_SFXwatery_lap2.wav,
+musyx_muestra,578,musyx/starfoxm/0578_SFXwatery_lap3.wav,
+musyx_muestra,579,musyx/starfoxm/0579_SFXwatery_bubble1.wav,
+musyx_muestra,580,musyx/starfoxm/0580_SFXwatery_bubble2.wav,
+musyx_muestra,581,musyx/starfoxm/0581_SFXwatery_bubble3.wav,
+musyx_muestra,582,musyx/starfoxm/0582_SFXfox_bigfallgrunt1.wav,
+musyx_muestra,583,musyx/starfoxm/0583_SFXfox_bigfallgrunt2.wav,
+musyx_muestra,584,musyx/starfoxm/0584_SFXfox_cough1.wav,
+musyx_muestra,585,musyx/starfoxm/0585_SFXfox_cough2.wav,
+musyx_muestra,586,musyx/starfoxm/0586_SFXfox_bigfallrecover1.wav,
+musyx_muestra,587,musyx/starfoxm/0587_SFXfox_fightbreath1.wav,
+musyx_muestra,588,musyx/starfoxm/0588_SFXfox_fightbreath2.wav,
+musyx_muestra,589,musyx/starfoxm/0589_SFXfox_fightbreath3.wav,
+musyx_muestra,590,musyx/starfoxm/0590_SFXfox_fightbreath4.wav,
+musyx_muestra,591,musyx/starfoxm/0591_SFXfox_roll1.wav,
+musyx_muestra,592,musyx/starfoxm/0592_SFXfox_roll2.wav,
+musyx_muestra,593,musyx/starfoxm/0593_SFXfox_roll3.wav,
+musyx_muestra,594,musyx/starfoxs/0594_SFXfox_roll4.wav,
+musyx_muestra,595,musyx/starfoxs/0595_SFXfox_runbreath1.wav,
+musyx_muestra,596,musyx/starfoxs/0596_SFXfox_runbreath2.wav,
+musyx_muestra,597,musyx/starfoxs/0597_SFXfox_runbreath3.wav,
+musyx_muestra,598,musyx/starfoxs/0598_SFXfox_quakecry1.wav,
+musyx_muestra,599,musyx/starfoxs/0599_SFXfox_watergasp1.wav,
+musyx_muestra,600,musyx/starfoxs/0600_SFXfox_climbgrunt1.wav,
+musyx_muestra,601,musyx/starfoxs/0601_SFXfox_climbgrunt2.wav,
+musyx_muestra,602,musyx/starfoxs/0602_SFXfox_climbgrunt3.wav,
+musyx_muestra,603,musyx/starfoxs/0603_SFXfox_climbgrunt4.wav,
+musyx_muestra,604,musyx/starfoxs/0604_SFXfox_healthgasp1.wav,
+musyx_muestra,605,musyx/starfoxs/0605_SFXfox_healthgasp2.wav,
+musyx_muestra,606,musyx/starfoxs/0606_SFXfox_healthgasp3.wav,
+musyx_muestra,607,musyx/starfoxs/0607_SFXfox_healthgasp4.wav,
+musyx_muestra,608,musyx/starfoxs/0608_SFXfox_cough3.wav,
+musyx_muestra,609,musyx/starfoxs/0609_SFXfox_cough4.wav,
+musyx_muestra,610,musyx/starfoxs/0610_SFXfoxcom_decoy.wav,
+musyx_muestra,611,musyx/starfoxs/0611_SFXfoxcom_find.wav,
+musyx_muestra,612,musyx/starfoxs/0612_SFXfoxcom_flame.wav,
+musyx_muestra,613,musyx/starfoxs/0613_SFXfoxcom_gogetit.wav,
+musyx_muestra,614,musyx/starfoxs/0614_SFXfoxcom_heel.wav,
+musyx_muestra,615,musyx/starfoxs/0615_SFXfoxcom_stay.wav,
+musyx_muestra,616,musyx/starfoxs/0616_SFXkr_impact1.wav,
+musyx_muestra,617,musyx/starfoxs/0617_SFXkr_impact2.wav,
+musyx_muestra,618,musyx/starfoxs/0618_SFXkr_impact3.wav,
+musyx_muestra,619,musyx/starfoxs/0619_SFXkr_jump1.wav,
+musyx_muestra,620,musyx/starfoxs/0620_SFXkr_jump2.wav,
+musyx_muestra,621,musyx/starfoxs/0621_SFXkr_jump3.wav,
+musyx_muestra,622,musyx/starfoxs/0622_SFXkr_panting1.wav,
+musyx_muestra,623,musyx/starfoxs/0623_SFXkr_panting2.wav,
+musyx_muestra,624,musyx/starfoxs/0624_SFXkr_pullup1.wav,
+musyx_muestra,625,musyx/starfoxs/0625_SFXkr_pullup2.wav,
+musyx_muestra,626,musyx/starfoxs/0626_SFXkr_scream1.wav,
+musyx_muestra,627,musyx/starfoxs/0627_SFXkr_climb1.wav,
+musyx_muestra,628,musyx/starfoxs/0628_SFXkr_climb2.wav,
+musyx_muestra,629,musyx/starfoxs/0629_SFXkr_land1.wav,
+musyx_muestra,630,musyx/starfoxs/0630_SFXkr_land2.wav,
+musyx_muestra,631,musyx/starfoxs/0631_SFXsc_attack01.wav,
+musyx_muestra,632,musyx/starfoxs/0632_SFXsc_attack02.wav,
+musyx_muestra,633,musyx/starfoxs/0633_SFXsc_attack03.wav,
+musyx_muestra,634,musyx/starfoxs/0634_SFXsc_attack04.wav,
+musyx_muestra,635,musyx/starfoxs/0635_SFXsc_death01.wav,
+musyx_muestra,636,musyx/starfoxs/0636_SFXsc_death02.wav,
+musyx_muestra,637,musyx/starfoxs/0637_SFXsc_gethit01.wav,
+musyx_muestra,638,musyx/starfoxs/0638_SFXsc_gethit02.wav,
+musyx_muestra,639,musyx/starfoxs/0639_SFXsc_gethit03.wav,
+musyx_muestra,640,musyx/starfoxs/0640_SFXsc_gethit04.wav,
+musyx_muestra,641,musyx/starfoxs/0641_SFXsc_mumble01.wav,
+musyx_muestra,642,musyx/starfoxs/0642_SFXsc_mumble02.wav,
+musyx_muestra,643,musyx/starfoxs/0643_SFXsc_mumble03.wav,
+musyx_muestra,644,musyx/starfoxs/0644_SFXsc_snort01.wav,
+musyx_muestra,645,musyx/starfoxs/0645_SFXsc_snort02.wav,
+musyx_muestra,646,musyx/starfoxs/0646_SFXsc_snort03.wav,
+musyx_muestra,647,musyx/starfoxs/0647_SFXsc_snort04.wav,
+musyx_muestra,648,musyx/starfoxs/0648_SFXsc_spotfox01.wav,
+musyx_muestra,649,musyx/starfoxs/0649_SFXsc_spotfox02.wav,
+musyx_muestra,650,musyx/starfoxs/0650_SFXsc_spotfox03.wav,
+musyx_muestra,651,musyx/starfoxs/0651_SFXsc_spotfox04.wav,
+musyx_muestra,652,musyx/starfoxs/0652_SFXsc_clubhit01.wav,
+musyx_muestra,653,musyx/starfoxs/0653_SFXsc_clubhit02.wav,
+musyx_muestra,654,musyx/starfoxs/0654_SFXsc_clubswipe.wav,
+musyx_muestra,655,musyx/starfoxs/0655_SFXsc_walkstep.wav,
+musyx_muestra,656,musyx/starfoxs/0656_SFXsc_runstep.wav,
+musyx_muestra,657,musyx/starfoxs/0657_SFXbaddie_zyck_call01.wav,
+musyx_muestra,658,musyx/starfoxs/0658_SFXbaddie_zyck_call02.wav,
+musyx_muestra,659,musyx/starfoxs/0659_SFXbaddie_zyck_call03.wav,
+musyx_muestra,660,musyx/starfoxs/0660_SFXbaddie_zyck_death.wav,
+musyx_muestra,661,musyx/starfoxs/0661_SFXbaddie_zyck_lash.wav,
+musyx_muestra,662,musyx/starfoxs/0662_SFXbaddie_zyck_strike.wav,
+musyx_muestra,663,musyx/starfoxs/0663_SFXbaddie_kooshy_call.wav,
+musyx_muestra,664,musyx/starfoxs/0664_SFXbaddie_kooshy_death.wav,
+musyx_muestra,665,musyx/starfoxs/0665_SFXbaddie_kooshy_hit.wav,
+musyx_muestra,666,musyx/starfoxs/0666_SFXbaddie_mika_bombaway.wav,
+musyx_muestra,667,musyx/starfoxs/0667_SFXbaddie_mika_cackle.wav,
+musyx_muestra,668,musyx/starfoxs/0668_SFXbaddie_mika_bombwhistle.wav,
+musyx_muestra,669,musyx/starfoxs/0669_SFXbaddie_mika_wingflap.wav,
+musyx_muestra,670,musyx/starfoxs/0670_SFXbaddie_mika_death.wav,
+musyx_muestra,671,musyx/starfoxs/0671_SFXbaddie_pinpon_launch.wav,
+musyx_muestra,672,musyx/starfoxs/0672_SFXbaddie_rach_bite.wav,
+musyx_muestra,673,musyx/starfoxs/0673_SFXbaddie_rach_call1.wav,
+musyx_muestra,674,musyx/starfoxs/0674_SFXbaddie_rach_call2.wav,
+musyx_muestra,675,musyx/starfoxs/0675_SFXbaddie_rach_call3.wav,
+musyx_muestra,676,musyx/starfoxs/0676_SFXbaddie_rach_death.wav,
+musyx_muestra,677,musyx/starfoxs/0677_SFXbaddie_eba_death.wav,
+musyx_muestra,678,musyx/starfoxs/0678_SFXbaddie_eba_hit.wav,
+musyx_muestra,679,musyx/starfoxs/0679_SFXbaddie_eba_leavesclose.wav,
+musyx_muestra,680,musyx/starfoxs/0680_SFXbaddie_eba_leavesopen.wav,
+musyx_muestra,681,musyx/starfoxs/0681_SFXbaddie_eba_pollenspin.wav,
+musyx_muestra,682,musyx/starfoxs/0682_SFXbaddie_eba_pollenspit.wav,
+musyx_muestra,683,musyx/starfoxs/0683_SFXbaddie_vambat_attack.wav,
+musyx_muestra,684,musyx/starfoxs/0684_SFXbaddie_vambat_death.wav,
+musyx_muestra,685,musyx/starfoxs/0685_SFXbaddie_weev_attack.wav,
+musyx_muestra,686,musyx/starfoxs/0686_SFXbaddie_weev_death.wav,
+musyx_muestra,687,musyx/starfoxs/0687_SFXbaddie_weev_hit.wav,
+musyx_muestra,688,musyx/starfoxs/0688_SFXbaddie_weev_move.wav,
+musyx_muestra,689,musyx/starfoxs/0689_SFXbaddie_hits_fox.wav,
+musyx_muestra,690,musyx/starfoxs/0690_SFXbaddie_gets_hit.wav,
+musyx_muestra,691,musyx/starfoxs/0691_SFXbaddie_invin_hit.wav,
+musyx_muestra,692,musyx/starfoxs/0692_SFXbaddie_eba_bigswipe.wav,
+musyx_muestra,693,musyx/starfoxs/0693_SFXbaddie_eba_smallswipe1.wav,
+musyx_muestra,694,musyx/starfoxs/0694_SFXbaddie_eba_smallswipe2.wav,
+musyx_muestra,695,musyx/starfoxs/0695_SFXbaddie_kalda_distress.wav,
+musyx_muestra,696,musyx/starfoxs/0696_SFXbaddie_haga_spin.wav,
+musyx_muestra,697,musyx/starfoxs/0697_SFXbaddie_haga_talk1.wav,
+musyx_muestra,698,musyx/starfoxs/0698_SFXbaddie_haga_talk2.wav,
+musyx_muestra,699,musyx/starfoxs/0699_SFXbaddie_haga_talk3.wav,
+musyx_muestra,700,musyx/starfoxs/0700_SFXbaddie_haga_death.wav,
+musyx_muestra,701,musyx/starfoxs/0701_SFXbaddie_blooplaugh1.wav,
+musyx_muestra,702,musyx/starfoxs/0702_SFXbaddie_blooplaugh2.wav,
+musyx_muestra,703,musyx/starfoxs/0703_SFXbaddie_blooplaugh3.wav,
+musyx_muestra,704,musyx/starfoxs/0704_SFXbaddie_eggsnatch_movelp.wav,
+musyx_muestra,705,musyx/starfoxs/0705_SFXbaddie_eggsnatch_sniff1.wav,
+musyx_muestra,706,musyx/starfoxs/0706_SFXbaddie_eggsnatch_sniff2.wav,
+musyx_muestra,707,musyx/starfoxs/0707_SFXbaddie_eggsnatch_sniff3.wav,
+musyx_muestra,708,musyx/starfoxs/0708_SFXbaddie_eggsnatch_sniff4.wav,
+musyx_muestra,709,musyx/starfoxs/0709_SFXbaddie_eggsnatch_carry1.wav,
+musyx_muestra,710,musyx/starfoxs/0710_SFXbaddie_eggsnatch_carry2.wav,
+musyx_muestra,711,musyx/starfoxs/0711_SFXbaddie_eggsnatch_carry3.wav,
+musyx_muestra,712,musyx/starfoxs/0712_SFXbaddie_eggsnatch_carry4.wav,
+musyx_muestra,713,musyx/starfoxs/0713_SFXbaddie_eggsnatch_eggslide.wav,
+musyx_muestra,714,musyx/starfoxs/0714_SFXbaddie_crater_call.wav,
+musyx_muestra,715,musyx/starfoxs/0715_SFXbaddie_eggsnatch_start1.wav,
+musyx_muestra,716,musyx/starfoxs/0716_SFXbaddie_eggsnatch_start2.wav,
+musyx_muestra,717,musyx/starfoxs/0717_SFXbaddie_eggsnatch_start3.wav,
+musyx_muestra,718,musyx/starfoxs/0718_SFXbaddie_eggsnatch_start4.wav,
+musyx_muestra,719,musyx/starfoxs/0719_SFXbaddie_mush_windup.wav,
+musyx_muestra,720,musyx/starfoxs/0720_SFXbarrelgen_slide.wav,
+musyx_muestra,721,musyx/starfoxs/0721_SFXbarrel_putdown.wav,
+musyx_muestra,722,musyx/starfoxs/0722_SFXbombplant_grows.wav,
+musyx_muestra,723,musyx/starfoxs/0723_SFXbombplant_woompf.wav,
+musyx_muestra,724,musyx/starfoxs/0724_SFXobject_pickup.wav,
+musyx_muestra,725,musyx/starfoxs/0725_SFXbarrel_throw.wav,
+musyx_muestra,726,musyx/starfoxs/0726_SFXmoonseed_grows.wav,
+musyx_muestra,727,musyx/starfoxs/0727_SFXbarrel_timerbeep.wav,
+musyx_muestra,728,musyx/starfoxs/0728_SFXscarab_runloop.wav,
+musyx_muestra,729,musyx/starfoxs/0729_SFXpk_fruit_lands.wav,
+musyx_muestra,730,musyx/starfoxs/0730_SFXpk_staff_fizz.wav,
+musyx_muestra,731,musyx/starfoxs/0731_SFXpk_fuelcell_fizz.wav,
+musyx_muestra,732,musyx/starfoxs/0732_SFXpk_moonseed_rattle.wav,
+musyx_muestra,733,musyx/starfoxs/0733_SFXpk_moonseed_plant.wav,
+musyx_muestra,734,musyx/starfoxs/0734_SFXpk_lightcritter_lp.wav,
+musyx_muestra,735,musyx/starfoxs/0735_SFXswapstone_move_long.wav,
+musyx_muestra,736,musyx/starfoxs/0736_SFXswapstone_move_short.wav,
+musyx_muestra,737,musyx/starfoxs/0737_SFXswapstone_breathein.wav,
+musyx_muestra,738,musyx/starfoxs/0738_SFXswapstone_breatheout.wav,
+musyx_muestra,739,musyx/starfoxs/0739_SFXswapstone_handhit.wav,
+musyx_muestra,740,musyx/starfoxs/0740_SFXswapstone_mumble.wav,
+musyx_muestra,741,musyx/starfoxs/0741_SFXswapstone_yawn.wav,
+musyx_muestra,742,musyx/starfoxs/0742_SFXnewtricky_01a.wav,
+musyx_muestra,743,musyx/starfoxs/0743_SFXnewtricky_01b.wav,
+musyx_muestra,744,musyx/starfoxs/0744_SFXnewtricky_01c.wav,
+musyx_muestra,745,musyx/starfoxs/0745_SFXnewtricky_01d.wav,
+musyx_muestra,746,musyx/starfoxs/0746_SFXnewtricky_01e.wav,
+musyx_muestra,747,musyx/starfoxs/0747_SFXnewtricky_01f.wav,
+musyx_muestra,748,musyx/starfoxs/0748_SFXnewtricky_01g.wav,
+musyx_muestra,749,musyx/starfoxs/0749_SFXnewtricky_01h.wav,
+musyx_muestra,750,musyx/starfoxs/0750_SFXnewtricky_01i.wav,
+musyx_muestra,751,musyx/starfoxs/0751_SFXnewtricky_01j.wav,
+musyx_muestra,752,musyx/starfoxs/0752_SFXnewtricky_01k.wav,
+musyx_muestra,753,musyx/starfoxs/0753_SFXnewtricky_01l.wav,
+musyx_muestra,754,musyx/starfoxs/0754_SFXnewtricky_01m.wav,
+musyx_muestra,755,musyx/starfoxs/0755_SFXnewtricky_01n.wav,
+musyx_muestra,756,musyx/starfoxs/0756_SFXnewtricky_01o.wav,
+musyx_muestra,757,musyx/starfoxs/0757_SFXnewtricky_01p.wav,
+musyx_muestra,758,musyx/starfoxs/0758_SFXnewtricky_01q.wav,
+musyx_muestra,759,musyx/starfoxs/0759_SFXnewtricky_01r.wav,
+musyx_muestra,760,musyx/starfoxs/0760_SFXnewtricky_01s.wav,
+musyx_muestra,761,musyx/starfoxs/0761_SFXnewtricky_01t.wav,
+musyx_muestra,762,musyx/starfoxs/0762_SFXnewtricky_01u.wav,
+musyx_muestra,763,musyx/starfoxs/0763_SFXnewtricky_01v.wav,
+musyx_muestra,764,musyx/starfoxs/0764_SFXnewtricky_01w.wav,
+musyx_muestra,765,musyx/starfoxs/0765_SFXnewtricky_01x.wav,
+musyx_muestra,766,musyx/starfoxs/0766_SFXnewtricky_01y.wav,
+musyx_muestra,767,musyx/starfoxs/0767_SFXnewtricky_ahhcomeon.wav,
+musyx_muestra,768,musyx/starfoxs/0768_SFXnewtricky_snore_in.wav,
+musyx_muestra,769,musyx/starfoxs/0769_SFXnewtricky_snore_out.wav,
+musyx_muestra,770,musyx/starfoxs/0770_SFXnewtricky_tooscared.wav,
+musyx_muestra,771,musyx/starfoxs/0771_SFXnewtricky_help1.wav,
+musyx_muestra,772,musyx/starfoxs/0772_SFXnewtricky_help2.wav,
+musyx_muestra,773,musyx/starfoxs/0773_SFXnewtricky_help3.wav,
+musyx_muestra,774,musyx/starfoxs/0774_SFXnewtricky_help4.wav,
+musyx_muestra,775,musyx/starfoxs/0775_SFXfend_fox_keytap1.wav,
+musyx_muestra,776,musyx/starfoxs/0776_SFXfend_fox_keytap2.wav,
+musyx_muestra,777,musyx/starfoxs/0777_SFXfend_fox_keytap3.wav,
+musyx_muestra,778,musyx/starfoxs/0778_SFXfend_pep_wakeup.wav,
+musyx_muestra,779,musyx/starfoxs/0779_SFXfend_rob_servo1.wav,
+musyx_muestra,780,musyx/starfoxs/0780_SFXfend_rob_servo2.wav,
+musyx_muestra,781,musyx/starfoxs/0781_SFXfend_slip_kickbox.wav,
+musyx_muestra,782,musyx/starfoxs/0782_SFXfend_pep_snorein.wav,
+musyx_muestra,783,musyx/starfoxs/0783_SFXfend_pep_snoreout.wav,
+musyx_muestra,784,musyx/starfoxs/0784_SFXfend_slip_commsloop.wav,
+musyx_muestra,785,musyx/starfoxs/0785_SFXfend_rob_armout.wav,
+musyx_muestra,786,musyx/starfoxs/0786_SFXfend_rob_armin.wav,
+musyx_muestra,787,musyx/starfoxs/0787_SFXfend_rob_wave.wav,
+musyx_muestra,788,musyx/starfoxs/0788_SFXfend_rob_beep1.wav,
+musyx_muestra,789,musyx/starfoxs/0789_SFXfend_rob_beep2.wav,
+musyx_muestra,790,musyx/starfoxs/0790_SFXfend_rob_beep3.wav,
+musyx_muestra,791,musyx/starfoxs/0791_SFXfened_pep_yawn.wav,
+musyx_muestra,792,musyx/starfoxs/0792_SFXfend_slip_fingersnap.wav,
+musyx_muestra,793,musyx/starfoxs/0793_SFXspirit_basketspin.wav,
+musyx_muestra,794,musyx/starfoxs/0794_SFXspirit_voice1.wav,
+musyx_muestra,795,musyx/starfoxs/0795_SFXspirit_voice2.wav,
+musyx_muestra,796,musyx/starfoxs/0796_SFXspirit_voice3.wav,
+musyx_muestra,797,musyx/starfoxs/0797_SFXspirit_voice4.wav,
+musyx_muestra,798,musyx/starfoxs/0798_SFXspirit_pool_wobble1.wav,
+musyx_muestra,799,musyx/starfoxs/0799_SFXspirit_pool_wobble2.wav,
+musyx_muestra,800,musyx/starfoxs/0800_SFXpda_turnon.wav,
+musyx_muestra,801,musyx/starfoxs/0801_SFXpda_turnoff.wav,
+musyx_muestra,802,musyx/starfoxs/0802_SFXpda_scroll.wav,
+musyx_muestra,803,musyx/starfoxs/0803_SFXpda_scanup.wav,
+musyx_muestra,804,musyx/starfoxs/0804_SFXpda_scandown.wav,
+musyx_muestra,805,musyx/starfoxs/0805_SFXpda_mapzoom.wav,
+musyx_muestra,806,musyx/starfoxs/0806_SFXpda_fper_move.wav,
+musyx_muestra,807,musyx/starfoxs/0807_SFXpda_fper_camon.wav,
+musyx_muestra,808,musyx/starfoxs/0808_SFXpda_fper_camoff.wav,
+musyx_muestra,809,musyx/starfoxs/0809_SFXpda_compassbeep.wav,
+musyx_muestra,810,musyx/starfoxs/0810_SFXand_swipe1.wav,
+musyx_muestra,811,musyx/starfoxs/0811_SFXand_swipe2.wav,
+musyx_muestra,812,musyx/starfoxs/0812_SFXand_missilelaunch.wav,
+musyx_muestra,813,musyx/starfoxs/0813_SFXand_suck_lp.wav,
+musyx_muestra,814,musyx/starfoxs/0814_SFXand_ring_lp.wav,
+musyx_muestra,815,musyx/starfoxs/0815_SFXand_chompf.wav,
+musyx_muestra,816,musyx/starfoxs/0816_SFXand_asterflyby_lp.wav,
+musyx_muestra,817,musyx/starfoxs/0817_SFXand_missileloop.wav,
+musyx_muestra,818,musyx/starfoxs/0818_SFXand_roar1.wav,
+musyx_muestra,819,musyx/starfoxs/0819_SFXand_falcoflyby.wav,
+musyx_muestra,820,musyx/starfoxs/0820_SFXand_spitout.wav,
+musyx_muestra,821,musyx/starfoxs/0821_SFXdrak_mineloop.wav,
+musyx_muestra,822,musyx/starfoxs/0822_SFXand_laugh.wav,
+musyx_muestra,823,musyx/starfoxs/0823_SFXand_youlose.wav,
+musyx_muestra,824,musyx/starfoxs/0824_SFXdrak_pain1.wav,
+musyx_muestra,825,musyx/starfoxs/0825_SFXdrak_pain2.wav,
+musyx_muestra,826,musyx/starfoxs/0826_SFXdrak_roar1.wav,
+musyx_muestra,827,musyx/starfoxs/0827_SFXdrak_roar2.wav,
+musyx_muestra,828,musyx/starfoxs/sample_0828.wav,
+musyx_muestra,829,musyx/starfoxs/sample_0829.wav,
+musyx_muestra,830,musyx/starfoxs/sample_0830.wav,
+musyx_muestra,831,musyx/starfoxs/sample_0831.wav,
+musyx_muestra,832,musyx/starfoxs/sample_0832.wav,
+musyx_muestra,833,musyx/starfoxs/sample_0833.wav,
+musyx_muestra,834,musyx/starfoxs/sample_0834.wav,
+musyx_muestra,835,musyx/starfoxs/sample_0835.wav,
+musyx_muestra,836,musyx/starfoxs/sample_0836.wav,
+musyx_muestra,837,musyx/starfoxs/sample_0837.wav,
+musyx_muestra,838,musyx/starfoxs/sample_0838.wav,
+musyx_muestra,839,musyx/starfoxs/sample_0839.wav,
+musyx_muestra,840,musyx/starfoxs/sample_0840.wav,
+musyx_muestra,841,musyx/starfoxs/sample_0841.wav,
+musyx_muestra,842,musyx/starfoxs/sample_0842.wav,
+musyx_muestra,843,musyx/starfoxs/sample_0843.wav,
+musyx_muestra,844,musyx/starfoxs/sample_0844.wav,
+musyx_muestra,845,musyx/starfoxs/sample_0845.wav,
+musyx_muestra,846,musyx/starfoxs/sample_0846.wav,
+musyx_muestra,847,musyx/starfoxs/sample_0847.wav,
+musyx_muestra,848,musyx/starfoxs/sample_0848.wav,
+musyx_muestra,849,musyx/starfoxs/sample_0849.wav,
+musyx_muestra,850,musyx/starfoxs/sample_0850.wav,
+musyx_muestra,851,musyx/starfoxs/sample_0851.wav,
+musyx_muestra,852,musyx/starfoxs/sample_0852.wav,
+musyx_muestra,853,musyx/starfoxs/sample_0853.wav,
+musyx_muestra,854,musyx/starfoxs/sample_0854.wav,
+musyx_muestra,855,musyx/starfoxs/sample_0855.wav,
+musyx_muestra,856,musyx/starfoxs/sample_0856.wav,
+musyx_muestra,857,musyx/starfoxs/sample_0857.wav,
+musyx_muestra,858,musyx/starfoxs/sample_0858.wav,
+musyx_muestra,859,musyx/starfoxs/sample_0859.wav,
+musyx_muestra,860,musyx/starfoxs/sample_0860.wav,
+musyx_muestra,861,musyx/starfoxs/sample_0861.wav,
+musyx_muestra,862,musyx/starfoxs/sample_0862.wav,
+musyx_muestra,863,musyx/starfoxs/sample_0863.wav,
+musyx_muestra,864,musyx/starfoxs/sample_0864.wav,
+musyx_muestra,865,musyx/starfoxs/sample_0865.wav,
+musyx_muestra,866,musyx/starfoxs/sample_0866.wav,
+musyx_muestra,867,musyx/starfoxs/sample_0867.wav,
+musyx_muestra,868,musyx/starfoxs/sample_0868.wav,
+musyx_muestra,869,musyx/starfoxs/sample_0869.wav,
+musyx_muestra,870,musyx/starfoxs/sample_0870.wav,
+musyx_muestra,871,musyx/starfoxs/sample_0871.wav,
+musyx_muestra,872,musyx/starfoxs/sample_0872.wav,
+musyx_muestra,873,musyx/starfoxs/sample_0873.wav,
+musyx_muestra,874,musyx/starfoxs/sample_0874.wav,
+musyx_muestra,875,musyx/starfoxs/sample_0875.wav,
+musyx_muestra,876,musyx/starfoxs/sample_0876.wav,
+musyx_muestra,877,musyx/starfoxs/sample_0877.wav,
+musyx_muestra,878,musyx/starfoxs/sample_0878.wav,
+musyx_muestra,879,musyx/starfoxs/sample_0879.wav,
+musyx_muestra,880,musyx/starfoxs/sample_0880.wav,
+musyx_muestra,881,musyx/starfoxs/sample_0881.wav,
+musyx_muestra,882,musyx/starfoxs/sample_0882.wav,
+musyx_muestra,883,musyx/starfoxs/sample_0883.wav,
+musyx_muestra,884,musyx/starfoxs/sample_0884.wav,
+musyx_muestra,885,musyx/starfoxs/sample_0885.wav,
+musyx_muestra,886,musyx/starfoxs/sample_0886.wav,
+musyx_muestra,887,musyx/starfoxs/sample_0887.wav,
+musyx_muestra,888,musyx/starfoxs/sample_0888.wav,
+musyx_muestra,889,musyx/starfoxs/sample_0889.wav,
+musyx_muestra,890,musyx/starfoxs/sample_0890.wav,
+musyx_muestra,891,musyx/starfoxs/sample_0891.wav,
+musyx_muestra,892,musyx/starfoxs/sample_0892.wav,
+musyx_muestra,893,musyx/starfoxs/sample_0893.wav,
+musyx_muestra,894,musyx/starfoxs/sample_0894.wav,
+musyx_muestra,895,musyx/starfoxs/sample_0895.wav,
+musyx_muestra,896,musyx/starfoxs/sample_0896.wav,
+musyx_muestra,897,musyx/starfoxs/sample_0897.wav,
+musyx_muestra,898,musyx/starfoxs/sample_0898.wav,
+musyx_muestra,899,musyx/starfoxs/sample_0899.wav,
+musyx_muestra,900,musyx/starfoxs/sample_0900.wav,
+musyx_muestra,901,musyx/starfoxs/sample_0901.wav,
+musyx_muestra,902,musyx/starfoxs/sample_0902.wav,
+musyx_muestra,903,musyx/starfoxs/sample_0903.wav,
+musyx_muestra,904,musyx/starfoxs/sample_0904.wav,
+musyx_muestra,905,musyx/starfoxs/sample_0905.wav,
+musyx_muestra,906,musyx/starfoxs/sample_0906.wav,
+musyx_muestra,907,musyx/starfoxs/sample_0907.wav,
+musyx_muestra,908,musyx/starfoxs/sample_0908.wav,
+musyx_muestra,909,musyx/starfoxs/sample_0909.wav,
+musyx_muestra,910,musyx/starfoxs/sample_0910.wav,
+musyx_muestra,911,musyx/starfoxs/sample_0911.wav,
+musyx_muestra,912,musyx/starfoxs/sample_0912.wav,
+musyx_muestra,913,musyx/starfoxs/sample_0913.wav,
+musyx_muestra,914,musyx/starfoxs/sample_0914.wav,
+musyx_muestra,915,musyx/starfoxs/sample_0915.wav,
+musyx_muestra,916,musyx/starfoxs/sample_0916.wav,
+musyx_muestra,917,musyx/starfoxs/sample_0917.wav,
+musyx_muestra,918,musyx/starfoxs/sample_0918.wav,
+musyx_muestra,919,musyx/starfoxs/sample_0919.wav,
+musyx_muestra,920,musyx/starfoxs/sample_0920.wav,
+musyx_muestra,921,musyx/starfoxs/sample_0921.wav,
+musyx_muestra,922,musyx/starfoxs/sample_0922.wav,
+musyx_muestra,923,musyx/starfoxs/sample_0923.wav,
+musyx_muestra,924,musyx/starfoxs/sample_0924.wav,
+musyx_muestra,925,musyx/starfoxs/sample_0925.wav,
+musyx_muestra,926,musyx/starfoxs/sample_0926.wav,
+musyx_muestra,927,musyx/starfoxs/sample_0927.wav,
+musyx_muestra,928,musyx/starfoxs/sample_0928.wav,
+musyx_muestra,929,musyx/starfoxs/sample_0929.wav,
+musyx_muestra,930,musyx/starfoxs/sample_0930.wav,
+musyx_muestra,931,musyx/starfoxs/sample_0931.wav,
+musyx_muestra,932,musyx/starfoxs/sample_0932.wav,
+musyx_muestra,933,musyx/starfoxs/sample_0933.wav,
+musyx_muestra,934,musyx/starfoxs/sample_0934.wav,
+musyx_muestra,935,musyx/starfoxs/sample_0935.wav,
+musyx_muestra,936,musyx/starfoxs/sample_0936.wav,
+musyx_muestra,937,musyx/starfoxs/sample_0937.wav,
+musyx_muestra,938,musyx/starfoxs/sample_0938.wav,
+musyx_muestra,939,musyx/starfoxs/sample_0939.wav,
+musyx_muestra,940,musyx/starfoxs/sample_0940.wav,
+musyx_muestra,941,musyx/starfoxs/sample_0941.wav,
+musyx_muestra,942,musyx/starfoxs/sample_0942.wav,
+musyx_muestra,943,musyx/starfoxs/sample_0943.wav,
+musyx_muestra,944,musyx/starfoxs/sample_0944.wav,
+musyx_muestra,945,musyx/starfoxs/sample_0945.wav,
+musyx_muestra,946,musyx/starfoxs/sample_0946.wav,
+musyx_muestra,947,musyx/starfoxs/sample_0947.wav,
+musyx_muestra,948,musyx/starfoxs/sample_0948.wav,
+musyx_muestra,949,musyx/starfoxs/sample_0949.wav,
+musyx_muestra,950,musyx/starfoxs/sample_0950.wav,
+musyx_muestra,951,musyx/starfoxs/sample_0951.wav,
+musyx_muestra,952,musyx/starfoxs/sample_0952.wav,
+musyx_muestra,953,musyx/starfoxs/sample_0953.wav,
+musyx_muestra,954,musyx/starfoxs/sample_0954.wav,
+musyx_muestra,955,musyx/starfoxs/sample_0955.wav,
+musyx_muestra,956,musyx/starfoxs/sample_0956.wav,
+musyx_muestra,957,musyx/starfoxs/sample_0957.wav,
+musyx_muestra,958,musyx/starfoxs/sample_0958.wav,
+musyx_muestra,959,musyx/starfoxs/sample_0959.wav,
+musyx_muestra,960,musyx/starfoxs/sample_0960.wav,
+musyx_muestra,961,musyx/starfoxs/sample_0961.wav,
+musyx_muestra,962,musyx/starfoxs/sample_0962.wav,
+musyx_muestra,963,musyx/starfoxs/sample_0963.wav,
+musyx_muestra,964,musyx/starfoxs/sample_0964.wav,
+musyx_muestra,965,musyx/starfoxs/sample_0965.wav,
+musyx_muestra,966,musyx/starfoxs/sample_0966.wav,
+musyx_muestra,967,musyx/starfoxs/sample_0967.wav,
+musyx_muestra,968,musyx/starfoxs/sample_0968.wav,
+musyx_muestra,969,musyx/starfoxs/sample_0969.wav,
+musyx_muestra,970,musyx/starfoxs/sample_0970.wav,
+musyx_muestra,971,musyx/starfoxs/sample_0971.wav,
+musyx_muestra,972,musyx/starfoxs/sample_0972.wav,
+musyx_muestra,973,musyx/starfoxs/sample_0973.wav,
+musyx_muestra,974,musyx/starfoxs/sample_0974.wav,
+musyx_muestra,975,musyx/starfoxs/sample_0975.wav,
+musyx_muestra,976,musyx/starfoxs/sample_0976.wav,
+musyx_muestra,977,musyx/starfoxs/sample_0977.wav,
+musyx_muestra,978,musyx/starfoxs/sample_0978.wav,
+musyx_muestra,979,musyx/starfoxs/sample_0979.wav,
+musyx_muestra,980,musyx/starfoxs/sample_0980.wav,
+musyx_muestra,981,musyx/starfoxs/sample_0981.wav,
+musyx_muestra,982,musyx/starfoxs/sample_0982.wav,
+musyx_muestra,983,musyx/starfoxs/sample_0983.wav,
+musyx_muestra,984,musyx/starfoxs/sample_0984.wav,
+musyx_muestra,985,musyx/starfoxs/sample_0985.wav,
+musyx_muestra,986,musyx/starfoxs/sample_0986.wav,
+musyx_muestra,987,musyx/starfoxs/sample_0987.wav,
+musyx_muestra,988,musyx/starfoxs/sample_0988.wav,
+musyx_muestra,989,musyx/starfoxs/sample_0989.wav,
+musyx_muestra,990,musyx/starfoxs/sample_0990.wav,
+musyx_muestra,991,musyx/starfoxs/sample_0991.wav,
+musyx_muestra,992,musyx/starfoxs/sample_0992.wav,
+musyx_muestra,993,musyx/starfoxs/sample_0993.wav,
+musyx_muestra,994,musyx/starfoxs/sample_0994.wav,
+musyx_muestra,995,musyx/starfoxs/sample_0995.wav,
+musyx_muestra,996,musyx/starfoxs/sample_0996.wav,
+musyx_muestra,997,musyx/starfoxs/sample_0997.wav,
+musyx_muestra,998,musyx/starfoxs/sample_0998.wav,
+musyx_muestra,999,musyx/starfoxs/sample_0999.wav,
+musyx_muestra,1000,musyx/starfoxs/sample_1000.wav,
+musyx_muestra,1001,musyx/starfoxs/sample_1001.wav,
+musyx_muestra,1002,musyx/starfoxs/sample_1002.wav,
+musyx_muestra,1003,musyx/starfoxs/sample_1003.wav,
+musyx_muestra,1004,musyx/starfoxs/sample_1004.wav,
+musyx_muestra,1005,musyx/starfoxs/sample_1005.wav,
+musyx_muestra,1006,musyx/starfoxs/sample_1006.wav,
+musyx_muestra,1007,musyx/starfoxs/sample_1007.wav,
+musyx_muestra,1008,musyx/starfoxs/sample_1008.wav,
+musyx_muestra,1009,musyx/starfoxs/sample_1009.wav,
+musyx_muestra,1010,musyx/starfoxs/sample_1010.wav,
+musyx_muestra,1011,musyx/starfoxs/sample_1011.wav,
+musyx_muestra,1012,musyx/starfoxs/sample_1012.wav,
+musyx_muestra,1013,musyx/starfoxs/sample_1013.wav,
+musyx_muestra,1014,musyx/starfoxs/sample_1014.wav,
+musyx_muestra,1015,musyx/starfoxs/sample_1015.wav,
+musyx_muestra,1016,musyx/starfoxs/sample_1016.wav,
+musyx_muestra,1017,musyx/starfoxs/sample_1017.wav,
+musyx_muestra,1018,musyx/starfoxs/sample_1018.wav,
+musyx_muestra,1019,musyx/starfoxs/sample_1019.wav,
+musyx_muestra,1020,musyx/starfoxs/sample_1020.wav,
+musyx_muestra,1021,musyx/starfoxs/sample_1021.wav,
+musyx_muestra,1022,musyx/starfoxs/sample_1022.wav,
+musyx_muestra,1023,musyx/starfoxs/sample_1023.wav,
+musyx_muestra,1024,musyx/starfoxs/sample_1024.wav,
+musyx_muestra,1025,musyx/starfoxs/sample_1025.wav,
+musyx_muestra,1026,musyx/starfoxs/sample_1026.wav,
+musyx_muestra,1027,musyx/starfoxs/sample_1027.wav,
+musyx_muestra,1028,musyx/starfoxs/sample_1028.wav,
+musyx_muestra,1029,musyx/starfoxs/sample_1029.wav,
+musyx_muestra,1030,musyx/starfoxs/sample_1030.wav,
+musyx_muestra,1031,musyx/starfoxs/sample_1031.wav,
+musyx_muestra,1032,musyx/starfoxs/sample_1032.wav,
+musyx_muestra,1033,musyx/starfoxs/sample_1033.wav,
+musyx_muestra,1034,musyx/starfoxs/sample_1034.wav,
+musyx_muestra,1035,musyx/starfoxs/sample_1035.wav,
+musyx_muestra,1036,musyx/starfoxs/sample_1036.wav,
+musyx_muestra,1037,musyx/starfoxs/sample_1037.wav,
+musyx_muestra,1038,musyx/starfoxs/sample_1038.wav,
+musyx_muestra,1039,musyx/starfoxs/sample_1039.wav,
+musyx_muestra,1040,musyx/starfoxs/sample_1040.wav,
+musyx_muestra,1041,musyx/starfoxs/sample_1041.wav,
+musyx_muestra,1042,musyx/starfoxs/sample_1042.wav,
+musyx_muestra,1043,musyx/starfoxs/sample_1043.wav,
+musyx_muestra,1044,musyx/starfoxs/sample_1044.wav,
+musyx_muestra,1045,musyx/starfoxs/sample_1045.wav,
+musyx_muestra,1046,musyx/starfoxs/sample_1046.wav,
+musyx_muestra,1047,musyx/starfoxs/sample_1047.wav,
+musyx_muestra,1048,musyx/starfoxs/sample_1048.wav,
+musyx_muestra,1049,musyx/starfoxs/sample_1049.wav,
+musyx_muestra,1050,musyx/starfoxs/sample_1050.wav,
+musyx_muestra,1051,musyx/starfoxs/sample_1051.wav,
+musyx_muestra,1052,musyx/starfoxs/sample_1052.wav,
+musyx_muestra,1053,musyx/starfoxs/sample_1053.wav,
+musyx_muestra,1054,musyx/starfoxs/sample_1054.wav,
+musyx_muestra,1055,musyx/starfoxs/sample_1055.wav,
+musyx_muestra,1056,musyx/starfoxs/sample_1056.wav,
+musyx_muestra,1057,musyx/starfoxs/sample_1057.wav,
+musyx_muestra,1058,musyx/starfoxs/sample_1058.wav,
+musyx_muestra,1059,musyx/starfoxs/sample_1059.wav,
+musyx_muestra,1060,musyx/starfoxs/sample_1060.wav,
+musyx_muestra,1061,musyx/starfoxs/sample_1061.wav,
+musyx_muestra,1062,musyx/starfoxs/sample_1062.wav,
+musyx_muestra,1063,musyx/starfoxs/sample_1063.wav,
+musyx_muestra,1064,musyx/starfoxs/sample_1064.wav,
+musyx_muestra,1065,musyx/starfoxs/sample_1065.wav,
+musyx_muestra,1066,musyx/starfoxs/sample_1066.wav,
+musyx_muestra,1067,musyx/starfoxs/sample_1067.wav,
+musyx_muestra,1068,musyx/starfoxs/sample_1068.wav,
+musyx_muestra,1069,musyx/starfoxs/sample_1069.wav,
+musyx_muestra,1070,musyx/starfoxs/sample_1070.wav,
+musyx_muestra,1071,musyx/starfoxs/sample_1071.wav,
+musyx_muestra,1072,musyx/starfoxs/sample_1072.wav,
+musyx_muestra,1073,musyx/starfoxs/sample_1073.wav,
+musyx_muestra,1074,musyx/starfoxs/sample_1074.wav,
+musyx_muestra,1075,musyx/starfoxs/sample_1075.wav,
+musyx_muestra,1076,musyx/starfoxs/sample_1076.wav,
+musyx_muestra,1077,musyx/starfoxs/sample_1077.wav,
+musyx_muestra,1078,musyx/starfoxs/sample_1078.wav,
+musyx_muestra,1079,musyx/starfoxs/sample_1079.wav,
+musyx_muestra,1080,musyx/starfoxs/sample_1080.wav,
+musyx_muestra,1081,musyx/starfoxs/sample_1081.wav,
+musyx_muestra,1082,musyx/starfoxs/sample_1082.wav,
+musyx_muestra,1083,musyx/starfoxs/sample_1083.wav,
+musyx_muestra,1084,musyx/starfoxs/sample_1084.wav,
+musyx_muestra,1085,musyx/starfoxs/sample_1085.wav,
+musyx_muestra,1086,musyx/starfoxs/sample_1086.wav,
+musyx_muestra,1087,musyx/starfoxs/sample_1087.wav,
+musyx_muestra,1088,musyx/starfoxs/sample_1088.wav,
+musyx_muestra,1089,musyx/starfoxs/sample_1089.wav,
+musyx_muestra,1090,musyx/starfoxs/sample_1090.wav,
+musyx_muestra,1091,musyx/starfoxs/sample_1091.wav,
+musyx_muestra,1092,musyx/starfoxs/sample_1092.wav,
+musyx_muestra,1093,musyx/starfoxs/sample_1093.wav,
+musyx_muestra,1094,musyx/starfoxs/sample_1094.wav,
+musyx_muestra,1095,musyx/starfoxs/sample_1095.wav,
+musyx_muestra,1096,musyx/starfoxs/sample_1096.wav,
+musyx_muestra,1097,musyx/starfoxs/sample_1097.wav,
+musyx_muestra,1098,musyx/starfoxs/sample_1098.wav,
+musyx_muestra,1099,musyx/starfoxs/sample_1099.wav,
+musyx_muestra,1100,musyx/starfoxs/sample_1100.wav,
+musyx_muestra,1101,musyx/starfoxs/sample_1101.wav,
+musyx_muestra,1102,musyx/starfoxs/sample_1102.wav,
+musyx_muestra,1103,musyx/starfoxs/sample_1103.wav,
+musyx_muestra,1104,musyx/starfoxs/sample_1104.wav,
+musyx_muestra,1105,musyx/starfoxs/sample_1105.wav,
+musyx_muestra,1106,musyx/starfoxs/sample_1106.wav,
+musyx_muestra,1107,musyx/starfoxs/sample_1107.wav,
+musyx_muestra,1108,musyx/starfoxs/sample_1108.wav,
+musyx_muestra,1109,musyx/starfoxs/sample_1109.wav,
+musyx_muestra,1110,musyx/starfoxs/sample_1110.wav,
+musyx_muestra,1111,musyx/starfoxs/sample_1111.wav,
+musyx_muestra,1112,musyx/starfoxs/sample_1112.wav,
+musyx_muestra,1113,musyx/starfoxs/sample_1113.wav,
+musyx_muestra,1114,musyx/starfoxs/sample_1114.wav,
+musyx_muestra,1115,musyx/starfoxs/sample_1115.wav,
+musyx_muestra,1116,musyx/starfoxs/sample_1116.wav,
+musyx_muestra,1117,musyx/starfoxs/sample_1117.wav,
+musyx_muestra,1118,musyx/starfoxs/sample_1118.wav,
+musyx_muestra,1119,musyx/starfoxs/sample_1119.wav,
+musyx_muestra,1120,musyx/starfoxs/sample_1120.wav,
+musyx_muestra,1121,musyx/starfoxs/sample_1121.wav,
+musyx_muestra,1122,musyx/starfoxs/sample_1122.wav,
+musyx_muestra,1123,musyx/starfoxs/sample_1123.wav,
+musyx_muestra,1124,musyx/starfoxs/sample_1124.wav,
+musyx_muestra,1125,musyx/starfoxs/sample_1125.wav,
+musyx_muestra,1126,musyx/starfoxs/sample_1126.wav,
+musyx_muestra,1127,musyx/starfoxs/sample_1127.wav,
+musyx_muestra,1128,musyx/starfoxs/sample_1128.wav,
+musyx_muestra,1129,musyx/starfoxs/sample_1129.wav,
+musyx_muestra,1130,musyx/starfoxs/sample_1130.wav,
+musyx_muestra,1131,musyx/starfoxs/sample_1131.wav,
+musyx_muestra,1132,musyx/starfoxs/sample_1132.wav,
+musyx_muestra,1133,musyx/starfoxs/sample_1133.wav,
+musyx_muestra,1134,musyx/starfoxs/sample_1134.wav,
+musyx_muestra,1135,musyx/starfoxs/sample_1135.wav,
+musyx_muestra,1136,musyx/starfoxs/sample_1136.wav,
+musyx_muestra,1137,musyx/starfoxs/sample_1137.wav,
+musyx_muestra,1138,musyx/starfoxs/sample_1138.wav,
+musyx_muestra,1139,musyx/starfoxs/sample_1139.wav,
+musyx_muestra,1140,musyx/starfoxs/sample_1140.wav,
+musyx_muestra,1141,musyx/starfoxs/sample_1141.wav,
+musyx_muestra,1142,musyx/starfoxs/sample_1142.wav,
+musyx_muestra,1143,musyx/starfoxs/sample_1143.wav,
+musyx_muestra,1144,musyx/starfoxs/sample_1144.wav,
+musyx_muestra,1145,musyx/starfoxs/sample_1145.wav,
+musyx_muestra,1146,musyx/starfoxs/sample_1146.wav,
+musyx_muestra,1147,musyx/starfoxs/sample_1147.wav,
+musyx_muestra,1148,musyx/starfoxs/sample_1148.wav,
+musyx_muestra,1149,musyx/starfoxs/sample_1149.wav,
+musyx_muestra,1150,musyx/starfoxs/sample_1150.wav,
+musyx_muestra,1151,musyx/starfoxs/sample_1151.wav,
+musyx_muestra,1152,musyx/starfoxs/sample_1152.wav,
+musyx_muestra,1153,musyx/starfoxs/sample_1153.wav,
+musyx_muestra,1154,musyx/starfoxs/sample_1154.wav,
+musyx_muestra,1155,musyx/starfoxs/sample_1155.wav,
+musyx_muestra,1156,musyx/starfoxs/sample_1156.wav,
+musyx_muestra,1157,musyx/starfoxs/sample_1157.wav,
+musyx_muestra,1158,musyx/starfoxs/sample_1158.wav,
+musyx_muestra,1159,musyx/starfoxs/sample_1159.wav,
+musyx_muestra,1160,musyx/starfoxs/sample_1160.wav,
+musyx_muestra,1161,musyx/starfoxs/sample_1161.wav,
+musyx_muestra,1162,musyx/starfoxs/sample_1162.wav,
+musyx_muestra,1163,musyx/starfoxs/sample_1163.wav,
+musyx_muestra,1164,musyx/starfoxs/sample_1164.wav,
+musyx_muestra,1165,musyx/starfoxs/sample_1165.wav,
+musyx_muestra,1166,musyx/starfoxs/sample_1166.wav,
+musyx_muestra,1167,musyx/starfoxs/sample_1167.wav,
+musyx_muestra,1168,musyx/starfoxs/sample_1168.wav,
+musyx_muestra,1169,musyx/starfoxs/sample_1169.wav,
+musyx_muestra,1170,musyx/starfoxs/sample_1170.wav,
+musyx_muestra,1171,musyx/starfoxs/sample_1171.wav,
+musyx_muestra,1172,musyx/starfoxs/sample_1172.wav,
+musyx_muestra,1173,musyx/starfoxs/sample_1173.wav,
+musyx_muestra,1174,musyx/starfoxs/sample_1174.wav,
+musyx_muestra,1175,musyx/starfoxs/sample_1175.wav,
+musyx_muestra,1176,musyx/starfoxs/sample_1176.wav,
+musyx_muestra,1177,musyx/starfoxs/sample_1177.wav,
+musyx_muestra,1178,musyx/starfoxs/sample_1178.wav,
+musyx_muestra,1179,musyx/starfoxs/sample_1179.wav,
+musyx_muestra,1180,musyx/starfoxs/sample_1180.wav,
+musyx_muestra,1181,musyx/starfoxs/sample_1181.wav,
+musyx_muestra,1182,musyx/starfoxs/sample_1182.wav,
+musyx_muestra,1183,musyx/starfoxs/sample_1183.wav,
+musyx_muestra,1184,musyx/starfoxs/sample_1184.wav,
+musyx_muestra,1185,musyx/starfoxs/sample_1185.wav,
+musyx_muestra,1186,musyx/starfoxs/sample_1186.wav,
+musyx_muestra,1187,musyx/starfoxs/sample_1187.wav,
+musyx_muestra,1188,musyx/starfoxs/sample_1188.wav,
+musyx_muestra,1189,musyx/starfoxs/sample_1189.wav,
+musyx_muestra,1190,musyx/starfoxs/sample_1190.wav,
+musyx_muestra,1191,musyx/starfoxs/sample_1191.wav,
+musyx_muestra,1192,musyx/starfoxs/sample_1192.wav,
+musyx_muestra,1193,musyx/starfoxs/sample_1193.wav,
+musyx_muestra,1194,musyx/starfoxs/sample_1194.wav,
+musyx_muestra,1195,musyx/starfoxs/sample_1195.wav,
+musyx_muestra,1196,musyx/starfoxs/sample_1196.wav,
+musyx_muestra,1197,musyx/starfoxs/sample_1197.wav,
+musyx_muestra,1198,musyx/starfoxs/sample_1198.wav,
+musyx_muestra,1199,musyx/starfoxs/sample_1199.wav,
+musyx_muestra,1200,musyx/starfoxs/sample_1200.wav,
+musyx_muestra,1201,musyx/starfoxs/sample_1201.wav,
+musyx_muestra,1202,musyx/starfoxs/sample_1202.wav,
+musyx_muestra,1203,musyx/starfoxs/sample_1203.wav,
+musyx_muestra,1204,musyx/starfoxs/sample_1204.wav,
+musyx_muestra,1205,musyx/starfoxs/sample_1205.wav,
+musyx_muestra,1206,musyx/starfoxs/sample_1206.wav,
+musyx_muestra,1207,musyx/starfoxs/sample_1207.wav,
+musyx_muestra,1208,musyx/starfoxs/sample_1208.wav,
+musyx_muestra,1209,musyx/starfoxs/sample_1209.wav,
+musyx_muestra,1210,musyx/starfoxs/sample_1210.wav,
+musyx_muestra,1211,musyx/starfoxs/sample_1211.wav,
+musyx_muestra,1212,musyx/starfoxs/sample_1212.wav,
+musyx_muestra,1213,musyx/starfoxs/sample_1213.wav,
+musyx_muestra,1214,musyx/starfoxs/sample_1214.wav,
+musyx_muestra,1215,musyx/starfoxs/sample_1215.wav,
+musyx_muestra,1216,musyx/starfoxs/sample_1216.wav,
+musyx_muestra,1217,musyx/starfoxs/sample_1217.wav,
+musyx_muestra,1218,musyx/starfoxs/sample_1218.wav,
+musyx_muestra,1219,musyx/starfoxs/sample_1219.wav,
+musyx_muestra,1220,musyx/starfoxs/sample_1220.wav,
+musyx_muestra,1221,musyx/starfoxs/sample_1221.wav,
+musyx_muestra,1222,musyx/starfoxs/sample_1222.wav,
+musyx_muestra,1223,musyx/starfoxs/sample_1223.wav,
+musyx_muestra,1224,musyx/starfoxs/sample_1224.wav,
+musyx_muestra,1225,musyx/starfoxs/sample_1225.wav,
+musyx_muestra,1226,musyx/starfoxs/sample_1226.wav,
+musyx_muestra,1227,musyx/starfoxs/sample_1227.wav,
+musyx_muestra,1228,musyx/starfoxs/sample_1228.wav,
+musyx_muestra,1229,musyx/starfoxs/sample_1229.wav,
+musyx_muestra,1230,musyx/starfoxs/sample_1230.wav,
+musyx_muestra,1231,musyx/starfoxs/sample_1231.wav,
+musyx_muestra,1232,musyx/starfoxs/sample_1232.wav,
+musyx_muestra,1233,musyx/starfoxs/sample_1233.wav,
+musyx_muestra,1234,musyx/starfoxs/sample_1234.wav,
+musyx_muestra,1235,musyx/starfoxs/sample_1235.wav,
+musyx_muestra,1236,musyx/starfoxs/sample_1236.wav,
+musyx_muestra,1237,musyx/starfoxs/sample_1237.wav,
+musyx_muestra,1238,musyx/starfoxs/sample_1238.wav,
+musyx_muestra,1239,musyx/starfoxs/sample_1239.wav,
+musyx_muestra,1240,musyx/starfoxs/sample_1240.wav,
+musyx_muestra,1241,musyx/starfoxs/sample_1241.wav,
+musyx_muestra,1242,musyx/starfoxs/sample_1242.wav,
+musyx_muestra,1243,musyx/starfoxs/sample_1243.wav,
+musyx_muestra,1244,musyx/starfoxs/sample_1244.wav,
+musyx_muestra,1245,musyx/starfoxs/sample_1245.wav,
+musyx_muestra,1246,musyx/starfoxs/sample_1246.wav,
+musyx_muestra,1247,musyx/starfoxs/sample_1247.wav,
+musyx_muestra,1248,musyx/starfoxs/sample_1248.wav,
+musyx_muestra,1249,musyx/starfoxs/sample_1249.wav,
+musyx_muestra,1250,musyx/starfoxs/sample_1250.wav,
+musyx_muestra,1251,musyx/starfoxs/sample_1251.wav,
+musyx_muestra,1252,musyx/starfoxs/sample_1252.wav,
+musyx_muestra,1253,musyx/starfoxs/sample_1253.wav,
+musyx_muestra,1254,musyx/starfoxs/sample_1254.wav,
+musyx_muestra,1255,musyx/starfoxs/sample_1255.wav,
+musyx_muestra,1256,musyx/starfoxs/sample_1256.wav,
+musyx_muestra,1257,musyx/starfoxs/sample_1257.wav,
+musyx_muestra,1258,musyx/starfoxs/sample_1258.wav,
+musyx_muestra,1259,musyx/starfoxs/sample_1259.wav,
+musyx_muestra,1260,musyx/starfoxs/sample_1260.wav,
+musyx_muestra,1261,musyx/starfoxs/sample_1261.wav,
+musyx_muestra,1262,musyx/starfoxs/sample_1262.wav,
+musyx_muestra,1263,musyx/starfoxs/sample_1263.wav,
+musyx_muestra,1264,musyx/starfoxs/sample_1264.wav,
+musyx_muestra,1265,musyx/starfoxs/sample_1265.wav,
+musyx_muestra,1266,musyx/starfoxs/sample_1266.wav,
+musyx_muestra,1267,musyx/starfoxs/sample_1267.wav,
+musyx_muestra,1268,musyx/starfoxs/sample_1268.wav,
+musyx_muestra,1269,musyx/starfoxs/sample_1269.wav,
+musyx_muestra,1270,musyx/starfoxs/sample_1270.wav,
+musyx_muestra,1271,musyx/starfoxs/sample_1271.wav,
+musyx_muestra,1272,musyx/starfoxs/sample_1272.wav,
+musyx_muestra,1273,musyx/starfoxs/sample_1273.wav,
+musyx_muestra,1274,musyx/starfoxs/sample_1274.wav,
+musyx_muestra,1275,musyx/starfoxs/sample_1275.wav,
+musyx_muestra,1276,musyx/starfoxs/sample_1276.wav,
+musyx_muestra,1277,musyx/starfoxs/sample_1277.wav,
+musyx_muestra,1278,musyx/starfoxs/sample_1278.wav,
+musyx_muestra,1279,musyx/starfoxs/sample_1279.wav,
+musyx_muestra,1280,musyx/starfoxs/sample_1280.wav,
+musyx_muestra,1281,musyx/starfoxs/sample_1281.wav,
+musyx_muestra,1282,musyx/starfoxs/sample_1282.wav,
+musyx_muestra,1283,musyx/starfoxs/sample_1283.wav,
+musyx_muestra,1284,musyx/starfoxs/sample_1284.wav,
+musyx_muestra,1285,musyx/starfoxs/sample_1285.wav,
+musyx_muestra,1286,musyx/starfoxs/sample_1286.wav,
+musyx_muestra,1287,musyx/starfoxs/sample_1287.wav,
+musyx_muestra,1288,musyx/starfoxs/sample_1288.wav,
+musyx_muestra,1289,musyx/starfoxs/sample_1289.wav,
+musyx_muestra,1290,musyx/starfoxs/sample_1290.wav,
+musyx_muestra,1291,musyx/starfoxs/sample_1291.wav,
+musyx_muestra,1292,musyx/starfoxs/sample_1292.wav,
+musyx_muestra,1293,musyx/starfoxs/sample_1293.wav,
+musyx_muestra,1294,musyx/starfoxs/sample_1294.wav,
+musyx_muestra,1295,musyx/starfoxs/sample_1295.wav,
+musyx_muestra,1296,musyx/starfoxs/sample_1296.wav,
+musyx_muestra,1297,musyx/starfoxs/sample_1297.wav,
+musyx_muestra,1298,musyx/starfoxs/sample_1298.wav,
+musyx_muestra,1299,musyx/starfoxs/sample_1299.wav,
+musyx_muestra,1300,musyx/starfoxs/sample_1300.wav,
+musyx_muestra,1301,musyx/starfoxs/sample_1301.wav,
+musyx_muestra,1302,musyx/starfoxs/sample_1302.wav,
+musyx_muestra,1303,musyx/starfoxs/sample_1303.wav,
+musyx_muestra,1304,musyx/starfoxs/sample_1304.wav,
+musyx_muestra,1305,musyx/starfoxs/sample_1305.wav,
+musyx_muestra,1306,musyx/starfoxs/sample_1306.wav,
+musyx_muestra,1307,musyx/starfoxs/sample_1307.wav,
+musyx_muestra,1308,musyx/starfoxs/sample_1308.wav,
+musyx_muestra,1309,musyx/starfoxs/sample_1309.wav,
+musyx_muestra,1310,musyx/starfoxs/sample_1310.wav,
+musyx_muestra,1311,musyx/starfoxs/sample_1311.wav,
+musyx_muestra,1312,musyx/starfoxs/sample_1312.wav,
+musyx_muestra,1313,musyx/starfoxs/sample_1313.wav,
+musyx_muestra,1314,musyx/starfoxs/sample_1314.wav,
+musyx_muestra,1315,musyx/starfoxs/sample_1315.wav,
+musyx_muestra,1316,musyx/starfoxs/sample_1316.wav,
+musyx_muestra,1317,musyx/starfoxs/sample_1317.wav,
+musyx_muestra,1318,musyx/starfoxs/sample_1318.wav,
+musyx_muestra,1319,musyx/starfoxs/sample_1319.wav,
+musyx_muestra,1320,musyx/starfoxs/sample_1320.wav,
+musyx_muestra,1321,musyx/starfoxs/sample_1321.wav,
+musyx_muestra,1322,musyx/starfoxs/sample_1322.wav,
+musyx_muestra,1323,musyx/starfoxs/sample_1323.wav,
+musyx_muestra,1324,musyx/starfoxs/sample_1324.wav,
+musyx_muestra,1325,musyx/starfoxs/sample_1325.wav,
+musyx_muestra,1326,musyx/starfoxs/sample_1326.wav,
+musyx_muestra,1327,musyx/starfoxs/sample_1327.wav,
+musyx_muestra,1328,musyx/starfoxs/sample_1328.wav,
+musyx_muestra,1329,musyx/starfoxs/sample_1329.wav,
+musyx_muestra,1330,musyx/starfoxs/sample_1330.wav,
+musyx_muestra,1331,musyx/starfoxs/sample_1331.wav,
+musyx_muestra,1332,musyx/starfoxs/sample_1332.wav,
+musyx_muestra,1333,musyx/starfoxs/sample_1333.wav,
+musyx_muestra,1334,musyx/starfoxs/sample_1334.wav,
+musyx_muestra,1335,musyx/starfoxs/sample_1335.wav,
+musyx_muestra,1336,musyx/starfoxs/sample_1336.wav,
+musyx_muestra,1337,musyx/starfoxs/sample_1337.wav,
+musyx_muestra,1338,musyx/starfoxs/sample_1338.wav,
+musyx_muestra,1339,musyx/starfoxs/sample_1339.wav,
+musyx_muestra,1340,musyx/starfoxs/sample_1340.wav,
+musyx_muestra,1341,musyx/starfoxs/sample_1341.wav,
+musyx_muestra,1342,musyx/starfoxs/sample_1342.wav,
+musyx_muestra,1343,musyx/starfoxs/sample_1343.wav,
+musyx_muestra,1344,musyx/starfoxs/sample_1344.wav,
+musyx_muestra,1345,musyx/starfoxs/sample_1345.wav,
+musyx_muestra,1346,musyx/starfoxs/sample_1346.wav,
+musyx_muestra,1347,musyx/starfoxs/sample_1347.wav,
+musyx_muestra,1348,musyx/starfoxs/sample_1348.wav,
+musyx_muestra,1349,musyx/starfoxs/sample_1349.wav,
+musyx_muestra,1350,musyx/starfoxs/sample_1350.wav,
+musyx_muestra,1351,musyx/starfoxs/sample_1351.wav,
+musyx_muestra,1352,musyx/starfoxs/sample_1352.wav,
+musyx_muestra,1353,musyx/starfoxs/sample_1353.wav,
+musyx_muestra,1354,musyx/starfoxs/sample_1354.wav,
+musyx_muestra,1355,musyx/starfoxs/sample_1355.wav,
+musyx_muestra,1356,musyx/starfoxs/sample_1356.wav,
+musyx_muestra,1357,musyx/starfoxs/sample_1357.wav,
+musyx_muestra,1358,musyx/starfoxs/sample_1358.wav,
+musyx_muestra,1359,musyx/starfoxs/sample_1359.wav,
+musyx_muestra,1360,musyx/starfoxs/sample_1360.wav,
+musyx_muestra,1361,musyx/starfoxs/sample_1361.wav,
+musyx_muestra,1362,musyx/starfoxs/sample_1362.wav,
+musyx_muestra,1363,musyx/starfoxs/sample_1363.wav,
+musyx_muestra,1364,musyx/starfoxs/sample_1364.wav,
+musyx_muestra,1365,musyx/starfoxs/sample_1365.wav,
+musyx_muestra,1366,musyx/starfoxs/sample_1366.wav,
+musyx_muestra,1367,musyx/starfoxs/sample_1367.wav,
+musyx_muestra,1368,musyx/starfoxs/sample_1368.wav,
+musyx_muestra,1369,musyx/starfoxs/sample_1369.wav,
+musyx_muestra,1370,musyx/starfoxs/sample_1370.wav,
+musyx_muestra,1371,musyx/starfoxs/sample_1371.wav,
+musyx_muestra,1372,musyx/starfoxs/sample_1372.wav,
+musyx_muestra,1373,musyx/starfoxs/sample_1373.wav,
+musyx_muestra,1374,musyx/starfoxs/sample_1374.wav,
+musyx_muestra,1375,musyx/starfoxs/sample_1375.wav,
+musyx_muestra,1376,musyx/starfoxs/sample_1376.wav,
+musyx_muestra,1377,musyx/starfoxs/sample_1377.wav,
+musyx_muestra,1378,musyx/starfoxs/sample_1378.wav,
+musyx_muestra,1379,musyx/starfoxs/sample_1379.wav,
+musyx_muestra,1380,musyx/starfoxs/sample_1380.wav,
+musyx_muestra,1381,musyx/starfoxs/sample_1381.wav,
+musyx_muestra,1382,musyx/starfoxs/sample_1382.wav,
+musyx_muestra,1383,musyx/starfoxs/sample_1383.wav,
+musyx_muestra,1384,musyx/starfoxs/sample_1384.wav,
+musyx_muestra,1385,musyx/starfoxs/sample_1385.wav,
+musyx_muestra,1386,musyx/starfoxs/sample_1386.wav,
+musyx_muestra,1387,musyx/starfoxs/sample_1387.wav,
+musyx_muestra,1388,musyx/starfoxs/sample_1388.wav,
+musyx_muestra,1389,musyx/starfoxs/sample_1389.wav,
+musyx_muestra,1390,musyx/starfoxs/sample_1390.wav,
+musyx_muestra,1391,musyx/starfoxs/sample_1391.wav,
+musyx_muestra,1392,musyx/starfoxs/sample_1392.wav,
+musyx_muestra,1393,musyx/starfoxs/sample_1393.wav,
+musyx_muestra,1394,musyx/starfoxs/sample_1394.wav,
+musyx_muestra,1395,musyx/starfoxs/sample_1395.wav,
+musyx_muestra,1396,musyx/starfoxs/sample_1396.wav,
+musyx_muestra,1397,musyx/starfoxs/sample_1397.wav,
+musyx_muestra,1398,musyx/starfoxs/sample_1398.wav,
+musyx_muestra,1399,musyx/starfoxs/sample_1399.wav,
+musyx_muestra,1400,musyx/starfoxs/sample_1400.wav,
+musyx_muestra,1401,musyx/starfoxs/sample_1401.wav,
+musyx_muestra,1402,musyx/starfoxs/sample_1402.wav,
+musyx_muestra,1403,musyx/starfoxs/sample_1403.wav,
+musyx_muestra,1404,musyx/starfoxs/sample_1404.wav,
+musyx_muestra,1405,musyx/starfoxs/sample_1405.wav,
+musyx_muestra,1406,musyx/starfoxs/sample_1406.wav,
+musyx_muestra,1407,musyx/starfoxs/sample_1407.wav,
+musyx_muestra,1408,musyx/starfoxs/sample_1408.wav,
+musyx_muestra,1409,musyx/starfoxs/sample_1409.wav,
+musyx_muestra,1410,musyx/starfoxs/sample_1410.wav,
+musyx_muestra,1411,musyx/starfoxs/sample_1411.wav,
+musyx_muestra,1412,musyx/starfoxs/sample_1412.wav,
+musyx_muestra,1413,musyx/starfoxs/sample_1413.wav,
+musyx_muestra,1414,musyx/starfoxs/sample_1414.wav,
+musyx_muestra,1415,musyx/starfoxs/sample_1415.wav,
+musyx_muestra,1416,musyx/starfoxs/sample_1416.wav,
+musyx_muestra,1417,musyx/starfoxs/sample_1417.wav,
+musyx_muestra,1418,musyx/starfoxs/sample_1418.wav,
+musyx_muestra,1419,musyx/starfoxs/sample_1419.wav,
+musyx_muestra,1420,musyx/starfoxs/sample_1420.wav,
+musyx_muestra,1421,musyx/starfoxs/sample_1421.wav,
+musyx_muestra,1422,musyx/starfoxs/sample_1422.wav,
+musyx_muestra,1423,musyx/starfoxs/sample_1423.wav,
+musyx_muestra,1424,musyx/starfoxs/sample_1424.wav,
+musyx_muestra,1425,musyx/starfoxs/sample_1425.wav,
+musyx_muestra,1426,musyx/starfoxs/sample_1426.wav,
+musyx_muestra,1427,musyx/starfoxs/sample_1427.wav,
+musyx_muestra,1428,musyx/starfoxs/sample_1428.wav,
+musyx_muestra,1429,musyx/starfoxs/sample_1429.wav,
+musyx_muestra,1430,musyx/starfoxs/sample_1430.wav,
+musyx_muestra,1431,musyx/starfoxs/sample_1431.wav,
+musyx_muestra,1432,musyx/starfoxs/sample_1432.wav,
+musyx_muestra,1433,musyx/starfoxs/sample_1433.wav,
+musyx_muestra,1434,musyx/starfoxs/sample_1434.wav,
+musyx_muestra,1435,musyx/starfoxs/sample_1435.wav,
+musyx_muestra,1436,musyx/starfoxs/sample_1436.wav,
+musyx_muestra,1437,musyx/starfoxs/sample_1437.wav,
+musyx_muestra,1438,musyx/starfoxs/sample_1438.wav,
+musyx_muestra,1439,musyx/starfoxs/sample_1439.wav,
+musyx_muestra,1440,musyx/starfoxs/sample_1440.wav,
+musyx_muestra,1441,musyx/starfoxs/sample_1441.wav,
+musyx_muestra,1442,musyx/starfoxs/sample_1442.wav,
+musyx_muestra,1443,musyx/starfoxs/sample_1443.wav,
+musyx_muestra,1444,musyx/starfoxs/sample_1444.wav,
+musyx_muestra,1445,musyx/starfoxs/sample_1445.wav,
+musyx_muestra,1446,musyx/starfoxs/sample_1446.wav,
+musyx_muestra,1447,musyx/starfoxs/sample_1447.wav,
+musyx_muestra,1448,musyx/starfoxs/sample_1448.wav,
+musyx_muestra,1449,musyx/starfoxs/sample_1449.wav,
+musyx_muestra,1450,musyx/starfoxs/sample_1450.wav,
+musyx_muestra,1451,musyx/starfoxs/sample_1451.wav,
+musyx_muestra,1452,musyx/starfoxs/sample_1452.wav,
+musyx_muestra,1453,musyx/starfoxs/sample_1453.wav,
+musyx_muestra,1454,musyx/starfoxs/sample_1454.wav,
+musyx_muestra,1455,musyx/starfoxs/sample_1455.wav,
+musyx_muestra,1456,musyx/starfoxs/sample_1456.wav,
+musyx_muestra,1457,musyx/starfoxs/sample_1457.wav,
+musyx_muestra,1458,musyx/starfoxs/sample_1458.wav,
+musyx_muestra,1459,musyx/starfoxs/sample_1459.wav,
+musyx_muestra,1460,musyx/starfoxs/sample_1460.wav,
+musyx_muestra,1461,musyx/starfoxs/sample_1461.wav,
+musyx_muestra,1462,musyx/starfoxs/sample_1462.wav,
+musyx_muestra,1463,musyx/starfoxs/sample_1463.wav,
+musyx_muestra,1464,musyx/starfoxs/sample_1464.wav,
+musyx_muestra,1465,musyx/starfoxs/sample_1465.wav,
+musyx_muestra,1466,musyx/starfoxs/sample_1466.wav,
+musyx_muestra,1467,musyx/starfoxs/sample_1467.wav,
+musyx_muestra,1468,musyx/starfoxs/sample_1468.wav,
+musyx_muestra,1469,musyx/starfoxs/sample_1469.wav,
+musyx_muestra,1470,musyx/starfoxs/sample_1470.wav,
+musyx_muestra,1471,musyx/starfoxs/sample_1471.wav,

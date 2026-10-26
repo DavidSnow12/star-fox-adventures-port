@@ -81,11 +81,28 @@ constexpr uint32_t kBootExitAddress = 0x8028DE18u;      // exit
 void InitCpuForBoot(CpuState* cpu, uint8_t* ram, uint32_t ram_size,
                     uint32_t entry);
 
+// Hook de entrada a funciones de audio (Fase 14): si no es
+// nulo, se llama ANTES de despachar cada entrada de funcion
+// de audio conocida (AudioStream_Play, AudioStream_
+// StopCurrent, AudioStream_StartPrepared, sndFXStartEx,
+// sndSeqPlayEx), con pc y r3/r4/r5 del juego. El hook NO
+// sustituye al codigo huesped: el despacho sigue despues,
+// intacto. Con hook nulo el coste es cero (una comparacion
+// de puntero por despacho). El runtime lo usa para el bridge
+// ID -> WAV (audio_bridge.h); el test host, para el mismo
+// bridge. Sin hook, el juego corre exactamente igual que
+// antes (las fases 2-13 no lo pasaban).
+using AudioEntryHook = void (*)(uint32_t pc, uint32_t r3,
+                                uint32_t r4, uint32_t r5,
+                                void* user);
+
 // Bucle principal. stop_pc=0 desactiva la parada por hito (el
 // bucle solo para por exception, PC desconocido o topes).
 // max_seconds=0 desactiva el tope de tiempo (no recomendado).
 ChassisResult RunChassis(CpuState* cpu, Hle* hle,
                          uint64_t max_dispatches, double max_seconds,
-                         uint32_t stop_pc);
+                         uint32_t stop_pc,
+                         AudioEntryHook audio_hook = nullptr,
+                         void* audio_hook_user = nullptr);
 
 }  // namespace sfa

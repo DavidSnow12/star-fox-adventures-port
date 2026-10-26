@@ -76,6 +76,12 @@ bool TryLoadData(struct android_app* app, AppState* state) {
     state->load_tried = true;
     std::string files = std::string(base) + "/sfa-data/files";
     state->runtime.SetDiscRoot(files.c_str());
+    // Fase 14 — bridge de audio: <base>/sfa-data/audio con
+    // streams/... y musyx/... (payload futuro del Pack B).
+    // Sin esa carpeta, el bridge es inerte (peticiones no
+    // resueltas, juego intacto).
+    state->runtime.SetAudioWavRoot(
+        (std::string(base) + "/sfa-data/audio").c_str());
     // Fase 12 — tarjeta virtual Slot A: persiste en el
     // almacenamiento privado de la app, junto a los datos
     // (misma base que el DOL: interna preferida). Sin esta

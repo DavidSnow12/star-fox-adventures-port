@@ -108,6 +108,31 @@ idéntico). APK de prueba GX13 en la rama. Sigue sin
 ser jugable, sin sonido de juego y sin probar en
 Tab S8 real: eso es lo que queda (ver «Fase 13»).
 
+**Fase 14 (2026-10-26, este tramo):** traza de audio
+del juego + mapeo ID → WAV + bridge conectado al
+backend AAudio. En la ventana attract / Start /
+aviso CARD / bucle de título, el juego solo pide
+UN sonido por stream: `AudioStream_Play(1367)` ×2
+(desde `ObjSeq_start`), y 1367 NO resuelve: no
+existe en `Streams.bin` y, además, en host el
+directorio de streams queda vacío (ver «Fase 14»:
+el callback síncrono del HLE devuelve 0 y
+`loadFileByPathAsync` toma el camino de fallo).
+No hay `sndFXStartEx` ni `sndSeqPlayEx` en esa
+ventana; sí hay init de audio completa,
+`sndPushGroup` ×56 (grupos 0–55), `audioUpdate`
+por frame y volúmenes de título. La tabla
+generada resuelve 820/830 IDs de stream a WAV
+real (10 sin WAV) y los 1.205 triggers SFX a sus
+muestras (todas en inventario); el bridge
+reproduce por el hook del chassis y entrega en
+host 1.892.352 frames del stream 1301 y 104.997
+de las 4 muestras del trigger 1, 0 descartados.
+APK de prueba GX14 en la rama (bridge cableado
+pero inerte sin payload de audio en Pack B).
+MusyX/DSP sigue pendiente, ahora con la causa
+exacta documentada (ver «Fase 14»).
+
 ## Qué funciona (verificado)
 
 - Base Android: NativeActivity, `android_main`, loop, ciclo de vida
@@ -168,6 +193,22 @@ Tab S8 real: eso es lo que queda (ver «Fase 13»).
   resampleo lineal a 48 kHz y anillo de 262.144 frames;
   `PlayWavFile` probado con dos IDs reales del inventario
   (ver «Fases 6–7»). En dispositivo, sonido todavía sin probar.
+- **Fase 14 — Traza de audio + mapeo ID → WAV + bridge
+  (NUEVO, verificado en host):** `PCTRACE` ampliada con
+  entradas de audio y r3–r7; tabla generada
+  (`audio/audio_id_map.h`, desde `Streams.bin`/`Sfx.bin` +
+  inventario: 820/830 streams, 1.205 triggers SFX,
+  1.472 muestras MusyX); bridge `audio/audio_bridge.*`
+  conectado por hook opcional del chassis al backend
+  AAudio (sin cambiar el loop: el código huésped corre
+  íntegro) y al runtime (`Tick()` por frame, root
+  `<base>/sfa-data/audio`, inerte sin payload). Host
+  run52: hook con 3 entradas (StopCurrent ×1,
+  Play(1367) ×2, no resuelto), entrega 1.892.352 +
+  104.997 frames con 0 descartados, métricas de juego
+  idénticas a run51. En dispositivo, sonido todavía
+  sin probar; el único stream pedido en la ventana
+  no resuelve (ver «Fase 14»).
 - **Fase 5 — Bucle de juego en host (NUEVO, verificado):**
   desbloqueos AR/AI/DSP/ARAM/hilos (ver sección «Fase 5»),
   carga DVD completa (89 ficheros) y bucle de frames estable
@@ -235,11 +276,24 @@ Tab S8 real: eso es lo que queda (ver «Fase 13»).
    multi-etapa/lighting/EFB (no-op), y la prueba en
    dispositivo con `sfa-data` (sin ejecutar aqui). Ver
    «Fase 11».
-5. **Audio MusyX/DSP pendiente:** backend AAudio implementado
-   (sin probar en dispositivo) y WAV probados en host; falta
-   el mapeo ID de sonido del juego → WAV (tablas
-   `Streams.bin`/`Sfx.bin`/`.sdi` sin parsear), las secuencias
-   MusyX (`.pro`/`.poo`/`midi.wad`) y la emulación DSP.
+5. **Audio MusyX/DSP pendiente (Fase 14: mapeo HECHO,
+   reproducción del juego BLOQUEADA con causa):**
+   backend AAudio implementado (sin probar en
+   dispositivo), tabla ID → WAV generada y bridge
+   verificado en host (ver «Fase 14»). Falta: (a) la
+   reproducción por stream pedida por el juego en
+   host, bloqueada porque el HLE entrega el callback
+   DVD síncrono y su retorno 0 hace fallar
+   `loadFileByPathAsync` (directorio de streams a 0;
+   el siguiente paso concreto es un trampolín que
+   restaure r3 = bytes leídos antes de volver al
+   llamador, sin tocar los wrappers que dependen
+   del comportamiento actual); (b) las secuencias
+   MusyX (`.pro`/`.poo`/`midi.wad`: cargados, sin
+   ninguna petición de reproducción trazada en la
+   ventana) y la emulación DSP (solo el evento de
+   init, no tareas reales); (c) mezcla de voces y
+   payload de audio WAV en Pack B para la APK.
 6. **Input pendiente (parcial):** mando/teclado/táctil-stick
    mapeados; faltan botones táctiles en pantalla (sin layout
    definido, no inventado) y rumble (`PADControlMotor` sin
@@ -3667,3 +3721,346 @@ anteriores (MainActivity no tenía anidadas).
    dispositivo. La APK de este tramo sigue siendo
    solo prueba de renderer + CARD + SAF + táctil
    (ver punto 5).
+
+## Fase 14 (este tramo): traza de audio + mapeo ID → WAV + bridge
+
+Trabajo en `android-port-base` solo; `main` intacto en
+`18ac28e`. Tests host fuera del repo
+(`work-port/fase2-tests/test_phase14*.cpp`,
+`build_phase14*.sh`): la réplica exacta de run50
+(8.000.000 despachos, Start desde PADRead 12, sin
+tarjeta, guion `122:0:0:-80,150:0:0:0,170:256:0:0,
+190:0:0:0`) es run51; el run con bridge es run52.
+
+### 1. Traza de audio del juego (run51, sin regresión)
+
+`chassis.cpp`: `PCTRACE` (solo con `SFA_PCTRACE`, solo
+host en la práctica) ampliada con 19 entradas de audio
+(direcciones verificadas en `codigo/symbols.map`) y con
+r3–r7 al final de la línea (el `pc=0x...` queda intacto
+para el parseo anterior). Limitación documentada: solo
+se ven entradas ENTRE chunks; una llamada dentro del
+mismo chunk es un goto y no aparece (por eso
+`audioLoadTriggerData`, en el mismo chunk que
+`audioInit`, no sale en PCTRACE aunque corre: lo
+prueba el `bl` de `audioInit` en 0x80009DA4 y los 3
+`DVDOpen` con retorno en `loadFileByPathAsync`).
+
+run51 reproduce run50 en TODAS las métricas:
+`dispatch_cap`, 8.000.000 despachos, PC final
+`0x80257320`, exception 0, HLE 28.249, PADRead ×197,
+DVDOpen ×133, FIFO 27.395.620 B (overflow 0),
+`cardStatus = 13`, `saveByte = 0`, `TitleMenu_run`
+×36. La traza nueva no cambia el juego.
+
+Llamadas de audio trazadas en la ventana attract /
+transición Start / carga-aviso CARD / bucle de título
+(entre paréntesis, despacho y llamador):
+
+- `audioInit` 0x80009BF8 ×1 (desp 6.774, desde
+  `init`).
+- `sndVolume` 0x802732E0 ×1 (r3=127, r4=0, r5=255,
+  desde `audioInit`).
+- `sndMasterVolume` 0x80273340 ×1 en init (r3=127,
+  r4=100, r5=1, r6=1, r7=-1) y ×31 más en título
+  (desde `CameraModeTitle_update` 0x80111D2C, r3 =
+  0,1,2,3,5,6,7… creciente, r4=10, r5=1): 32 en total.
+- `AudioStream_Init` 0x8000D5B4 ×1 (r3=-1, r4=-1).
+- `sndPushGroup` 0x8027C09C ×56 (desde `audioInit`:
+  r4 = 0 una vez y 1–55 en bucle; grupos MusyX 0–55
+  cargados en init).
+- `audioSetVolumes` 0x80009A28 ×32 (las mismas 32
+  llamadas de título que `sndMasterVolume`).
+- `AudioStream_StopCurrent` 0x8000D03C ×1 (desp
+  2.049.289, desde `audioStopByMask` 0x80009B00,
+  antes de la película attract).
+- `AttractMovieAudio_Init` 0x80119848 ×4 (audio THP
+  de la película, no MusyX; r3=2).
+- `audioUpdate` 0x80009BD0 ×36 (una por frame de
+  título, desde `gameLoop`).
+- `AudioStream_Play` 0x8000D220 ×2 (desp 2.354.011 y
+  2.354.497, r3=1367, r4=`ObjSeq_AudioStreamCallback`
+  0x800806F0, lr en `ObjSeq_start` 0x80081B70):
+  EL ÚNICO sonido por stream pedido en la ventana.
+- NINGUNA en la ventana: `sndFXStartEx`,
+  `sndSeqPlayEx`, `AudioStream_StartPrepared`,
+  `AudioStream_GetCurrentId`, `ObjSeq_AudioStreamCallback`
+  como entrada. El clic A del aviso CARD y la
+  navegación del título no disparan SFX por estas
+  entradas en esta ventana.
+- Ficheros DVD de audio: los 12 de init
+  (`Music.bin`, `Sfx.bin`, `Streams.bin`,
+  `starfoxm/s.poo/pro/sdi/sam`, `starfoxs/...`,
+  `midi.wad`; los 12 callbacks `*LoadedCallback`
+  despachados por el HLE, flags de carga
+  `0xFFF`). NINGÚN `streams/*.adp` abierto en la
+  ventana.
+- Globales finales de audio: `ready=1`,
+  `musicGrp=1`, `sfxGrp=1`, `streamPlaying=0`,
+  `streamCurrentId=0`, `streamPreparingId=0`,
+  `streamPreparedId=0`, volL=volR=127, `sndActive=1`.
+
+### 2. El stream 1367 no resuelve (dos causas independientes)
+
+(a) 1367 NO existe en `Streams.bin`: búsqueda
+exhaustiva (905 registros; IDs vecinos 1361 y 1368;
+el BE16 1367 no aparece en todo el fichero). Con el
+directorio funcionando, `AudioStream_Play` lo
+buscaría por comparación directa del u16 inicial
+(verificado en el código huésped) y devolvería 0
+igual. (b) En host, además, el directorio está
+vacío: `dir_ptr` 0x803DE210 = 0 y `count`
+0x803DE214 = 0 al final de run50, run51 y run52.
+Verificado con un run de parada en el retorno de
+la primera llamada (`pc=0x80081B70`): retorno de
+`AudioStream_Play` = 0, `streamCurrentId` = 0.
+
+Causa raíz del directorio vacío (cadena completa,
+verificada en código huésped + HLE, no supuesta):
+
+1. `audioLoadTriggerData` 0x8000980C carga
+   `Music.bin`/`Sfx.bin`/`Streams.bin` con
+   `loadFileByPathAsync` 0x8001599C y guarda
+   `dir_ptr` = retorno y `count` = tamaño/22
+   (magia de división `0xBA2E8BA3`; 19.920/22 =
+   905). `Sfx.bin` SÍ queda bien (ptr
+   0x8101D0C0, 1.205 registros): su callback
+   devuelve un flags no nulo.
+2. `streamsLoadedCallback` 0x80009594, en cambio,
+   devuelve el contador ANTES de guardar (0 en
+   host, porque el callback corre durante la
+   carga, no después): su camino de éxito termina
+   con r3 = `[count]` = 0.
+3. El HLE entrega el callback DVD como despacho
+   nuevo con lr intacto, así que su `blr` vuelve
+   a `loadFileByPathAsync` (0x80015AA4) con r3 =
+   retorno del callback (0), no con el estado de
+   `DVDReadAsyncPrio`. `loadFileByPathAsync`
+   toma el camino de fallo (libera búfer y
+   fileInfo, devuelve 0) y `audioLoadTriggerData`
+   guarda `dir_ptr` = 0, `count` = 0.
+4. En hardware real el callback es asíncrono:
+   `loadFileByPathAsync` devuelve búfer + tamaño
+   al instante, `audioLoadTriggerData` guarda
+   dir/count, y el callback posterior ya los ve
+   poblados. El fallo es de fidelidad del HLE
+   host, no del juego ni de la tabla.
+
+Siguiente paso concreto (NO hecho aquí, para no
+tocar la maquinaria de callbacks que usan los
+wrappers de romlists): un trampolín HLE que, al
+volver un callback de carga, restaure r3 = bytes
+leídos antes de saltar al retorno original, de
+modo que `loadFileByPathAsync` vea éxito aunque
+el callback devuelva 0. Hasta entonces, ningún
+stream pedido por el juego sonará en host aunque
+la tabla sea correcta.
+
+Detalle abierto (no portador): las palabras de
+`Music.bin` terminan en (0x32, 2) aunque su único
+escritor estático es `audioLoadTriggerData`; se
+deja constancia sin atribuirlo (podría ser reuso
+por bytes de otra inicialización de música, no
+verificado).
+
+### 3. Formato de las tablas (leído, no supuesto)
+
+`Streams.bin` (19.920 B): 905 registros × 22 B =
+`[id u16 BE][campo u16 BE][lengthRaw u16 BE]
+[nombre 16 B]` + 10 B de cola a cero. 830 con
+nombre (784 únicos; 29 nombres repetidos con
+distinto id, p. ej. `KP/getspirit` ×5: mismo WAV,
+distinto punto de fundido `lengthRaw/100`).
+`lengthRaw` = 0 en 880 registros, distinto de
+cero en 25 (p. ej. `GB/Intro` 7.200, `AN/an1301`
+2.400): punto de fundido, NO duración (coherente
+con el RESUMEN de extracción). Ids especiales en
+`AudioStream_Play`: 1228 = retorno 0 inmediato,
+1318 = dos llamadas de alloc antes de seguir.
+
+`Sfx.bin` (38.560 B): 1.205 registros × 32 B =
+`[id u16 BE][volBase u8][0][pitchBase u8][0]
+[? u16][? u16][muestra0..3 u16]...`. Los 4
+campos de muestra están en 0..832 (817 distintos;
+solo 3 triggers superan 827: 828–832, las
+primeras muestras sin nombre de `starfoxs`).
+Interpretación documentada: 0 = sin muestra (247
+triggers con los 4 campos a 0; si 0 fuese una
+muestra real, 247 triggers sonarían igual).
+`volBase` típico 100, `pitchBase` 127 en 1.199.
+
+`Music.bin` (2.544 B): triggers de música (sin
+semántica decodificada en este tramo); sin petición
+de reproducción trazada en la ventana.
+
+Generador: `herramientas/audio/gen_audio_id_map.py`
+(lee disco + `analisis/audio.csv`, escribe
+`app/src/main/cpp/audio/audio_id_map.h` y
+`herramientas/audio/audio_id_map.csv`). Empareja
+insensible a mayúsculas (`GB/bird` frente a
+`GB/Bird.adp`) y por prefijo único si el nombre
+está truncado a 15 caracteres.
+
+Tabla resultante:
+
+| Concepto | Resueltos | Sin resolver |
+|---|---|---|
+| Streams (id → WAV ADP 32 kHz estéreo) | 820/830 | 10: `WC/wc970` (970), `IM/arrive` (20511), `WC/wc09b–wc09h` (20946–20951, 20958) y `unknown` (20959): sin `.adp` en el disco |
+| Triggers SFX (id → muestras) | 1.205/1.205 (todas sus muestras en inventario) | 0 (247 sin muestra directa: secuencia/grupo) |
+| Muestras MusyX (id → WAV mono) | 1.472/1.472 (0–1471) | 0 |
+| ADP con WAV pero sin id de tabla | — | 185 ficheros (TTH 121, COMM 48, resto 16): no referenciables por `AudioStream_Play` |
+
+El stream pedido en la ventana, 1367, queda en
+«sin resolver» por la causa doble del punto 2.
+Ningún ID pedido se mapea a un sonido inventado.
+
+### 4. Bridge conectado al backend (sin cambiar el loop)
+
+Ficheros nuevos en el repo: `app/src/main/cpp/audio/
+audio_bridge.{h,cpp}` (+ `audio_id_map.h`
+generado) y el hook opcional en
+`gamecube_runtime/chassis.{h,cpp}` (5 PCs:
+`AudioStream_Play`, `AudioStream_StopCurrent`,
+`AudioStream_StartPrepared`, `sndFXStartEx`,
+`sndSeqPlayEx`; con hook nulo, coste cero).
+El hook se dispara ANTES del despacho y el código
+huésped corre íntegro después: sonido sombra,
+estado del juego intacto. `GameCubeRuntime`
+posee el bridge (`SetAudioWavRoot`,
+`Tick()` antes de `Audio::Pump()` por frame) y
+`native-lib` le pasa `<base>/sfa-data/audio`.
+Sin esa carpeta (Pack B actual, sin WAV), el
+bridge es inerte: búsquedas fallidas → no
+resuelto, sin ficheros, sin cambios en el juego.
+
+Reglas del bridge, deliberadas: solo reproduce
+`AudioStream_Play` (r3 = id, verificado) y
+detiene en `AudioStream_StopCurrent`; las demás
+entradas solo se cuentan (su layout de
+argumentos no está verificado; `sndFXStartEx` /
+`sndSeqPlayEx` no se inventan). Una sola cola
+en orden de llegada (sin mezcla: un stream y un
+SFX a la vez sonarían en serie), WAV de una sola
+pasada (sin bucles, como en la extracción),
+alimentación de 4.096 frames por `Tick()`.
+`OnSfxTrigger(id)` es API directa (misma que
+usará el hook cuando el layout de `sndFXStartEx`
+se verifique).
+
+### 5. Verificación host (run52, sin regresión)
+
+Run52 = run51 + hook + bridge (root = repo
+`assets/extraidos/audio`): motivo `dispatch_cap`,
+PC final `0x80257320`, HLE 28.249, PADRead ×197,
+FIFO 27.395.620 B, `cardStatus = 13`, audio
+final idéntico a run51. (Tiempo 39,9 s frente a
+27,9 s de run51: varianza de host, no regresión
+de estado — el hook son 5 comparaciones por
+despacho y 3 llamadas en todo el run.)
+
+Hook durante el juego: 3 entradas exactas —
+`StopCurrent` ×1 (r3 = 0x80330000) y
+`Play(1367)` ×2, ambas no resueltas, 0
+reproducidas por el juego. Verificación directa
+de la cadena (mismo código, IDs reales de tabla):
+
+- Stream 1301 (`streams/AN/an1301.wav`, 32.000 Hz
+  estéreo) → 1.892.352 frames a 48 kHz
+  (exactamente el número de Fase 7),
+  submitted = delivered = 1.892.352, dropped = 0.
+- Trigger SFX 1 → 4 muestras (420
+  `SFXmenu_fend_name`, 421 `SFXmenu_pause_hliteup`,
+  422 `SFXmenu_pause_hlitedown`, 423
+  `SFXfoot_dirt_walk_1`, 22.050 Hz mono) →
+  11.450 + 15.351 + 52.697 + 25.499 = 104.997
+  frames, submitted = delivered, dropped = 0.
+- Trigger 45 → 0 muestras (sin muestra directa),
+  no resuelto. Stream 970 → no resuelto.
+- Totales del test: submitted = delivered =
+  1.997.349, dropped = 0.
+
+Test host `run21-unit` de Fase 7 (WAV previos)
+sigue cubierto por la misma ruta (`LoadWavFile`
++ `ResampleToStereo` sin tocar; el 1301 del
+bridge reproduce su número exacto).
+
+### 6. Build NDK y APK de prueba GX14
+
+Build `ndk-fase14` (incremental desde
+`ndk-fase13`): **0 errores**. `libstarfox.so`
+**27.616.232 B**, ELF64 AArch64, SHA-256
+`886f41fa2642e4309ef8e4eb569f7bdd4f01c56ae3151b1d3d51f69692bdafe2`,
+`android_main` en `T`, símbolos `AudioBridge::*`
+en `T`, **cero** `mem_/ppc_/func_/dolrecomp_` sin
+resolver (191 undefined totales, solo libs del
+sistema). APK de prueba `app-debug-gx14-test.apk`
+(**12.599.974 B**, SHA-256
+`9f4af993be0e0f3f4a0d7b42ef78f0aab11a1d175607877fe0f029b75e8f95d9`,
+`com.starfox.port` v6 / `0.6.0-gx14-test`):
+apksigner Verifies (v2+v3, 1 firmante), zipalign
+OK, manifiesto minSdk 26 / arm64-v8a /
+debuggable, `libstarfox.so` interior con el
+mismo SHA-256 que el build NDK, sin datos del
+juego dentro. Etiqueta: PRUEBA, nunca jugable
+sin juego completo; el bridge está cableado
+pero inerte sin `sfa-data/audio`. Nota de
+entorno: el JDK había desaparecido por el wipe
+de VM; se extrajo OpenJDK 21.0.12.1 a
+`~/tools/jdk21` (persiste, a diferencia de
+`/usr`) y la APK se construyó con él.
+
+### 7. MusyX/DSP: qué pide el juego y qué falta
+
+En la ventana trazada, el juego NO pide ninguna
+secuencia: ni `sndSeqPlayEx` ni `sndFXStartEx`.
+Lo que sí hace: cargar los bancos completos
+(`.pro`/`.poo`/`.sdi`/`.sam` ×2, `midi.wad`;
+flags `0xFFF`) y 56 `sndPushGroup` (grupos
+0–55). El audio de la película attract NO es
+MusyX: es la pista THP (`AttractMovieAudio_*`,
+decodificación y mezcla propias, ya en el
+juego). Falta para música/SFX MusyX, en orden:
+
+1. Trampolín HLE del punto 2 (prerrequisito
+   para cualquier stream del juego en host).
+2. Layout de argumentos de `sndFXStartEx` y
+   `sndSeqPlayEx` (qué registro lleva el id de
+   trigger/secuencia) para cablear el hook a
+   `OnSfxTrigger` y al reproductor de secuencias.
+3. Semántica de secuencias: `.pro` (proyecto),
+   `.poo` (SoundMacros) y `midi.wad`
+   (1.273.280 B, sin `MThd`, sin parse de eventos
+   establecido): qué macro/secuencia corresponde
+   a cada trigger y cómo avanza en el tiempo.
+4. DSP real: hoy solo el evento de init
+   (`dspInitCallback`); faltan la ejecución de
+   tareas DSP (`salBuildCommandList` y
+   siguientes), la mezcla de voces y el modelo
+   ARAM (las muestras viven en ARAM tras
+   `AudioAramWriteSync`, sin modelo en host).
+   Sin esto, cualquier «música» sería un stub
+   que suena mal presentado como música: no se
+   hace. El WAV por muestra ya existe (1.472) y
+   es el material sobre el que se construirá.
+
+### 8. Qué queda (tras Fase 14, en orden)
+
+1. Trampolín HLE de callbacks de carga (punto 2)
+   + re-verificar `AudioStream_Play` con un id
+   válido (p. ej. 1301) desde el juego, no solo
+   desde el test directo.
+2. Layout de `sndFXStartEx`/`sndSeqPlayEx` y
+   primer SFX real del juego por el bridge.
+3. Secuencias MusyX + DSP (punto 7), mezcla de
+   voces, bucles de muestra.
+4. Payload de audio WAV en Pack B
+   (`sfa-data/audio` con `streams/` y `musyx/`)
+   o decodificación ADP/DSP-ADPCM en el
+   dispositivo; sin eso la APK GX14 no suena
+   aunque el código esté cableado.
+5. Prueba real en Tab S8 (GX14: picker SAF +
+   táctil + CARD + bridge inerte) y, cuando haya
+   payload, primera escucha real.
+6. TEV multi-etapa, rumble y APK 100% jugable
+   (sin cambios en esta fase; ver «Fase 13»,
+   punto 6).
