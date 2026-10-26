@@ -63,6 +63,12 @@ struct GlTri {
   // UV por mapa (8 pares), con matriz ya aplicada.
   float uv_s[3][8] = {};
   float uv_t[3][8] = {};
+  // Tramo 7B: Z de fog por vertice (vFogZ del GLSL):
+  // perspectiva sqrt(mx^2+mz^2) (rango corregido por
+  // coseno en el plano x-z, doc GX), orto max(-mz, 0).
+  // mx/mz son posicion post-PNMTX (espacio ojo). El
+  // camino GlQuad legacy no la rellena (queda 0).
+  float fog_z[3] = {0, 0, 0};
   uint32_t tex_obj = 0;
   int tex_map = 0;
   // Texturas por mapa del draw (0 = sin carga para el mapa).

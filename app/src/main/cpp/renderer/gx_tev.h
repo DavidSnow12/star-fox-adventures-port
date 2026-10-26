@@ -256,20 +256,54 @@ inline void DecodeIndirectWord(uint32_t w, TevStage* s) {
 // Cada palabra: [escala:23-22][valor_fila1:21-11]
 // [valor_fila0:10-0], valores S11 (signo + 10 bits
 // fraccionarios): el SDK multiplica por 1024.0
-// (constante GXIndTexMtxScale en 0x803E90F0, r2+4656) y
-// convierte con fctiwz. Columna c: palabra c = (m0c,
-// m1c). La escala de 2 bits es (scale_exp+17)&3 segun el
-// SDK (r5+17 insertado en [23:22]); su multiplicador HW
-// NO esta determinado desde este DOL y NO se aplica: los
-// floats salen como int11/1024 y el campo queda crudo en
-// ind_mtx_scale (ver informe Tramo 6, pregunta abierta 1).
-// Devuelve false si los 3 campos de escala difieren.
+// (constante en 0x803E90F0, r2+0x1230, verificada 1024.0)
+// y convierte con fctiwz. Columna c: palabra c = (m0c,
+// m1c). CORRECCION Tramo 7B a Tramo 6 (que exigia los 3
+// campos de escala iguales y guardaba solo el de la
+// palabra 0): el SDK NO escribe el mismo campo en las
+// 3 palabras. GXSetIndTexMtx 0x8025BBF4 calcula
+// r11 = extsb(scale_exp + 17) y lo reparte con rlwimi
+// (rotaciones 22/20/18, mascara [23:22] de cada palabra):
+//   palabra 0 <- bits 1..0 de (scale_exp+17),
+//   palabra 1 <- bits 3..2, palabra 2 <- bits 5..4.
+// Los 3 campos JUNTOS son un campo de 6 bits
+// S = sc0 | (sc1<<2) | (sc2<<4); scale_exp = S - 17
+// (rango exacto [-17, 46]; fuera, el extsb + truncado
+// a 6 bits lo envuelve: documentado, no corregido).
+// Verificado por simulacion diferencial de la secuencia
+// rlwimi del DOL (tabla exp -> (sc0,sc1,sc2) en el
+// informe Tramo 7B) y por el caso caustica (exp -3 ->
+// S=14 -> (2,3,0)). El multiplicador HW es 2^scale_exp:
+// libogc define scale_exp como "exponent to use for the
+// associated scale factor" y documenta que (matriz/2,
+// escala+1) equivale a (matriz, escala); la magnitud
+// resultante para la caustica (diagonal 0.5*f1, exp -3
+// -> x0.125, perturbacion maxima 0.03125*f1) es la
+// sutil que el efecto exige, mientras que 2^campo-2bits
+// daria hasta 1.0 UV (absurdo). scale_out devuelve
+// scale_exp (con signo), NO el campo crudo de 2 bits.
+inline int IndScaleExpFromSlices(int sc0, int sc1, int sc2) {
+  int s = (sc0 & 0x3) | ((sc1 & 0x3) << 2) | ((sc2 & 0x3) << 4);
+  return s - 17;
+}
+
+// Multiplicador de escala indirecta: 2^exp (potencias de
+// 2 exactas en float; el juego usa exp en [-15, 1]).
+inline float IndScaleFactor(int scale_exp) {
+  float f = 1.0f;
+  if (scale_exp >= 0) {
+    for (int i = 0; i < scale_exp; ++i) f *= 2.0f;
+  } else {
+    for (int i = 0; i < -scale_exp; ++i) f *= 0.5f;
+  }
+  return f;
+}
+
 inline bool DecodeIndTexMtxWords(uint32_t w0, uint32_t w1, uint32_t w2,
                                  float out[6], int* scale_out) {
   int sc0 = static_cast<int>((w0 >> 22) & 0x3);
   int sc1 = static_cast<int>((w1 >> 22) & 0x3);
   int sc2 = static_cast<int>((w2 >> 22) & 0x3);
-  if (sc0 != sc1 || sc0 != sc2) return false;
   auto s11 = [](uint32_t v) {
     int s = static_cast<int>(v & 0x7FF);
     if (s & 0x400) s -= 0x800;
@@ -281,7 +315,8 @@ inline bool DecodeIndTexMtxWords(uint32_t w0, uint32_t w1, uint32_t w2,
   out[3] = s11(w0 >> 11);   // m10
   out[4] = s11(w1 >> 11);   // m11
   out[5] = s11(w2 >> 11);   // m12
-  if (scale_out != nullptr) *scale_out = sc0;
+  if (scale_out != nullptr)
+    *scale_out = IndScaleExpFromSlices(sc0, sc1, sc2);
   return true;
 }
 
@@ -381,29 +416,93 @@ inline bool TexGenPosApplicable(const TexGen& tg) {
          tg.postmtx == 125 && tg.normalize == 0;
 }
 
-// --- Fog BP 0xEE-0xF2 (Tramo 6, GXSetFog 0x8025CC44) ---
+// Texgen-NRM aplicable (Tramo 7B): fuente NRM, forma
+// 2x4 o 3x4, postmtx identidad y sin normalizar. La
+// entrada es la normal del vertice transformada por la
+// parte 3x3 de la matriz de posicion (sin traslacion);
+// exacto si PNMTX es rigida (rotacion+traslacion, el
+// caso del juego: filas ortonormales en trazas), ya que
+// entonces 3x3 = inversa-traspuesta; con escala no
+// uniforme o cizalla la matriz normal GX verdadera es
+// la inversa-traspuesta y aqui se aproxima por 3x3.
+// Caso real en trazas: run39 offset 59080, coord0 NRM
+// forma 2x4 post 125 norm 0, 34/34 vertices con normal
+// (matriz identidad: (s,t) = (nx, ny)).
+inline bool TexGenNrmApplicable(const TexGen& tg) {
+  return tg.present && tg.src == 1 &&
+         (tg.type_form == 0 || tg.type_form == 2) &&
+         tg.postmtx == 125 && tg.normalize == 0;
+}
+
+// Texgen-TEX aplicable (Tramo 7B): fuente TEX0-7, forma
+// 2x4 o 3x4, sin normalizar. La entrada es el atributo
+// UV de la coord fuente (src-5); si el vertice no trae
+// esa coord, (0,0). La matriz es la TnMIDX de ESTA
+// coord (60 o ausente = identidad), igual que en POS.
+// Postmtx != 125 se aplica aparte (ver FinalUv) si la
+// matriz post esta capturada en el draw; si no esta,
+// la UV sale sin post (no se inventa matriz).
+// Caso real en trazas: run39 offset 791111, coord2
+// TEX1 forma 2x4 post 70 norm 0 (matriz post 70 =
+// identidad en XF 1304+, verificada por FIFO).
+inline bool TexGenTexApplicable(const TexGen& tg) {
+  return tg.present && tg.src >= 5 && tg.src <= 12 &&
+         (tg.type_form == 0 || tg.type_form == 2) &&
+         tg.normalize == 0;
+}
+
+// Postmtx aplicable: distinto de identidad y dentro del
+// rango de matrices duales GX (64..121, paso 3 en uso;
+// se acepta 64..127 por tolerancia). La matriz debe
+// estar en draw.post_matrices (captura del parser);
+// si no esta, FinalUv no aplica post.
+inline bool TexGenPostApplicable(const TexGen& tg) {
+  return tg.present && tg.postmtx != 125 && tg.postmtx >= 64 &&
+         tg.postmtx <= 127;
+}
+
+// --- Fog BP 0xEE-0xF2 (Tramo 6, corregido Tramo 7B,
+// GXSetFog 0x8025CC44 + emit 0x8025CD58) ---
 //
 // El SDK calcula (args: tipo, start, end, near, far, color;
-// si near == far, usa A=0.5, B=0, C=0):
+// DEGENERADO si far == near O si end == start — Tramo 6
+// citaba solo near == far; el desensamblado muestra las
+// dos comparaciones fcmpu seguidas —, usa A=0.5, B=0,
+// C=0; constantes DOL verificadas: 0.0 en r2+0x1238,
+// 0.5 en r2+0x123C):
 //   A = far/(far-near), B = start/(end-start),
 //   C = far*near/((far-near)*(end-start)).
 // Luego normaliza A al rango [0.5, 1.0] (mientras A > 1:
 // A *= 0.5, exp++; mientras 0 < A < 0.5: A *= 2, exp--;
-// constantes DOL: 0.5 en r2+4668, 1.0 doble en r2+4672,
-// 2.0 en r2+4680, 0.5 doble en r2+4688) y emite:
+// dobles DOL verificados: 1.0 en r2+0x1240, 2.0 en
+// r2+0x1248, 0.5 en r2+0x1250, 2^52 en r2+0x1260 para el
+// truco de conversion float->int) y emite:
 //   0xEE = top 20 bits del float C' = C/2^r30,
-//   0xEF = mantisa entera = (u32)(8388638.0 * A_norm)
-//     (8388638.0 en r2+4696),
+//   0xEF = mantisa entera = (u32)(8388638.0 * A_norm),
 //   0xF0 = r30 = exp+1,
-//   0xF1 = tipo[23:21] + top 20 bits del float B,
+//   0xF1 = (tipo&7)<<21 + top 20 bits del float B,
 //   0xF2 = color RGB.
+// CORRECCION Tramo 7B: el campo [23:21] de 0xF1 es FSEL
+// hardware (YAGCD), NO el enum GXFogType de Tramo 6:
+//   0=OFF, 1=reservado, 2=LIN, 3=reservado, 4=EXP,
+//   5=EX2, 6=BXP (exp inversa), 7=BX2.
+// Tramo 6 trataba 1/2/5 como lineales: falso (1 es
+// reservado, 5 es EX2). El juego solo usa 0/2/4 en sus
+// 21 call sites (li r3 inmediatos) y solo 0/4 aparecen
+// en trazas. Ademas el emit hace tipo<<21 con solo 3
+// bits: el bit PROJ (bit 20, orto/persp) sale SIEMPRE 0
+// desde este SDK (el bit 3 del tipo API cae en el bit
+// 24 y se limpia); orto/persp NO se transmite por aqui.
 // La inversion recupera A/B/C (B y C con mantisa de 11
 // bits: error relativo ~2^-12) y, con near/far conocidos,
 // start/end. Sin near/far conocidos el sistema tiene 3
 // ecuaciones y 4 incognitas: NO se devuelve start/end.
+// El SDK calcula A/B/C IGUAL para todos los tipos (sin
+// rama por tipo en el desensamblado): start/end
+// conservan su sentido de rango tambien en EXP/EXP2.
 struct GxFogParams {
   bool present = false;  // las 5 palabras presentes
-  int type = 0;          // campo [23:21] de 0xF1 (enum GXFogType)
+  int type = 0;          // campo [23:21] de 0xF1 (FSEL HW)
   float a = 0.0f, b = 0.0f, c = 0.0f;
   int exp_field = 0;     // r30
   int r = 0, g = 0, bl = 0;
@@ -457,9 +556,56 @@ inline bool DecodeFogWords(const std::map<uint32_t, uint32_t>& bp,
   return true;
 }
 
-// Recupera start/end desde A/B/C con near/far conocidos.
+// Near/far desde la proyeccion XF del draw (Tramo 7B).
+// Validado en trazas: 100% de draws con proyeccion
+// recuperan valores redondos (run19: 602/602 orto 1/199;
+// run39: orto 1/199, orto 1/29, persp 2.5/10000; run43:
+// los mismos 3 pares, 0 fallos).
+//   Perspectiva (tipo 0): a = -p4 = near/(far-near),
+//     b = -p5 = far*near/(far-near) -> far = b/a,
+//     near = a*far/(1+a). (Comprobado: p4 =
+//     -0.000250062, p5 = -2.50063 -> far = 10000,
+//     near = 2.5 exactos.)
+//   Orto (tipo 1): p4 = -2/(far-near), p5 =
+//     -(far+near)/(far-near) -> far-near = -2/p4,
+//     far+near = 2*p5/p4. (Comprobado: p4 =
+//     -0.0714286, p5 = -1.07143 -> 1/29; p4 =
+//     -0.010101, p5 = -1.0101 -> 1/199.)
+// Devuelve false si la proyeccion no da near/far
+// validos (far > near > 0); entonces FogStartEnd no
+// debe usarse (sin inventar near/far).
+inline bool ProjectionNearFar(const float projection[6], int type,
+                              float* near_out, float* far_out) {
+  if (projection == nullptr || near_out == nullptr ||
+      far_out == nullptr)
+    return false;
+  float p4 = projection[4], p5 = projection[5];
+  float near_z = 0.0f, far_z = 0.0f;
+  if (type == 0) {
+    if (p4 == 0.0f) return false;
+    float a = -p4, b = -p5;
+    if (!(a > 0.0f) || !(b > 0.0f)) return false;
+    far_z = b / a;
+    near_z = a * far_z / (1.0f + a);
+  } else {
+    if (p4 == 0.0f) return false;
+    float range = -2.0f / p4;
+    float sum = 2.0f * p5 / p4;
+    far_z = (range + sum) / 2.0f;
+    near_z = (sum - range) / 2.0f;
+  }
+  if (!(far_z > near_z) || !(near_z > 0.0f)) return false;
+  *near_out = near_z;
+  *far_out = far_z;
+  return true;
+}
+
+// Recupera start/end desde A/B/C con near/far conocidos
+// (Tramo 7B: se obtienen del draw con ProjectionNearFar,
+// ya no hace falta un hook GXSetProjection).
 // Devuelve false (sin inventar nada) si: A o C son cero
-// (caso degenerado near == far), far <= near, o A no es
+// (caso degenerado: near == far o end == start, que el
+// SDK emite como A=0.5, B=0, C=0), far <= near, o A no es
 // consistente con far/(far-near) dentro del 2% (los
 // near/far pasados no son los del fog: entonces start/end
 // no son recuperables desde BP). D = end-start =
@@ -490,15 +636,48 @@ inline bool FogStartEnd(const GxFogParams& p, float near_z, float far_z,
 // z_expr es la profundidad de vista (varying que debe
 // alimentar el vertex shader; el cableado en gx_gl.cpp es
 // un paso aparte, ver informe Tramo 6).
+// Factor de fog GLSL por FSEL (Tramo 7B, corrige Tramo 6):
+// el argumento type es FSEL (campo [23:21] de 0xF1), y
+// z_expr es la Z de fog del vertice (vFogZ: perspectiva
+// sqrt(mx^2+mz^2), orto -mz; ver gx_translate.cpp).
+// El factor devuelto es el "keep" (1 = color original,
+// 0 = color fog); el llamador mezcla con mix().
+//   LIN (2): keep = clamp((end-z)/(end-start)).
+//   EXP (4): keep = clamp(exp(-t)), t=(z-start)/(end-start).
+//   EXP2 (5): keep = clamp(exp(-t*t)).
+// EXP/EXP2 son RECONSTRUCCION, no DOL-probadas: el SDK
+// calcula A/B/C igual para todos los tipos, asi que
+// start/end conservan sentido de rango; la curva
+// exponencial sobre t normalizado es la unica forma
+// coherente con un solo par (start,end). Candidata
+// alternativa (densidad sobre z cruda, exp(-z/(end-start)))
+// queda como discriminador futuro en dispositivo (ver
+// informe Tramo 7B). OFF/reservado/BXP/BX2 -> vacio
+// (BXP/BX2 no aparecen en trazas ni en call sites).
 inline std::string FogFactorGlsl(int type, float start, float end,
                                  const std::string& z_expr) {
-  if (type != 1 && type != 2 && type != 5) return "";
   if (!(end > start)) return "";
-  char buf[256];
-  std::snprintf(buf, sizeof(buf),
-                "clamp((%.9g - %s) / %.9g, 0.0, 1.0)", end,
-                z_expr.c_str(), end - start);
-  return std::string(buf);
+  char buf[512];
+  if (type == 2) {
+    std::snprintf(buf, sizeof(buf),
+                  "clamp((%.9g - %s) / %.9g, 0.0, 1.0)", end,
+                  z_expr.c_str(), end - start);
+    return std::string(buf);
+  }
+  if (type == 4) {
+    std::snprintf(buf, sizeof(buf),
+                  "clamp(exp(-max((%s - %.9g) / %.9g, 0.0)), 0.0, 1.0)",
+                  z_expr.c_str(), start, end - start);
+    return std::string(buf);
+  }
+  if (type == 5) {
+    std::snprintf(buf, sizeof(buf),
+                  "clamp(exp(-pow(max((%s - %.9g) / %.9g, 0.0), 2.0)), "
+                  "0.0, 1.0)",
+                  z_expr.c_str(), start, end - start);
+    return std::string(buf);
+  }
+  return "";
 }
 
 // Konst/regcolor desde 0xE0+2*i / 0xE1+2*i (GXSetTevColor
@@ -754,6 +933,7 @@ inline uint32_t TevHash(const TevState& st) {
     }
   // Tramo 6: matrices/escalas ind tambien forman parte de
   // la clave (un cambio de matriz debe recompilar).
+  // Tramo 7B: ind_mtx_scale es scale_exp (con signo).
   for (int k = 0; k < 3; ++k) {
     mix(static_cast<uint32_t>(st.ind_mtx_present[k] ? 1 : 0) |
         (static_cast<uint32_t>(st.ind_mtx_scale[k]) << 4));
@@ -1300,14 +1480,19 @@ inline TevGenResult GenerateTevFragment(
       // Muestra indirecta (texel normalizado 0..1), bias
       // 0.5 en S si bias in {1,3,5,7}, en T si in {2,3,6,7}
       // (U irrelevante con alfa OFF, exigido por el gate),
-      // matriz 2x3 (valores int11/1024, SIN el multiplicador
-      // del campo de escala: sin determinar, ver cabecera)
-      // y suma a la texcoord de la etapa.
+      // matriz 2x3 (valores int11/1024) PLEGADA con el
+      // multiplicador de escala 2^scale_exp (Tramo 7B:
+      // campo de 6 bits repartido en las 3 palabras BP,
+      // scale_exp = S - 17) y suma a la texcoord de la etapa.
       bool bias_s = (s.ind_bias == 1 || s.ind_bias == 3 ||
                      s.ind_bias == 5 || s.ind_bias == 7);
       bool bias_t = (s.ind_bias == 2 || s.ind_bias == 3 ||
                      s.ind_bias == 6 || s.ind_bias == 7);
       const float* mm = st.ind_mtx_vals[s.ind_mtx];
+      int ind_exp = st.ind_mtx_scale[s.ind_mtx];
+      float ind_factor = IndScaleFactor(ind_exp);
+      float sm[6];
+      for (int c = 0; c < 6; ++c) sm[c] = mm[c] * ind_factor;
       auto fmt = [](float v) {
         char buf[40];
         std::snprintf(buf, sizeof(buf), "%.9g", v);
@@ -1320,14 +1505,14 @@ inline TevGenResult GenerateTevFragment(
       src += pfx + "vec2 " + ind + "Off = vec2(" + ind + ".r - " +
              (bias_s ? "0.5" : "0.0") + ", " + ind + ".g - " +
              (bias_t ? "0.5" : "0.0") + ");\n";
-      src += pfx + "vec2 " + ind + "Pert = vec2(" + fmt(mm[0]) +
-             " * " + ind + "Off.x + " + fmt(mm[1]) + " * " + ind +
-             "Off.y + " + fmt(mm[2]) + ", " + fmt(mm[3]) + " * " +
-             ind + "Off.x + " + fmt(mm[4]) + " * " + ind +
-             "Off.y + " + fmt(mm[5]) + ");\n";
-      src += pfx + "// escala ind (campo BP " +
-             std::to_string(st.ind_mtx_scale[s.ind_mtx]) +
-             ") sin aplicar: multiplicador sin determinar\n";
+      src += pfx + "vec2 " + ind + "Pert = vec2(" + fmt(sm[0]) +
+             " * " + ind + "Off.x + " + fmt(sm[1]) + " * " + ind +
+             "Off.y + " + fmt(sm[2]) + ", " + fmt(sm[3]) + " * " +
+             ind + "Off.x + " + fmt(sm[4]) + " * " + ind +
+             "Off.y + " + fmt(sm[5]) + ");\n";
+      src += pfx + "// escala ind: scale_exp=" +
+             std::to_string(ind_exp) + " factor=" + fmt(ind_factor) +
+             " plegado en la matriz\n";
       uv_expr = "(" + tev_detail::UvExpr(s.texcoord) + " + " + ind +
                 "Pert)";
     }

@@ -202,10 +202,10 @@ struct TevStage {
   // ITF_8, alfa OFF, wrap OFF, add 0, matriz ind presente en
   // BP 0x06-0x0E y escalas de coord ITS_1); fuera del gate la
   // etapa sigue en no-op contado (indirect_noop) y se suma a
-  // indirect_gated_out. El multiplicador del campo de escala
-  // de 2 bits de la matriz ind NO se aplica (sin determinar
-  // desde este DOL: el SDK mapea scale_exp s8 a 2 bits con
-  // (scale_exp+17)&3; ver informe Tramo 6).
+  // indirect_gated_out. Tramo 7B: el multiplicador de escala
+  // SI se aplica, plegado en la matriz (2^scale_exp; campo
+  // de 6 bits repartido en las 3 palabras BP, ver
+  // DecodeIndTexMtxWords en gx_tev.h).
   int ind_texmap = -1, ind_texcoord = -1;
 };
 struct TevState {
@@ -220,16 +220,19 @@ struct TevState {
   // Tablas swap por defecto = valores GXInit (ver cabecera).
   // Tramo 6: matrices indirectas decodificadas de BP
   // 0x06-0x0E (GXSetIndTexMtx 0x8025BBF4: 3 palabras por
-  // matriz, 2 valores S11/1024 por palabra, campo de escala
-  // de 2 bits en [23:22] de cada palabra; los 3 campos de
-  // una matriz deben coincidir o la matriz se marca
-  // ausente) y escalas de coord indirecta de BP 0x25/0x26
+  // matriz, 2 valores S11/1024 por palabra; CORRECCION
+  // Tramo 7B: los campos [23:22] de las 3 palabras son
+  // los trozos bits 1..0 / 3..2 / 5..4 de (scale_exp+17);
+  // juntos forman scale_exp = S-17, guardado en
+  // ind_mtx_scale; la exigencia Tramo 6 de campos
+  // iguales rechazaba TODA matriz real del juego) y
+  // escalas de coord indirecta de BP 0x25/0x26
   // (GXSetIndTexCoordScale 0x8025BD54: 4 bits por componente;
   // etapa 0/1 en 0x25, 2/3 en 0x26). Layout por matriz k:
   // [m00 m01 m02 m10 m11 m12] (fila 0 = m00,m01,m02).
   float ind_mtx_vals[3][6] = {};
   bool ind_mtx_present[3] = {false, false, false};
-  int ind_mtx_scale[3] = {0, 0, 0};  // campo crudo [23:22]
+  int ind_mtx_scale[3] = {0, 0, 0};  // scale_exp (Tramo 7B)
   int ind_scale_s[4] = {0, 0, 0, 0};
   int ind_scale_t[4] = {0, 0, 0, 0};
   bool ind_scale_present[4] = {false, false, false, false};
@@ -368,10 +371,16 @@ struct GxDraw {
   // texgen (arg mtx de GXSetTexCoordGen2) va al shadow GX
   // +128/+132, NO a palabras XF: el parser no lo ve; la
   // matriz aplicada en traduccion es la TnMIDX del vertice
-  // (60 = identidad), ver gx_translate.h. Texgen-POS
-  // (src 0) con postmtx identidad y normalize 0 se aplica
-  // en el traductor (GlTri); resto de fuentes/tipos quedan
-  // como antes (UV directa).
+  // (60 = identidad), ver gx_translate.h. Tramo 7B: en el
+  // traductor (GlTri) se aplican POS (src 0), NRM (src 1)
+  // y TEX0-7 (src 5-12), forma 2x4/3x4, normalize 0, mas
+  // la matriz post (postmtx != 125) si esta capturada en
+  // post_matrices; normalize != 0, BINRM/TANGENT/COLOR y
+  // post sin matriz capturada conservan UV directa.
+  // Matrices post (dual texture, GXLoadTexMtxImm):
+  // id -> 12 floats 3x4 de XF base 1280 + (id-64)*4,
+  // capturadas en el momento del draw (igual que
+  // tex_matrices). Ausencia = sin post (no se inventa).
   uint32_t texgen_w1[8] = {0, 0, 0, 0, 0, 0, 0, 0};
   uint32_t texgen_w2[8] = {0, 0, 0, 0, 0, 0, 0, 0};
   bool has_texgen[8] = {false, false, false, false,
@@ -387,6 +396,8 @@ struct GxDraw {
   // fila 3 a cero: sin division proyectiva, ver
   // gx_translate.h).
   std::map<int, std::vector<float>> tex_matrices;
+  // Tramo 7B: matrices post por id (ver comentario arriba).
+  std::map<int, std::vector<float>> post_matrices;
 };
 
 // Carga de textura externa (la que registra el HLE GXLoadTexObj).
@@ -408,6 +419,85 @@ struct GxTexLoad {
   uint32_t tex_obj = 0;
   int map = 0;
 };
+
+// Decodificador de copia EFB (Tramo 7B, puro: sin EFB,
+// sin escritura en RAM; la copia de pixeles en si sigue
+// pendiente, ver EFB_DISENO.md). Grado de evidencia por
+// campo (no mezclar lo probado con lo supuesto):
+//  - execute: PROBADO. GXCopyDisp 0x80259CA8 hace
+//    ori 0x4000 sobre la sombra 0x1ec antes de escribir
+//    BP 0x52: bit 14 = ejecutar la copia. Los eventos
+//    GxCopy con bit 14 a 0 son escrituras de control
+//    sin disparo (en run39: 166/195).
+//  - dest_guest: PROBADO (reconstruccion). GXCopyDisp
+//    escribe 0x4B = (dest>>5)&0xFFFFFF (rlwinm+oris);
+//    para RAM MEM1 (0x80000000-0x81800000) el bit
+//    perdido es el bit 31: dest = 0x80000000|(reg<<5).
+//    Verificado: 0x020000->0x80400000, 0x0252A8->
+//    0x804A5500 (doble buffer XFB alternante en run19),
+//    0x0Bxxxx->0x816xxxxx (dentro de ram.bin 24 MB).
+//  - width/height: PROBADO por 3 valores independientes.
+//    0x4A = ((h-1)<<10)|(w-1): 0x077E7F = 640x480,
+//    0x007C1F = 32x32, 0x00EC4F = 80x60.
+//  - stride_bytes: CONVENCION GX (reg x 32). Coherente:
+//    0x28 -> 1280 B (XFB 640 RGB565/YUY2), 0x10 -> 512 B,
+//    0x14 -> 640 B, 0x50 -> 2560 B (pitch del buffer
+//    destino, no width*bpp: el destino puede ser mas
+//    ancho que la copia).
+//  - src_x/src_y: PROVISIONAL (convencion GX, 10 bits
+//    cada uno, mismo estilo que 0x4A). En TODAS las
+//    trazas reg49 = 0 (origen (0,0)): sin contraejemplo
+//    ni confirmacion independiente.
+//  - tex_dest_hint: HIPOTESIS por correlacion perfecta
+//    en trazas (195 run39 + 24922 run19): bit 16 a 1
+//    <=> destinos 0x0Bxxxx (texturas); a 0 <=> XFB
+//    (0x020000/0x0252A8). NO probado por desensamblado
+//    (GXCopyTex 0x80259E18 no alcanza su escritura
+//    0x52 en los 0x100 B desensamblados).
+//  - low52 (bits 0..13 salvo exec): SIN DECODIFICAR
+//    (formato/filtro/clear; pendiente GXSetCopyFilter).
+struct EfbCopyDecoded {
+  bool execute = false;
+  bool has_dest = false;
+  uint32_t dest_guest = 0;
+  bool has_size = false;
+  int width = 0, height = 0;
+  bool has_stride = false;
+  int stride_bytes = 0;
+  bool has_src = false;
+  int src_x = 0, src_y = 0;
+  bool tex_dest_hint = false;
+  uint32_t low52 = 0;
+};
+
+inline EfbCopyDecoded DecodeEfbCopy(const GxCopy& c) {
+  EfbCopyDecoded d;
+  d.execute = (c.reg52 & 0x4000u) != 0;
+  d.tex_dest_hint = (c.reg52 & 0x10000u) != 0;
+  d.low52 = c.reg52 & 0x3FFFu;
+  if (c.has4b) {
+    d.has_dest = true;
+    // reg4b es de 24 bits; <<5 cabe en 29 bits y la base
+    // MEM1 restaura el bit 31 perdido (ver arriba).
+    d.dest_guest =
+        0x80000000u + ((c.reg4b & 0xFFFFFFu) << 5);
+  }
+  if (c.has4a) {
+    d.has_size = true;
+    d.width = static_cast<int>(c.reg4a & 0x3FFu) + 1;
+    d.height = static_cast<int>((c.reg4a >> 10) & 0x3FFu) + 1;
+  }
+  if (c.has4d) {
+    d.has_stride = true;
+    d.stride_bytes = static_cast<int>(c.reg4d & 0xFFFFFFu) * 32;
+  }
+  if (c.has49) {
+    d.has_src = true;
+    d.src_x = static_cast<int>(c.reg49 & 0x3FFu);
+    d.src_y = static_cast<int>((c.reg49 >> 10) & 0x3FFu);
+  }
+  return d;
+}
 
 struct GxStats {
   uint64_t total_bytes = 0;

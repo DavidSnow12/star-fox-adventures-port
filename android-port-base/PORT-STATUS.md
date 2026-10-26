@@ -5390,3 +5390,112 @@ rama (pack de test = base SAF + overlay Tier 1, 365,24
 MiB totales; overlay transferido 133,20 MiB; libre
 recomendado ≥1,5 GB; extraer `boot.log` antes de
 relanzar, porque cada arranque lo trunca).
+## Tramo 7 (2026-10-26, este tramo): Tick en harness, música forzada real, TEV/EFB resto, etiqueta en la píldora, Pack C y pipeline
+
+**La app sigue sin ser jugable.** Este tramo integra trabajo verificado
+en host, no juego en dispositivo. `main` intacto en `18ac28e`.
+
+### 7A — Harness Tick + música en juego
+- Hallazgo: el runtime de la APK **ya** hace `Tick()+Pump()` por frame
+  tras cada rebanada de 100k despachos; el bug era solo de los harness
+  host. No se cambió `audio_bridge.*` ni `runtime.cpp` por esto.
+- Test bridge puro: 30 checks, 0 fallos. Sin Tick: 11 SFX → 8
+  reproducidos, 3 descartados (Tramo 6). Con Tick: **11/11, 0
+  descartados**. En juego: G1 11/11, G2 24/24, G4 4/4, 0 descartados.
+  Regresiones intactas: trigger 13→841 (51.012 f), stream 1301 por
+  ADP (1.892.352 f), canción 99 sintética (6 notas).
+- Música por vía del juego: 0 `sndSeqPlayEx` reales en G1/G2/título/G4.
+  El juego SÍ dispara música: canales track 22 (trigger 190
+  `cldrnr_tune1_be`) y track 95 (trigger 193 `windydocks`) en
+  `status=4` (espera ARQ); el HLE no entrega el callback ARQ de
+  lectura, así que `Music_ChannelLoadedCallback` nunca corre. Ventana:
+  ningún canal a 8M, ambos ya a 17M.
+- Experimento forzado G3 (etiquetado, código huésped real):
+  `Music_Trigger(235,1)` + entrega manual de
+  `AudioAramReadCompleteCallback` → `sndSeqPlayEx` real con params
+  reales de RAM: sgid=54, track=99, flags=6, speed=256. `sgid=54`
+  confirma sgid↔gid para la 99. Bridge entrega la 99 completa:
+  6 notas, 1.153.548 frames, idéntica a la sintética de Tramo 6.
+- Bucles medidos (no implementados): 99 buclea (notas 2..5),
+  74 buclea (notas 3..14), 5 no buclea (281 notas). Prioridad:
+  primer pase de 22 (gid 0) y 95 (gid 49).
+- Pendiente crítico siguiente: HLE ARQ de lectura (diseño en
+  trabajo local, sin aplicar), bucles 99/74, `sndSeqVolume`/fades.
+  No se afirma música por vía del juego ni sgid↔gid en general.
+
+### 7B — Resto TEV/EFB
+- Escala ind resuelta con corrección a Tramo 6: los 3 campos [23:22]
+  son trozos de un valor de 6 bits (scale_exp+17); Tramo 6 rechazaba
+  toda matriz real. Multiplicador **2^scale_exp** plegado en GLSL
+  (caústica: diagonal 0.5, exp −3 → 0.0625). S11=int11/1024.
+- vFogZ + fog EXP/EXP2 implementados; near/far recuperados de la
+  proyección XF del draw (run19 602/602, run39 orto/persp, 0 fallos;
+  draw EXP de run39: error relativo 3.8e-08). FSEL: solo 2=LIN;
+  4/5 EXP/EXP2; degenerado = far==near o end==start.
+- Texgen: casos reales run39 (NRM, TEX0+post64+norm1, TEX1+post70);
+  matrices post SÍ llegan por FIFO y el parser las captura
+  (`draw.post_matrices`: run39 4925 draws con post, 4096 post64
+  exacto). Traductor: NRM, TEX y post 2D (q=1); POS+post≠125 ya no
+  desactiva el texgen.
+- Indirecto fuera del gate: frecuencia NO medible con fundamento
+  (el censo Tramo 6 de "0 indirectas" era artefacto del parser;
+  con decoder corregido run39 4925/5148 draws con matriz ind, todos
+  scale_exp=−1; run19 0/602). Gate sin ampliar.
+- EFB: `DecodeEfbCopy` puro (bit exec 14, destino
+  `0x80000000+(reg4b<<5)`, tamaños probados 640×480/32×32/80×60,
+  stride reg4d×32; reg49 provisional, bit 16 hipótesis). Copia de
+  píxeles NO implementada (sin buffer EFB); captura FIFO de mundo
+  NO existe (diseño, sin frame simulado).
+- Tests: nuevo 53 checks, 0 fallos; Tramo 6 corregido 76 checks,
+  0 fallos; Tramo 6 original contra código Tramo 7: 66 ok, 5 fallos
+  = correcciones deliberadas; Tramo 5: 80 checks ok; run19: 602
+  draws, 602 GLSL, 0 fallos.
+- Pendiente: ancla absoluta 2^exp (no DOL-probada), curva EXP/EXP2
+  (reconstrucción; discriminar en dispositivo), normalize≠0, 3x4+post,
+  copia EFB de píxeles, captura de mundo, prueba gx_gl en dispositivo.
+
+### 7C — Etiqueta en la píldora (bitmap GL)
+- Vía elegida: bitmap en GL (fuente 5×7, textura opaca, mismo camino
+  `DrawTexturedQuad`). Vía Java/TextView rechazada con motivos
+  medidos (z-order, foco que pausaría el bucle nativo, geometría
+  fuera de `TouchLayout`, tamaño en sp que podría desbordar 307 px).
+- Test host: 44 checks, 0 fallos. Etiquetas `AÑADIR AUDIO` /
+  `VERIFICANDO` / `AUDIO LISTO` / `ERROR AUDIO`; Tab S8 284×28
+  (escala 4), 1080p 213×21; contraste WCAG ≥4,5:1; táctil no robado;
+  NDK 0 warnings. Guías Tier 1/caché y rumble actualizadas en la rama
+  (puntos A0/A5 nuevos).
+- No afirma píxeles reales en pantalla ni prueba en Tab S8; rumble
+  positivo sigue sin evento `PADControlMotor` en ningún run.
+
+### 7D — Pack C y pipeline APK
+- Pack C-título medido (único hito medido): **117 ficheros,
+  71.705.100 B, 0 en `streams/`** (con `sys/`: 122 ficheros,
+  75.336.296 B; ZIP 67.324.078 B). **NO instalable**
+  (`verifyAndMark` exige ≥2.916 ficheros) y **NO es lista mínima**;
+  sin Pack C-menú ni Pack C-primer-mundo. Pack instalable
+  recomendado sigue siendo base SAF + Tier 1: **382.982.980 B /
+  3.968 ficheros**.
+- Pipeline Tramo 7 (`android-port-base/build-tramo7-apk.sh`):
+  JDK bloqueador superado (OpenJDK 21.0.12.1 / Temurin 21.0.13),
+  guarda de símbolos corregida, guardas de versión rechazadas
+  (`jugable`/`PLAYABLE`/sin `-test` → exit 1). Build de validación
+  (NO GX21, NO al repo): 12.702.374 B, SHA-256
+  `4deeb7b4b7dabe5f0030a8d10d87975cdd513245d980c4032ace339429fb1971`,
+  apksigner v2+v3, zipalign OK, solo `VIBRATE`.
+- Enlace no byte-reproducible (lib −336 B por orden variable de
+  `xargs -P2`; no es diferencia de código: exigir conjuntos de
+  símbolos, no igualdad de SHA entre builds).
+- Instalación Tab S8: SAF + carpeta privada, sin
+  `MANAGE_EXTERNAL_STORAGE` ni `READ_MEDIA_*`; «añadir audio» SÍ
+  tiene disparador en c274c96 (corrección al Tramo 6); libre ≥1,5 GB
+  para Tier 1; `boot.log` se sobrescribe en cada arranque.
+
+### Integración Tramo 7 en esta rama
+- Parches 7B (7 ficheros: `gx.h`, `gx.cpp`, `gx_tev.h`,
+  `gx_translate.h/.cpp`, `gx_gl.h/.cpp`) y 7C (nuevo
+  `input/audio_label.h`; `gx_gl.h/.cpp`, `renderer.cpp`) aplicados
+  sin conflicto (7C pasa `git apply --check` sobre 7B).
+- 7A y 7D aportan diseño/medición, no código de juego aplicado:
+  HLE ARQ, bucles y params RAM quedan como siguiente paso, no
+  como código sin probar en la rama.
+- NDK integrado Tramo 7: libstarfox.so 27.875.720 B, SHA-256 8135a18425ed688f3b3dfa983dd0ac1ea6f8704c2cef6c7180aa19db8a47a5d9, ELF64 AArch64, android_main en T, 0 mem_/ppc_/func_/dolrecomp_ sin resolver, 214 undefined solo sistema. APK GX21: pendiente segundo commit tras este código (el pipeline exige árbol limpio).

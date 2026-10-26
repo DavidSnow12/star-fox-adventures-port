@@ -101,6 +101,14 @@ class GxGlRenderer {
                      uint8_t r, uint8_t g, uint8_t b);
   // Un quad a pantalla completa con una textura RGBA dada.
   void DrawTexturedQuad(const uint8_t* rgba, int width, int height);
+  // Tramo 7: quad texturado en un rectangulo NDC dado (x0,y_top,
+  // x1,y_bot, y hacia arriba, igual que DrawSolidQuad). Lo usa
+  // la etiqueta de la pildora: la textura se sube, se dibuja y
+  // se borra en la misma llamada (precedente: DrawTexturedQuad),
+  // sin textura persistente ni shader nuevo. No-op si el
+  // programa no esta listo o los argumentos no son validos.
+  void DrawTexturedQuadRect(const uint8_t* rgba, int width, int height,
+                            float x0, float y_top, float x1, float y_bot);
   // Dibuja los draws GX traducibles de la lista. Devuelve el
   // numero de draws dibujados (QUADS, TRIANGLES, TRIANGLESTRIP
   // y TRIANGLEFAN via GxDrawToGlTris; LINES/POINTS, draws
@@ -125,6 +133,18 @@ class GxGlRenderer {
   const std::string& LastError() const { return last_error_; }
 
  private:
+  // Uniforms de fog por draw (Tramo 7B): el fragment TEV
+  // lleva SIEMPRE el bloque de fog (con vFogZ y uniforms),
+  // asi el fog NO forma parte de la clave de cache del
+  // programa (igual que las refs alpha): mode 0 = sin fog.
+  // mode: 2 = LIN, 4 = EXP, 5 = EXP2 (FSEL HW); start/end
+  // recuperados con ProjectionNearFar del draw; color en
+  // [0,1] desde BP 0xF2.
+  struct FogUniforms {
+    int mode = 0;
+    float start = 0.0f, end = 1.0f;
+    float cr = 0.0f, cg = 0.0f, cb = 0.0f;
+  };
   // Programa TEV compilado en GL (por hash de TevState +
   // modo alpha-test).
   struct TevGlProgram {
@@ -136,20 +156,30 @@ class GxGlRenderer {
     GLint loc_uv67 = -1;
     GLint loc_color0 = -1;
     GLint loc_color1 = -1;
+    GLint loc_fogz = -1;
     GLint loc_tex[8] = {-1, -1, -1, -1, -1, -1, -1, -1};
     GLint loc_regc[3] = {-1, -1, -1};
     GLint loc_rega[3] = {-1, -1, -1};
     GLint loc_konst[4] = {-1, -1, -1, -1};
     GLint loc_alpha_ref0 = -1;
     GLint loc_alpha_ref1 = -1;
+    GLint loc_fog_mode = -1;
+    GLint loc_fog_start = -1;
+    GLint loc_fog_end = -1;
+    GLint loc_fog_color = -1;
   };
   const TevGlProgram* GetOrCompileTevProgram(const TevGenResult& gen);
+  // Uniforms de fog de un draw (Tramo 7B, ver gx_gl.cpp).
+  static FogUniforms FogUniformsForDraw(const GxFixedState& fixed,
+                                        const GxDraw& d);
   // Dibuja un triangulo TEV: tex_by_map[m] = textura GL del
   // mapa m (DrawDraws pone magenta si el mapa no tiene carga
-  // o no se resolvio). fixed aporta las refs alpha.
+  // o no se resolvio). fixed aporta las refs alpha; fog
+  // aporta los uniforms de fog del draw (mode 0 = sin fog).
   void DrawTriVerticesTev(const GlTri& tri, const GLuint tex_by_map[8],
                           const TevGlProgram& tp, const TevState& tev,
-                          const GxFixedState& fixed);
+                          const GxFixedState& fixed,
+                          const FogUniforms& fog);
   // Aplica el estado fijo GL del draw (palabras presentes;
   // ausentes no tocan el estado). Ver gx_gl.cpp.
   void ApplyFixedState(const GxFixedState& f);

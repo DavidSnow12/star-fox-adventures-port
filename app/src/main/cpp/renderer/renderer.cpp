@@ -2,6 +2,7 @@
 
 #include <GLES3/gl3.h>
 
+#include "input/audio_label.h"
 #include "log.h"
 
 namespace sfa {
@@ -107,6 +108,30 @@ void Renderer::DrawAudioButton(AudioState state) {
   ++audio_frame_;
   const AudioButtonColor c = AudioButtonColorFor(state, blink_on);
   gx_gl_.DrawSolidQuad(x0, y_top, x1, y_bot, c.r, c.g, c.b);
+  // Tramo 7: etiqueta bitmap DENTRO de la pildora, despues del
+  // interior y antes del swap (mismo orden que el resto de la
+  // pildora). Solo pintura: no crea zona tactil nueva ni cambia
+  // la interceptacion de Input. Sin pantalla valida, o si la
+  // pildora es demasiado pequena para escala 1, se omite la
+  // etiqueta y la pildora queda como en el Tramo 6 (color solo).
+  // La textura es opaca (fondo = color de la pildora), asi que
+  // no necesita blending (el shader no lo activa).
+  const int pill_w_px = AudioLabelPillPx(x1 - x0, width_);
+  const int pill_h_px = AudioLabelPillPx(y_top - y_bot, height_);
+  AudioLabelLayout label_layout;
+  std::vector<uint8_t> label_rgba =
+      RasterizeAudioLabel(state, blink_on, pill_w_px, pill_h_px,
+                          &label_layout);
+  if (!label_rgba.empty() && label_layout.ok) {
+    const AudioLabelQuad q =
+        AudioLabelQuadFor(width_, height_, x0, x1, y_top, y_bot,
+                          label_layout.tex_w, label_layout.tex_h);
+    if (q.ok) {
+      gx_gl_.DrawTexturedQuadRect(label_rgba.data(), label_layout.tex_w,
+                                  label_layout.tex_h, q.x0, q.y_top, q.x1,
+                                  q.y_bot);
+    }
+  }
 }
 
 int Renderer::DrawGxFrame(const std::vector<GxDraw>& draws,

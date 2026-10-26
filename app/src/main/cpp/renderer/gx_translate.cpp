@@ -1,5 +1,7 @@
 #include "renderer/gx_translate.h"
 
+#include <cmath>
+
 #include "gamecube_runtime/gx_texture.h"
 #include "renderer/gx_tev.h"
 
@@ -130,12 +132,25 @@ namespace {
 // identidad); sin matriz o sin UV en el vertice: UV cruda
 // (0,0 si el vertice no trae esa coord).
 // Tramo 6 (texgen-POS): si el draw trae texgen XF para esta
-// coord y es aplicable (fuente POS, forma 2x4/3x4, postmtx
-// identidad, sin normalizar), la UV NO sale del atributo
-// TEX del vertice sino de la posicion post-PNMTX (mx,my,mz)
+// coord y es aplicable (fuente POS, forma 2x4/3x4, sin
+// normalizar), la UV NO sale del atributo TEX del
+// vertice sino de la posicion post-PNMTX (mx,my,mz)
 // transformada por la matriz TnMIDX del vertice (60 o
-// matriz ausente = identidad). El resto de fuentes/tipos
-// (incluido TEX0 de la UI) conserva el camino anterior.
+// matriz ausente = identidad).
+// Tramo 7B: se anaden NRM (fuente 1: normal transformada
+// por la 3x3 de PNMTX, nnx/nny/nnz; exacta si PNMTX es
+// rigida, ver gx_tev.h) y TEX0-7 (fuente 5-12: atributo
+// UV de la coord fuente, o (0,0) si el vertice no la
+// trae; matriz TnMIDX de ESTA coord). Tras la matriz
+// principal, si el texgen tiene postmtx != 125 y la
+// matriz post esta capturada en draw.post_matrices, se
+// aplica en 2D con q=1 (s',t') = (P0*s+P1*t+P2+P3,
+// P4*s+P5*t+P6+P7): exacto para forma 2x4 (todos los
+// casos de trazas); para forma 3x4 la division por q'
+// tras el post no se modela (sin caso en trazas).
+// normalize != 0,
+// BINRM/TANGENT/COLOR y post sin matriz capturada
+// conservan el camino anterior (UV directa).
 // El id de matriz del texgen no esta en XF (shadow GX), asi
 // que la TnMIDX es la unica matriz visible en el stream;
 // si el vertice no trae TnMIDX, la identidad es exacta
@@ -143,11 +158,18 @@ namespace {
 // para la caustica (mtx 30/33/36) cuando el vertice no la
 // trae (ver informe Tramo 6).
 void FinalUv(const GxDraw& draw, const GxVertex& v, int map, float mx,
-             float my, float mz, float* s_out, float* t_out) {
+             float my, float mz, float nnx, float nny, float nnz,
+             float* s_out, float* t_out) {
   if (map >= 0 && map < 8 && draw.has_texgen[map]) {
     TexGen tg = DecodeTexGenWord1(draw.texgen_w1[map]);
     DecodeTexGenWord2(draw.texgen_w2[map], &tg);
-    if (TexGenPosApplicable(tg)) {
+    bool form_ok = (tg.type_form == 0 || tg.type_form == 2);
+    bool pos_like = tg.present && tg.src == 0 && form_ok &&
+                    tg.normalize == 0;
+    bool nrm_like = tg.present && tg.src == 1 && form_ok &&
+                    tg.normalize == 0;
+    bool tex_like = TexGenTexApplicable(tg);
+    if (pos_like || nrm_like || tex_like) {
       // Identidad segun forma: 2x4 no divide (fila 3 a
       // cero); 3x4 identidad divide por z (regla general).
       float ident[12] = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0};
@@ -160,7 +182,31 @@ void FinalUv(const GxDraw& draw, const GxVertex& v, int map, float mx,
           m = it->second.data();
       }
       float s = 0.0f, t = 0.0f;
-      ApplyTexMatrixPos(m, mx, my, mz, &s, &t);
+      if (pos_like) {
+        ApplyTexMatrixPos(m, mx, my, mz, &s, &t);
+      } else if (nrm_like) {
+        ApplyTexMatrixPos(m, nnx, nny, nnz, &s, &t);
+      } else {
+        int src_coord = tg.src - 5;
+        float u = v.has_uv[src_coord] ? v.uv_s[src_coord] : 0.0f;
+        float vv = v.has_uv[src_coord] ? v.uv_t[src_coord] : 0.0f;
+        ApplyTexMatrix(m, u, vv, &s, &t);
+      }
+      // Matriz post (dual texture) si esta capturada:
+      // entrada (s, t, q=1) para forma 2x4 (q implicito
+      // homogeneo); para forma 3x4 la division por q'
+      // tras el post no se modela (sin caso en trazas).
+      if (TexGenPostApplicable(tg)) {
+        auto pit = draw.post_matrices.find(tg.postmtx);
+        if (pit != draw.post_matrices.end() &&
+            pit->second.size() == 12) {
+          const float* p = pit->second.data();
+          float sp = p[0] * s + p[1] * t + p[2] + p[3];
+          float tp = p[4] * s + p[5] * t + p[6] + p[7];
+          s = sp;
+          t = tp;
+        }
+      }
       *s_out = s;
       *t_out = t;
       return;
@@ -211,9 +257,30 @@ bool GxDrawToGlTris(const GxDraw& draw, int canvas_w, int canvas_h,
   std::vector<float> pmx(draw.verts.size());
   std::vector<float> pmy(draw.verts.size());
   std::vector<float> pmz(draw.verts.size());
+  // Tramo 7B: normal post-PNMTX (3x3, sin traslacion) y Z
+  // de fog por vertice (perspectiva: sqrt(mx^2+mz^2);
+  // orto: max(-mz, 0); ver gx_translate.h).
+  std::vector<float> nmx(draw.verts.size(), 0.0f);
+  std::vector<float> nmy(draw.verts.size(), 0.0f);
+  std::vector<float> nmz(draw.verts.size(), 0.0f);
+  std::vector<float> fogz(draw.verts.size(), 0.0f);
   for (size_t i = 0; i < draw.verts.size(); ++i) {
     TransformVertex(draw, draw.verts[i], canvas_w, canvas_h, &nx[i],
                     &ny[i], &pmx[i], &pmy[i], &pmz[i]);
+    const GxVertex& v = draw.verts[i];
+    if (v.has_normal) {
+      nmx[i] = draw.pos_matrix[0] * v.nx + draw.pos_matrix[1] * v.ny +
+               draw.pos_matrix[2] * v.nz;
+      nmy[i] = draw.pos_matrix[4] * v.nx + draw.pos_matrix[5] * v.ny +
+               draw.pos_matrix[6] * v.nz;
+      nmz[i] = draw.pos_matrix[8] * v.nx + draw.pos_matrix[9] * v.ny +
+               draw.pos_matrix[10] * v.nz;
+    }
+    if (draw.projection_type == 1) {
+      fogz[i] = pmz[i] < 0.0f ? -pmz[i] : 0.0f;
+    } else {
+      fogz[i] = std::sqrt(pmx[i] * pmx[i] + pmz[i] * pmz[i]);
+    }
   }
   auto push_tri = [&](size_t a, size_t b, size_t c) {
     GlTri tri;
@@ -222,6 +289,7 @@ bool GxDrawToGlTris(const GxDraw& draw, int canvas_w, int canvas_h,
       const GxVertex& v = draw.verts[idx[k]];
       tri.x[k] = nx[idx[k]];
       tri.y[k] = ny[idx[k]];
+      tri.fog_z[k] = fogz[idx[k]];
       tri.s[k] = v.s;
       tri.t[k] = v.t;
       // Color vertice (sin color: blanco opaco, como el parser).
@@ -235,6 +303,7 @@ bool GxDrawToGlTris(const GxDraw& draw, int canvas_w, int canvas_h,
       tri.ca1[k] = v.has_color1 ? v.a1 / 255.0f : 1.0f;
       for (int m = 0; m < 8; ++m) {
         FinalUv(draw, v, m, pmx[idx[k]], pmy[idx[k]], pmz[idx[k]],
+                nmx[idx[k]], nmy[idx[k]], nmz[idx[k]],
                 &tri.uv_s[k][m], &tri.uv_t[k][m]);
       }
     }

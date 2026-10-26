@@ -1,6 +1,10 @@
 #include "renderer/gx_gl.h"
 
+#include <map>
+#include <string>
+
 #include "log.h"
+#include "renderer/gx_tev.h"
 
 namespace sfa {
 
@@ -29,12 +33,16 @@ const char* kFragmentShader =
     "  }\n"
     "}\n";
 
-// Vertex shader del camino TEV (Tramo 5): 26 floats por
-// vertice (pos 2 + 4 UV empaquetadas + color0 4 + color1 4).
-// Las 8 UV y los 2 colores se entregan SIEMPRE (el fragment
-// generado declara los 6 varyings siempre; un varying de FS
-// no escrito en VS no enlaza). El fragment usa
-// vUv<texcoord> con el sampler uTex<texmap>.
+// Vertex shader del camino TEV (Tramo 5, ampliado Tramo 7B):
+// 27 floats por vertice (pos 2 + 4 UV empaquetadas +
+// color0 4 + color1 4 + fogZ 1). Las 8 UV y los 2 colores
+// se entregan SIEMPRE (el fragment generado declara los 6
+// varyings siempre; un varying de FS no escrito en VS no
+// enlaza). El fragment usa vUv<texcoord> con el sampler
+// uTex<texmap>. vFogZ (Tramo 7B) alimenta el bloque de
+// fog del fragment; sin fog el uniform uFogMode = 0 lo
+// ignora (el atributo se entrega siempre para que el
+// formato de vertice sea unico).
 const char* kTevVertexShader =
     "attribute vec2 aPos;\n"
     "attribute vec4 aUv01;\n"
@@ -43,12 +51,14 @@ const char* kTevVertexShader =
     "attribute vec4 aUv67;\n"
     "attribute vec4 aColor0;\n"
     "attribute vec4 aColor1;\n"
+    "attribute float aFogZ;\n"
     "varying vec4 vUv01;\n"
     "varying vec4 vUv23;\n"
     "varying vec4 vUv45;\n"
     "varying vec4 vUv67;\n"
     "varying vec4 vColor;\n"
     "varying vec4 vColor1;\n"
+    "varying float vFogZ;\n"
     "void main() {\n"
     "  vUv01 = aUv01;\n"
     "  vUv23 = aUv23;\n"
@@ -56,8 +66,52 @@ const char* kTevVertexShader =
     "  vUv67 = aUv67;\n"
     "  vColor = aColor0;\n"
     "  vColor1 = aColor1;\n"
+    "  vFogZ = aFogZ;\n"
     "  gl_Position = vec4(aPos, 0.0, 1.0);\n"
     "}\n";
+
+// Bloque de fog del fragment TEV (Tramo 7B): se inserta
+// en el GLSL generado ANTES de la llave final (despues de
+// la asignacion a gl_FragColor) y las declaraciones se
+// insertan tras la linea precision. Matematica IDENTICA
+// a FogFactorGlsl (gx_tev.h): t = max((z-start)/(end-
+// start), 0); LIN keep = clamp(1-t); EXP keep = exp(-t);
+// EXP2 keep = exp(-t^2); mezcla hacia uFogColor con
+// keep (1 en start = color original, 0 en end = fog).
+// Con uFogMode = 0 el bloque no hace nada, por eso el
+// fog NO forma parte de la clave de cache del programa.
+const char* kTevFogDeclarations =
+    "varying float vFogZ;\n"
+    "uniform int uFogMode;\n"
+    "uniform float uFogStart;\n"
+    "uniform float uFogEnd;\n"
+    "uniform vec3 uFogColor;\n";
+const char* kTevFogBlock =
+    "  if (uFogMode != 0) {\n"
+    "    float fogT = max((vFogZ - uFogStart) / (uFogEnd - uFogStart), 0.0);\n"
+    "    float fogKeep = 1.0;\n"
+    "    if (uFogMode == 2) fogKeep = clamp(1.0 - fogT, 0.0, 1.0);\n"
+    "    else if (uFogMode == 4) fogKeep = exp(-fogT);\n"
+    "    else if (uFogMode == 5) fogKeep = exp(-fogT * fogT);\n"
+    "    gl_FragColor.rgb = mix(uFogColor, gl_FragColor.rgb, fogKeep);\n"
+    "  }\n";
+
+// Devuelve el fragment TEV con el bloque de fog insertado.
+// Si el formato no es el esperado (sin precision inicial
+// o sin llave final), devuelve el fragment intacto: el
+// fog queda desactivado (uFogMode = 0) en vez de romper
+// el programa.
+std::string AddFogToFragment(const std::string& frag) {
+  const std::string prec = "precision mediump float;\n";
+  size_t p = frag.find(prec);
+  if (p == std::string::npos) return frag;
+  std::string out = frag;
+  out.insert(p + prec.size(), kTevFogDeclarations);
+  size_t close = out.rfind("}\n");
+  if (close == std::string::npos) return frag;
+  out.insert(close, kTevFogBlock);
+  return out;
+}
 
 // Factor de blend BP (0-7) -> GL. Sin equivalente para
 // valores fuera de enum: se trata como ONE (no crash).
@@ -269,6 +323,28 @@ void GxGlRenderer::DrawTexturedQuad(const uint8_t* rgba, int width,
   ++quads_drawn_;
 }
 
+// Tramo 7: etiqueta de la pildora (ver input/audio_label.h).
+// Misma estructura que DrawTexturedQuad, pero en el rectangulo
+// NDC dado en vez de a pantalla completa: el llamador ya calculo
+// ese rectangulo desde los pixeles reales de la textura, asi que
+// aqui no se reescala nada (reescalar deformaria las letras).
+void GxGlRenderer::DrawTexturedQuadRect(const uint8_t* rgba, int width,
+                                        int height, float x0, float y_top,
+                                        float x1, float y_bot) {
+  if (program_ == 0 || rgba == nullptr || width <= 0 || height <= 0) {
+    return;
+  }
+  GLuint tex = UploadTexture(rgba, width, height);
+  GlQuad q;
+  q.x[0] = x0; q.y[0] = y_top; q.s[0] = 0; q.t[0] = 0;
+  q.x[1] = x1; q.y[1] = y_top; q.s[1] = 1; q.t[1] = 0;
+  q.x[2] = x1; q.y[2] = y_bot; q.s[2] = 1; q.t[2] = 1;
+  q.x[3] = x0; q.y[3] = y_bot; q.s[3] = 0; q.t[3] = 1;
+  DrawQuadVertices(q, tex, true, 0, 0, 0);
+  glDeleteTextures(1, &tex);
+  ++quads_drawn_;
+}
+
 void GxGlRenderer::DrawTriVertices(const GlTri& tri, GLuint tex,
                                    bool use_tex, uint8_t r, uint8_t g,
                                    uint8_t b) {
@@ -309,7 +385,11 @@ const GxGlRenderer::TevGlProgram* GxGlRenderer::GetOrCompileTevProgram(
   if (it != tev_programs_.end()) return &it->second;
   GLuint vs = CompileShader(GL_VERTEX_SHADER, kTevVertexShader);
   if (vs == 0) return nullptr;
-  GLuint fs = CompileShader(GL_FRAGMENT_SHADER, gen.fragment.c_str());
+  // Tramo 7B: fragment con bloque de fog (uniforms; el
+  // programa se cachea igual que antes, sin fog en clave).
+  std::string frag_with_fog = AddFogToFragment(gen.fragment);
+  GLuint fs =
+      CompileShader(GL_FRAGMENT_SHADER, frag_with_fog.c_str());
   if (fs == 0) {
     glDeleteShader(vs);
     if (!tev_compile_failed_logged_) {
@@ -347,6 +427,7 @@ const GxGlRenderer::TevGlProgram* GxGlRenderer::GetOrCompileTevProgram(
   tp.loc_uv67 = glGetAttribLocation(prog, "aUv67");
   tp.loc_color0 = glGetAttribLocation(prog, "aColor0");
   tp.loc_color1 = glGetAttribLocation(prog, "aColor1");
+  tp.loc_fogz = glGetAttribLocation(prog, "aFogZ");
   for (int m = 0; m < 8; ++m) {
     tp.loc_tex[m] = glGetUniformLocation(
         prog, ("uTex" + std::to_string(m)).c_str());
@@ -363,6 +444,10 @@ const GxGlRenderer::TevGlProgram* GxGlRenderer::GetOrCompileTevProgram(
   }
   tp.loc_alpha_ref0 = glGetUniformLocation(prog, "uAlphaRef0");
   tp.loc_alpha_ref1 = glGetUniformLocation(prog, "uAlphaRef1");
+  tp.loc_fog_mode = glGetUniformLocation(prog, "uFogMode");
+  tp.loc_fog_start = glGetUniformLocation(prog, "uFogStart");
+  tp.loc_fog_end = glGetUniformLocation(prog, "uFogEnd");
+  tp.loc_fog_color = glGetUniformLocation(prog, "uFogColor");
   ++tev_programs_compiled_;
   auto inserted = tev_programs_.emplace(key, tp);
   return &inserted.first->second;
@@ -372,12 +457,13 @@ void GxGlRenderer::DrawTriVerticesTev(const GlTri& tri,
                                       const GLuint tex_by_map[8],
                                       const TevGlProgram& tp,
                                       const TevState& tev,
-                                      const GxFixedState& fixed) {
-  // 26 floats por vertice: pos(2) + uv01/23/45/67 (16) +
-  // color0(4) + color1(4).
-  float verts[3 * 26];
+                                      const GxFixedState& fixed,
+                                      const FogUniforms& fog) {
+  // 27 floats por vertice: pos(2) + uv01/23/45/67 (16) +
+  // color0(4) + color1(4) + fogZ(1, Tramo 7B).
+  float verts[3 * 27];
   for (int k = 0; k < 3; ++k) {
-    float* v = verts + k * 26;
+    float* v = verts + k * 27;
     v[0] = tri.x[k];
     v[1] = tri.y[k];
     v[2] = tri.uv_s[k][0];
@@ -404,6 +490,7 @@ void GxGlRenderer::DrawTriVerticesTev(const GlTri& tri,
     v[23] = tri.cg1[k];
     v[24] = tri.cb1[k];
     v[25] = tri.ca1[k];
+    v[26] = tri.fog_z[k];
   }
   glUseProgram(tp.program);
   glBindBuffer(GL_ARRAY_BUFFER, vbo_);
@@ -412,7 +499,7 @@ void GxGlRenderer::DrawTriVerticesTev(const GlTri& tri,
     if (loc < 0) return;
     glEnableVertexAttribArray(loc);
     glVertexAttribPointer(loc, size, GL_FLOAT, GL_FALSE,
-                          26 * sizeof(float),
+                          27 * sizeof(float),
                           reinterpret_cast<const void*>(off));
   };
   set_attr(tp.loc_pos, 2, 0);
@@ -422,6 +509,7 @@ void GxGlRenderer::DrawTriVerticesTev(const GlTri& tri,
   set_attr(tp.loc_uv67, 4, 14 * sizeof(float));
   set_attr(tp.loc_color0, 4, 18 * sizeof(float));
   set_attr(tp.loc_color1, 4, 22 * sizeof(float));
+  set_attr(tp.loc_fogz, 1, 26 * sizeof(float));
   // Uniforms TEV: registros y konstantes del snapshot.
   // glUniform con loc -1 (uniform optimizado fuera) se
   // ignora en silencio: seguro.
@@ -439,6 +527,12 @@ void GxGlRenderer::DrawTriVerticesTev(const GlTri& tri,
     glUniform1f(tp.loc_alpha_ref0, fixed.alpha.ref0 / 255.0f);
     glUniform1f(tp.loc_alpha_ref1, fixed.alpha.ref1 / 255.0f);
   }
+  // Fog del draw (Tramo 7B): uniforms por draw; mode 0
+  // desactiva el bloque. glUniform con loc -1 se ignora.
+  glUniform1i(tp.loc_fog_mode, fog.mode);
+  glUniform1f(tp.loc_fog_start, fog.start);
+  glUniform1f(tp.loc_fog_end, fog.end);
+  glUniform3f(tp.loc_fog_color, fog.cr, fog.cg, fog.cb);
   // Samplers: unidad = mapa (DrawDraws pone magenta donde
   // no hay carga o no se resolvio, asi ninguna unidad queda
   // con una textura obsoleta de otro draw).
@@ -458,7 +552,41 @@ void GxGlRenderer::DrawTriVerticesTev(const GlTri& tri,
   unset_attr(tp.loc_uv67);
   unset_attr(tp.loc_color0);
   unset_attr(tp.loc_color1);
+  unset_attr(tp.loc_fogz);
   ++tris_drawn_;
+}
+
+// Uniforms de fog de un draw (Tramo 7B): mode 0 si no hay
+// fog aplicable (palabras incompletas, FSEL fuera de
+// {2,4,5}, near/far no recuperables de la proyeccion del
+// draw, o start/end no recuperables con la guarda 2% de
+// FogStartEnd). near/far salen de ProjectionNearFar:
+// validados en trazas (orto 1/199, 1/29; persp 2.5/10000).
+GxGlRenderer::FogUniforms GxGlRenderer::FogUniformsForDraw(
+    const GxFixedState& fixed, const GxDraw& d) {
+  GxGlRenderer::FogUniforms out;
+  std::map<uint32_t, uint32_t> bp;
+  for (int i = 0; i < 5; ++i) {
+    if (fixed.fog_present[i]) bp[0xEE + static_cast<uint32_t>(i)] =
+        fixed.fog_words[i];
+  }
+  GxFogParams p;
+  if (!DecodeFogWords(bp, &p)) return out;
+  if (p.type != 2 && p.type != 4 && p.type != 5) return out;
+  float near_z = 0.0f, far_z = 0.0f;
+  if (!d.has_projection ||
+      !ProjectionNearFar(d.projection, d.projection_type, &near_z,
+                         &far_z))
+    return out;
+  float start = 0.0f, end = 0.0f;
+  if (!FogStartEnd(p, near_z, far_z, &start, &end)) return out;
+  out.mode = p.type;
+  out.start = start;
+  out.end = end;
+  out.cr = p.r / 255.0f;
+  out.cg = p.g / 255.0f;
+  out.cb = p.bl / 255.0f;
+  return out;
 }
 
 void GxGlRenderer::ApplyFixedState(const GxFixedState& f) {
@@ -617,8 +745,11 @@ int GxGlRenderer::DrawDraws(const std::vector<GxDraw>& draws,
       const TevGlProgram* tp = nullptr;
       if (TevGlUsable(gen, d)) tp = GetOrCompileTevProgram(gen);
       if (tp != nullptr) {
+        // Tramo 7B: fog del draw (uniforms por draw; el
+        // programa cacheado no depende del fog).
+        FogUniforms fog = FogUniformsForDraw(d.fixed, d);
         for (const GlTri& tri : tris) {
-          DrawTriVerticesTev(tri, tex_by_map, *tp, d.tev, d.fixed);
+          DrawTriVerticesTev(tri, tex_by_map, *tp, d.tev, d.fixed, fog);
         }
         ++drawn;
         ++quads_drawn_;

@@ -541,6 +541,30 @@ bool GxParser::ParseDraw(const uint8_t* data, size_t len, size_t* pos_io,
       }
     }
   }
+  // Matrices post (Tramo 7B, dual texture): por coord con
+  // texgen y postmtx != 125, captura de XF base
+  // 1280 + (postmtx-64)*4 (misma region que las TnMIDX
+  // >= 64; verificada por FIFO en run39: escrituras
+  // 0x10 a 1280/1292/1304 con 12 floats). Solo si hay
+  // alguna palabra en XF: ausencia = sin post.
+  for (int c = 0; c < 8; ++c) {
+    if (!draw.has_texgen[c]) continue;
+    TexGen tg = DecodeTexGenWord1(draw.texgen_w1[c]);
+    DecodeTexGenWord2(draw.texgen_w2[c], &tg);
+    if (!TexGenPostApplicable(tg)) continue;
+    uint32_t base =
+        1280u + (static_cast<uint32_t>(tg.postmtx) - 64u) * 4u;
+    std::vector<float> mat(12, 0.0f);
+    bool any = false;
+    for (int k = 0; k < 12; ++k) {
+      auto it = xf_.find(base + static_cast<uint32_t>(k));
+      if (it != xf_.end() && !it->second.empty()) {
+        mat[static_cast<size_t>(k)] = BitsToFloat(it->second[0]);
+        any = true;
+      }
+    }
+    if (any) draw.post_matrices[tg.postmtx] = mat;
+  }
   // Si el vertice trae PNMTXIDX propio, la matriz del draw es la
   // del primer vertice (GX permite una por vertice; el renderer
   // actual usa una por draw y este caso no aparece en el stream).

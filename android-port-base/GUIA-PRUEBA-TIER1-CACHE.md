@@ -1,28 +1,50 @@
-# Guía de prueba en Tab S8 — Botón «añadir audio», Tier 1 y caché PCM (Tramo 6)
+# Guía de prueba en Tab S8 — Botón «añadir audio» CON ETIQUETA, Tier 1 y caché PCM (Tramo 7)
 
 **LEE ESTO PRIMERO — qué es prueba real y qué no.**
 Esta guía la ejecuta **el usuario en su Tab S8**; nada de lo que sigue
 se ha probado en hardware en este tramo (sin enlace ADB en la tarea
 y sin APK construida aquí: este tramo entrega código + tests host,
-no una APK). La APK que salga de aplicar este parche será, como
-GX19, una **APK de prueba NO jugable** hasta que el port lo sea:
-la parte A (botón + importación) sí se puede verificar entera con
-esa build; la parte B (sonido Tier 1 en juego + caché) solo se
-verificará cuando el juego llegue a ThornTail Hollow (TTH) o a un
-stream TTH. **No des por buena la parte B si solo pasó la parte A.**
-Si algo falla, reporta exactamente lo de la sección «Qué reportar».
+no una APK). Es la actualización Tramo 7 de la guía del Tramo 6:
+**lo único que cambia en pantalla es que la píldora ya lleva texto**
+(antes solo color). Todo lo demás — botón, importación, Tier 1,
+caché, rumble — es idéntico al Tramo 6, y las partes B/C siguen
+exigiendo juego jugable. La APK que salga de aplicar este parche
+será, como GX20, una **APK de prueba NO jugable** hasta que el port
+lo sea: la parte A (botón + etiqueta + importación) sí se puede
+verificar entera con esa build; la parte B (sonido Tier 1 en juego
++ caché) solo se verificará cuando el juego llegue a ThornTail
+Hollow (TTH) o a un stream TTH. **No des por buena la parte B si
+solo pasó la parte A.** Si algo falla, reporta exactamente lo de
+la sección «Qué reportar».
+
+**Qué cambió en el Tramo 7 (y qué NO cambió).**
+- CAMBIA: la píldora dibuja una etiqueta bitmap dentro de ella
+  (fuente 5x7 en GL, sin overlay Java, sin cambios de foco ni de
+  ciclo de vida). Textos por estado (ver §1).
+- NO CAMBIA: posición, tamaño, color por estado, táctil
+  (interceptación antes del juego, solo dedo que baja dentro,
+  soltar fuera cancela, multitáctil independiente), sondeo cada
+  128 vueltas, marcadores `.saf-audio-done/.saf-audio-error/
+  .saf-audio-cancelled`, líneas de boot.log (sin prefijo nuevo),
+  flujo SAF, bridge ni caché. Si algo de eso se comporta distinto
+  que en el Tramo 6, es una regresión: repórtala aunque la
+  etiqueta se vea bien.
 
 ## 0. Qué necesitas antes de empezar
 
 - La APK con este tramo aplicado (rama `android-port-base`, parche
-  `diffs/tramo6.patch` aplicado sobre `033610d`, build Gradle).
-  Comprueba que es la build nueva: al arrancar debe verse la
-  **píldora en el centro inferior** (ver §1). Si no se ve, NO
-  sigas: es la APK vieja.
-- Los datos base ya importados por SAF (Pack B: `sys/main.dol` +
-  `files/`, ≥2.916 ficheros, marcador `.saf-copy-done`). Sin datos
-  base, el audio solo no suena y el botón lo avisará en boot.log
-  («audio importado pero sin sys/main.dol»).
+  `diffs/tramo7.patch` aplicado SOBRE el Tramo 6 (`c274c96`),
+  build Gradle). Comprueba que es la build nueva: al arrancar
+  debe verse la **píldora en el centro inferior CON TEXTO**
+  (ver §1). Si se ve la píldora sin texto, es la build del
+  Tramo 6 (GX20), NO la de este tramo: no sigas.
+- Los datos base ya importados por SAF. Pack de test vigente
+  (no cambiar estas cifras sin medirlas de nuevo):
+  **base SAF 243.309.656 B + overlay Tier 1 = 382.982.980 B
+  (365,24 MiB) / 3.968 ficheros, libre ≥1,5 GB.**
+  La cifra 365,24 MiB es la huella TOTAL con la base incluida
+  (base 232,04 MiB + overlay 133,20 MiB), NO lo que se transfiere
+  con «añadir audio».
 - El paquete de audio Tier 1 preparado en el PC o en la tablet,
   en una carpeta que contenga **una carpeta `audio/`** con esta
   estructura exacta (el picker acepta elegir `audio/` en sí o su
@@ -36,49 +58,80 @@ Si algo falla, reporta exactamente lo de la sección «Qué reportar».
   Cifras del paquete de audio (solo overlay, sin base):
   **1.047 ficheros, 139.673.324 B ≈ 133,20 MiB**
   (816 WAV = 26.590.956 B + 231 ADP TTH = 113.082.368 B).
-  Ojo con la cifra 365,24 MiB que verás en otros documentos:
-  esa es la **huella total en dispositivo con la base incluida**
-  (base 232,04 MiB + overlay 133,20 MiB), NO lo que transfieres
-  con «añadir audio». Si transfieres 365 MiB por el picker de
-  audio, has elegido la carpeta equivocada.
+  Si transfieres 365 MiB por el picker de audio, has elegido la
+  carpeta equivocada.
 - Cómo leer `boot.log` (APK debuggable): con el puente ADB/PC o
   `run-as com.starfox.port cat files/boot.log` desde la tablet
   con adb. **Importante:** cada arranque de la app TRUNCA
   boot.log (se abre en escritura al inicio): extrae el log de
   una sesión ANTES de volver a abrir la app, o perderás la
   evidencia de esa sesión. Las líneas que importan empiezan por
-  `audio-btn:`, `saf:` y `bridge:`.
+  `audio-btn:`, `saf:` y `bridge:`. **El Tramo 7 no añade líneas
+  nuevas**: la etiqueta no deja rastro en el log; su verificación
+  es visual (esta guía) + táctil.
 
-## 1. Dónde está el botón y cómo se reconoce (sin etiqueta de texto)
+## 1. Dónde está el botón y cómo se reconoce (AHORA CON TEXTO)
 
-Limitación honesta del Tramo 6: la píldora **no lleva texto**
-(GL sin fuente; la etiqueta real queda para el futuro overlay de
-ajustes). Se reconoce por **posición + color**:
-
-- **Posición:** centro inferior de la pantalla, pegada al borde
-  inferior. En la Tab S8 (2560×1600) mide **307×96 px**,
-  centrada horizontalmente, a 32 px del borde inferior
-  (fracciones x 0,44–0,56, y 0,92–0,98). Queda **debajo** del
-  damero de prueba y **no solapa** ningún control: stick
-  (izquierda abajo), rombo A/B/X/Y (derecha abajo), C-stick
+- **Posición (sin cambios):** centro inferior de la pantalla,
+  pegada al borde inferior. En la Tab S8 (2560×1600) mide
+  **307×96 px**, centrada horizontalmente, a 32 px del borde
+  inferior (fracciones x 0,44–0,56, y 0,92–0,98). Queda
+  **debajo** del damero de prueba y **no solapa** ningún control:
+  stick (izquierda abajo), rombo A/B/X/Y (derecha abajo), C-stick
   reservado (centro-derecha), L/R y Start (arriba).
-- **Color = estado** (mira la píldora, no el juego):
-  - **Ámbar fijo = sin audio.** Estado inicial si nunca se
-    importó audio.
-  - **Ámbar parpadeante = verificando.** Acabas de pulsar y la
-    copia/verificación está en curso. No pulses de nuevo: los
-    toques durante este estado se ignoran a propósito.
-  - **Verde = audio listo.** Importación verificada
-    (`.saf-audio-done`).
-  - **Rojo = error.** La copia falló (`.saf-audio-error`) o el
-    picker no se pudo abrir. Mira boot.log para la causa.
+- **Etiqueta + color = estado** (mira la píldora, no el juego;
+  el texto mide 28 px de alto en la Tab S8 y ocupa 284 px de
+  ancho en su etiqueta más larga, centrado en la píldora con
+  11,5 px de margen lateral y 34 px vertical):
 
-## 2. Prueba A — Botón + importación Tier 1 (verificable YA)
+  | Estado | Color de la píldora | Texto dentro | Color del texto |
+  |---|---|---|---|
+  | sin audio | ámbar fijo | `AÑADIR AUDIO` | oscuro |
+  | verificando | ámbar parpadeante (30 frames on/off) | `VERIFICANDO` | oscuro con ámbar encendido; ámbar con ámbar apagado (fondo oscuro) |
+  | audio listo | verde | `AUDIO LISTO` | oscuro |
+  | error | rojo | `ERROR AUDIO` | blanco |
+
+  Notas de lectura: la Ñ de `AÑADIR` lleva tilde (en fuente 5x7
+  se ve como dos puntos sobre la N; si parece una N normal a
+  distancia, acércate: la tilde existe). El texto NUNCA debe
+  salirse de la píldora, ni tocar el damero, ni tapar ningún
+  botón de juego. Si el texto se ve recortado, desplazado,
+  borroso hasta ser ilegible, o fuera de la píldora, es un fallo
+  del Tramo 7: repórtalo con foto si puedes (ver §5) y con el
+  estado/color en ese momento.
+
+## 2. Prueba A — Botón + etiqueta + importación Tier 1 (verificable YA)
+
+### A0. Etiqueta en cada estado (nuevo del Tramo 7, hazlo primero)
+1. Abre la app con los datos base ya importados pero SIN audio.
+   **Esperado:** píldora **ámbar fija** con el texto
+   **`AÑADIR AUDIO`** legible dentro de ella, sin salirse por
+   ningún lado.
+2. Pulsa la píldora y, sin elegir carpeta todavía (o justo al
+   abrirse el picker), fíjate en la píldora: **esperado:**
+   **ámbar parpadeante** con el texto **`VERIFICANDO`**.
+   (El parpadeo alterna fondo ámbar / fondo oscuro; el texto
+   sigue siendo `VERIFICANDO` en ambas fases.)
+3. Completa la importación (A2) y comprueba: píldora **verde**
+   con el texto **`AUDIO LISTO`**.
+4. Si puedes provocar un error sin romper nada (por ejemplo,
+   elegir una carpeta sin `audio/` válido, o cancelar de forma
+   que falle la copia), **esperado:** píldora **roja** con el
+   texto **`ERROR AUDIO`** en blanco. No fuerces un error
+   borrando datos: si no se da de forma natural, deja este punto
+   como «no observado» y dilo así en el reporte (no es un fallo
+   no haber visto el rojo).
+5. En todos los estados: el texto debe estar **centrado** en la
+   píldora y **no debe invadir** el damero ni ningún control.
+   Toca el stick virtual y pulsa A: **el juego debe responder
+   igual que antes** (la etiqueta no añade zona táctil: tocar
+   las letras es tocar la píldora, y tocar fuera de la píldora
+   sigue siendo juego).
 
 ### A1. Estado inicial
 1. Abre la app con los datos base ya importados pero SIN audio.
-2. **Esperado:** píldora **ámbar fija** visible en el centro
-   inferior, y en boot.log una línea
+2. **Esperado:** píldora **ámbar fija** con `AÑADIR AUDIO`
+   visible en el centro inferior, y en boot.log una línea
    `native: audio-btn: estado sin audio`.
 3. Toca el stick virtual y pulsa A: **el juego debe responder
    igual que antes** (el botón no roba juego). Toca fuera de la
@@ -88,26 +141,32 @@ ajustes). Se reconoce por **posición + color**:
 ### A2. Importar Tier 1 con el botón
 1. Pulsa la píldora (toque corto, soltar DENTRO de la píldora).
    **Esperado inmediato:** la píldora pasa a **ámbar
-   parpadeante** y en boot.log aparece
+   parpadeante** con `VERIFICANDO` y en boot.log aparece
    `native: audio-btn: estado verificando` seguido de
    `saf: picker de audio abierto (elige la carpeta audio/ con
    streams/ y musyx/)`.
    - Si pulsas y la píldora sigue ámbar fija sin picker: el
      toque no cayó dentro (¿pulsaste fuera del rectángulo?),
-     o es la APK vieja. Repite apuntando al centro inferior.
+     o es la APK vieja. Repite apuntando al centro inferior,
+     sobre las letras.
    - Si la píldora se queda parpadeando y NO se abre el
      picker: mira boot.log (`saf: picker de audio fallo: …`).
+   - Si el picker se abre pero la etiqueta NO dice
+     `VERIFICANDO` (sigue `AÑADIR AUDIO` o no hay texto):
+     es un fallo del Tramo 7: repórtalo con el color y el
+     texto que veas.
 2. En el picker SAF, elige la carpeta **`audio/`** (o su padre
    si contiene `audio/`). **NO elijas** la carpeta de datos
    base ni `streams/` sola.
 3. Espera a que termine la copia (1.047 ficheros; el progreso
    sale en boot.log cada 250 ficheros: `saf: progreso: …`).
    **Durante la copia, NO pulses la píldora de nuevo**: debe
-   seguir parpadeando y no abrir un segundo picker.
-   Tampoco cierres la app a mitad de copia: si lo haces, al
-   reabrir el estado vuelve a derivarse (sin audio o listo
+   seguir parpadeando con `VERIFICANDO` y no abrir un segundo
+   picker. Tampoco cierres la app a mitad de copia: si lo haces,
+   al reabrir el estado vuelve a derivarse (sin audio o listo
    según lo que quedara), nunca se queda parpadeando atascado.
-4. **Esperado al terminar:** píldora **verde**, y en boot.log:
+4. **Esperado al terminar:** píldora **verde** con
+   **`AUDIO LISTO`**, y en boot.log:
    ```
    saf: copia de audio terminada: 1047 ficheros, … B
    saf: verificacion de audio (anadir audio)
@@ -119,27 +178,26 @@ ajustes). Se reconoce por **posición + color**:
      Si es >0, anota qué ficheros lista (máx. 10 en el log):
      esos ADP los saltará el bridge por fichero (silencio para
      esos streams, juego intacto).
-   - Si la píldora queda **roja**: copia fallida. En boot.log
-     estará `saf: copia de audio FALLO: …` y el marcador
-     `.saf-audio-error`. Reporta esa línea (ver §4).
+   - Si la píldora queda **roja** con `ERROR AUDIO`: copia
+     fallida. En boot.log estará
+     `saf: copia de audio FALLO: …` y el marcador
+     `.saf-audio-error`. Reporta esa línea (ver §5).
 
 ### A3. Volver a pulsar con audio listo (re-añadir/sustituir)
-1. Con la píldora en verde, púlsala de nuevo.
-2. **Esperado:** vuelve a **parpadeante** y se reabre el picker.
-   Esto es deliberado: así se puede añadir más audio (por
-   ejemplo, pasar de Tier 1 a Completo-ADP) o sustituir un pack
-   corrupto sin reimportar los datos base.
+1. Con la píldora en verde (`AUDIO LISTO`), púlsala de nuevo.
+2. **Esperado:** vuelve a **parpadeante** con `VERIFICANDO` y
+   se reabre el picker. Esto es deliberado: así se puede añadir
+   más audio (por ejemplo, pasar de Tier 1 a Completo-ADP) o
+   sustituir un pack corrupto sin reimportar los datos base.
 3. Cancela el picker (atrás). **Esperado:** en el siguiente
    sondeo (cada 128 vueltas del bucle, ~1–2 s) la píldora
-   vuelve a **verde** — Java escribe un marcador
-   `.saf-audio-cancelled` al cancelar y el sondeo nativo lo
-   consume y rederiva el estado (`audio/` con medios ⇒
-   listo). Sin ese marcador, cancelar dejaría la píldora
-   parpadeando hasta reiniciar; si eso ocurriera (píldora
-   parpadeando más de 5 s tras cancelar), **repórtalo** con el
-   boot.log: es una regresión del camino de cancelación.
+   vuelve a **verde** con `AUDIO LISTO` — Java escribe un
+   marcador `.saf-audio-cancelled` al cancelar y el sondeo
+   nativo lo consume y rederiva el estado. Si la píldora se
+   queda parpadeando más de 5 s tras cancelar, **repórtalo**
+   con el boot.log: es una regresión del camino de cancelación.
    Si cancelas un primer intento sin audio previo, lo esperado
-   es volver a **ámbar fijo** (sin audio), por el mismo
+   es volver a **ámbar fijo** con `AÑADIR AUDIO`, por el mismo
    mecanismo.
 
 ### A4. Comprobación de que no se tocó la base
@@ -148,7 +206,21 @@ Después de A2, el juego debe seguir cargando igual que antes
 audio **nunca escribe** en `sys/` ni en `files/` ni borra
 `.saf-copy-done`. Si tras importar audio el juego dejara de
 cargar, es una regresión grave: repórtala con el boot.log
-completo (ver §4).
+completo (ver §5).
+
+### A5. Táctil con la etiqueta (regresión Tramo 6, rápida)
+La etiqueta no debe cambiar el táctil. Comprueba estos 3 casos
+(los mismos del Tramo 6, ahora tocando sobre las letras):
+1. Toque que empieza FUERA de la píldora y se desliza HASTA
+   ella: **NO debe abrir el picker** (solo arma un dedo que
+   baja dentro).
+2. Toque dentro que se desliza FUERA y se suelta fuera:
+   **NO debe abrir el picker** (soltar fuera cancela).
+3. Dos dedos a la vez (uno en la píldora, otro en el stick):
+   **ambos deben funcionar** (el stick se mueve y la píldora
+   dispara al soltar dentro).
+Si alguno falla, es una regresión grave del táctil: repórtala
+indicando el caso (1/2/3) y si el fallo existía ya en GX20.
 
 ## 3. Prueba B — Qué debe oírse con Tier 1 (solo cuando el juego llegue ahí)
 
@@ -237,12 +309,14 @@ principio a fin):
 
 ## 5. Qué reportar si falla (copia y pega, sin resumir)
 
-Para cada fallo, reporta estos 5 puntos (si falta uno, dilo):
+Para cada fallo, reporta estos 6 puntos (si falta uno, dilo):
 
-1. **Paso exacto** (p. ej. «A2 paso 4» o «C punto 2») y qué
-   esperabas ver.
-2. **Color de la píldora** en el momento del fallo (ámbar /
-   parpadeante / verde / rojo) y si responde a toques.
+1. **Paso exacto** (p. ej. «A0 paso 2», «A2 paso 4» o «C punto 2»)
+   y qué esperabas ver.
+2. **Color Y TEXTO de la píldora** en el momento del fallo
+   (ámbar / parpadeante / verde / rojo + qué texto se leía, o
+   «sin texto», o «texto recortado/fuera») y si responde a
+   toques. Si puedes, adjunta foto de la píldora.
 3. **Líneas de boot.log** relevantes, copiadas literales
    (`audio-btn:`, `saf:`, `bridge:`), y si el log se extrajo
    antes de relanzar la app.
@@ -252,8 +326,12 @@ Para cada fallo, reporta estos 5 puntos (si falta uno, dilo):
 5. **Contenido de `sfa-data/audio/`** tras el fallo (conteo
    `wav=` / `adp=` / `adp_invalidos=` del informe SAF en
    boot.log), y si los datos base siguen cargando (sí/no).
+6. **¿Es fallo nuevo del Tramo 7 o ya pasaba en GX20?** Si la
+   etiqueta es lo único distinto, dilo; si el táctil o la
+   importación fallan igual que en GX20, dilo también (eso
+   distingue una regresión de la etiqueta de un fallo viejo).
 
 Casos que NO son fallos de este tramo (no los reportes como
 tales): música secuenciada muda (§3.3), streams fuera de TTH
-en silencio, stream 1367 sin resolver, y la ausencia de texto
-en la píldora (limitación documentada, pendiente P1).
+en silencio, stream 1367 sin resolver, y no haber observado el
+estado rojo `ERROR AUDIO` si no se dio ningún error real.
