@@ -44,6 +44,7 @@ constexpr HleEntry kHleTable[] = {
     {Hle::kLcEnable, "LCEnable"},
     {Hle::kLcLoadBlocks, "LCLoadBlocks"},
     {Hle::kLcStoreBlocks, "LCStoreBlocks"},
+    {Hle::kLcStoreData, "LCStoreData"},
     {Hle::kLcQueueWait, "LCQueueWait"},
     {Hle::kDcInvalidateRange, "DCInvalidateRange"},
     {Hle::kDcFlushRange, "DCFlushRange"},
@@ -64,6 +65,8 @@ constexpr HleEntry kHleTable[] = {
     {Hle::kOsEnableScheduler, "OSEnableScheduler"},
     {Hle::kOsCreateThread, "OSCreateThread"},
     {Hle::kOsResumeThread, "OSResumeThread"},
+    {Hle::kOsSuspendThread, "OSSuspendThread"},
+    {Hle::kThreadExitTrampoline, "ThreadExit"},
     {Hle::kOsInitContext, "OSInitContext"},
     {Hle::kOsInitMessageQueue, "OSInitMessageQueue"},
     {Hle::kGxInitFifoBase, "GXInitFifoBase"},
@@ -802,6 +805,333 @@ bool Hle::DeliverViCallbacks(CpuState* cpu) {
   return true;
 }
 
+// ------------------------------------------------------------------
+// Planificador cooperativo (Fase 9).
+//
+// Modelo (leido del codigo SDK huesped, no de un manual):
+//   OSCreateThread (0x80246C54): r3 hilo, r4 entry, r5 val,
+//     r6 stack (TOP, no base), r7 tamano, r8 prioridad 0..31,
+//     r9 attr. Escribe en el struct: estado [712]=1,
+//     suspend [716]=1, prioridad [720]=[724], [728]=-1,
+//     [744..760]=0, stack [772]=r6, fondo [776]=r6-r7 con
+//     canario 0xDEADBABE en el fondo, y contexto via
+//     OSInitContext (0x80242DD8): PC [408]=entry, SP [4]=
+//     (stack alineado a 8)-8, MSR [412]=0x9032, gpr3 [12]=val,
+//     gpr2 [8] y gpr13 [52] del creador, resto a cero.
+//     Los hilos THP lo confirman: video (stack = propio
+//     struct, 4096 B justo debajo, V+88..V+4184), audio
+//     igual, read (stack en R+0..R+4096, struct en R+4096).
+//   OSReceiveMessage (0x80244A68) / OSSendMessage (0x802449A0):
+//     colas con [16]=array, [20]=capacidad, [24]=firstIndex,
+//     [28]=usedCount; si la cola esta vacia (Receive) o llena
+//     (Send) y flags&1, duermen con OSSleepThread y reintentan.
+//   OSSuspendThread (0x8024729C): [716]++ y, si el contador
+//     era 0, suspende (estado 1, flag de replanificacion);
+//     si ya estaba suspendido, solo incrementa.
+//   OSResumeThread (0x80247014): [716]-- (con clamp a 0);
+//     solo cuando llega a 0 el hilo vuelve a listo (mascara
+//     de listos [r13-21248], bit 31-prioridad).
+//
+// El chassis es un unico flujo de despachos: el cambio de
+// contexto es, por tanto, guardar el CPUState del hilo actual
+// en su ThreadEntry (o en main_ctx_ para el principal) y
+// cargar el del siguiente, poniendo pc en su punto de
+// reanudacion (lr del sueno/suspension, o entry en el primer
+// arranque). El SelectThread huesped nunca corre; la mascara
+// de listos y el flag [r13-21244] se mantienen como espejo.
+// LIMITACIONES (documentadas, no ocultas): cooperativo, sin
+// rodaja de tiempo (un hilo que nunca duerme/suspende no
+// cede la CPU); Resume no adelanta (el hilo reanudado corre
+// cuando el actual ceda, no en el acto); el sueno de frame
+// (waitNextFrame) no cambia de hilo (queda para la fase de
+// bucle de frames); el estado [712] del struct es espejo
+// (1 listo/suspendido, 2 en ejecucion), el autoritativo es
+// ThreadEntry. Un hilo que suspende sin relevo listo cae en
+// el camino de retorno instantaneo anterior (gira, como
+// antes) y queda registrado en scheduler_fallbacks_.
+
+Hle::ThreadEntry* Hle::FindThread(uint32_t guest) {
+  for (ThreadEntry& t : threads_) {
+    if (t.thread_guest == guest) return &t;
+  }
+  return nullptr;
+}
+
+void Hle::SaveCurrent(CpuState* cpu, uint32_t resume_pc) {
+  ThreadContext* dst = nullptr;
+  if (current_thread_ < 0) {
+    dst = &main_ctx_;
+    main_saved_ = true;
+  } else {
+    ThreadEntry& t = threads_[static_cast<size_t>(current_thread_)];
+    dst = &t.ctx;
+    t.has_ctx = true;
+    // Canario de pila del hilo (Fase 9, diagnostico): si el
+    // hilo desbordo su pila de 4096 B, el fondo ya no es
+    // 0xDEADBABE. Solo se avisa una vez por hilo.
+    if (!t.canary_warned && t.stack_size > 0) {
+      uint32_t bottom = t.stack - t.stack_size;
+      uint32_t v = ::mem_read32(cpu, bottom);
+      if (cpu->exception == 0 && v != 0xDEADBABEu) {
+        t.canary_warned = true;
+        SFA_LOGI("sched: CANARIO de pila alterado en hilo "
+                 "0x%08X (fondo 0x%08X = 0x%08X, no 0xDEADBABE)",
+                 t.thread_guest, bottom, v);
+      } else if (cpu->exception != 0) {
+        cpu->exception = 0;
+      }
+    }
+  }
+  for (int i = 0; i < 32; ++i) {
+    dst->gpr[i] = cpu->gpr[i];
+    dst->fpr[i] = cpu->fpr[i];
+    dst->ps1[i] = cpu->ps1[i];
+  }
+  dst->pc = resume_pc;
+  dst->lr = cpu->lr;
+  dst->ctr = cpu->ctr;
+  dst->cr = cpu->cr;
+  dst->xer = cpu->xer;
+  dst->fpscr = cpu->fpscr;
+  dst->msr = cpu->msr;
+  dst->srr0 = cpu->srr0;
+  dst->srr1 = cpu->srr1;
+  dst->dar = cpu->dar;
+  dst->dsisr = cpu->dsisr;
+  dst->ear = cpu->ear;
+  for (int i = 0; i < 16; ++i) dst->sr[i] = cpu->sr[i];
+  for (int i = 0; i < 8; ++i) dst->gqr[i] = cpu->gqr[i];
+  dst->program_exception = cpu->program_exception;
+}
+
+void Hle::LoadContext(CpuState* cpu, const ThreadContext& ctx) {
+  for (int i = 0; i < 32; ++i) {
+    cpu->gpr[i] = ctx.gpr[i];
+    cpu->fpr[i] = ctx.fpr[i];
+    cpu->ps1[i] = ctx.ps1[i];
+  }
+  cpu->pc = ctx.pc;
+  cpu->lr = ctx.lr;
+  cpu->ctr = ctx.ctr;
+  cpu->cr = ctx.cr;
+  cpu->xer = ctx.xer;
+  cpu->fpscr = ctx.fpscr;
+  cpu->msr = ctx.msr;
+  cpu->srr0 = ctx.srr0;
+  cpu->srr1 = ctx.srr1;
+  cpu->dar = ctx.dar;
+  cpu->dsisr = ctx.dsisr;
+  cpu->ear = ctx.ear;
+  for (int i = 0; i < 16; ++i) cpu->sr[i] = ctx.sr[i];
+  for (int i = 0; i < 8; ++i) cpu->gqr[i] = ctx.gqr[i];
+  cpu->program_exception = ctx.program_exception;
+  cpu->reserve_valid = false;
+  cpu->exception = 0;
+}
+
+void Hle::LoadMain(CpuState* cpu) {
+  LoadContext(cpu, main_ctx_);
+  current_thread_ = -1;
+}
+
+bool Hle::MainReady(CpuState* cpu) {
+  if (!main_saved_) return false;
+  if (blocked_kind_ == 0 || blocked_queue_ == 0) return true;
+  if (blocked_kind_ == 1) {
+    uint32_t used = ::mem_read32(cpu, blocked_queue_ + 28u);
+    if (cpu->exception != 0) {
+      cpu->exception = 0;
+      return false;
+    }
+    return used > 0;
+  }
+  uint32_t capacity = ::mem_read32(cpu, blocked_queue_ + 20u);
+  uint32_t used = ::mem_read32(cpu, blocked_queue_ + 28u);
+  if (cpu->exception != 0) {
+    cpu->exception = 0;
+    return false;
+  }
+  return used < capacity;
+}
+
+void Hle::UpdateReadyMask(CpuState* cpu) {
+  uint32_t mask = 0;
+  for (const ThreadEntry& t : threads_) {
+    if (t.runnable && !t.suspended && !t.finished) {
+      mask |= (1u << (31u - (t.priority & 31u)));
+    }
+  }
+  ::mem_write32(cpu, cpu->gpr[13] - 21248u, mask);
+  if (cpu->exception != 0) cpu->exception = 0;
+}
+
+bool Hle::SwitchToMain(CpuState* cpu, bool save_current) {
+  if (!main_saved_) return false;
+  if (blocked_kind_ == 1 && blocked_queue_ != 0) {
+    uint32_t used = ::mem_read32(cpu, blocked_queue_ + 28u);
+    uint32_t array = ::mem_read32(cpu, blocked_queue_ + 16u);
+    uint32_t first = ::mem_read32(cpu, blocked_queue_ + 24u);
+    uint32_t capacity = ::mem_read32(cpu, blocked_queue_ + 20u);
+    if (cpu->exception == 0 && used > 0 && capacity > 0) {
+      uint32_t msg = ::mem_read32(cpu, array + (first % capacity) * 4u);
+      if (cpu->exception == 0) {
+        MainWakeDelivery d;
+        d.queue = blocked_queue_;
+        d.message = msg;
+        if (current_thread_ >= 0) {
+          const ThreadEntry& s =
+              threads_[static_cast<size_t>(current_thread_)];
+          d.sender_guest = s.thread_guest;
+          d.sender_entry = s.entry;
+        }
+        if (main_wake_deliveries_.size() < 10000) {
+          main_wake_deliveries_.push_back(d);
+        }
+        if (main_wake_deliveries_.size() <= 20) {
+          SFA_LOGI("sched: principal despierta: cola 0x%08X "
+                   "mensaje 0x%08X (remitente hilo 0x%08X, "
+                   "entry 0x%08X)",
+                   d.queue, d.message, d.sender_guest, d.sender_entry);
+        }
+      } else {
+        cpu->exception = 0;
+      }
+    } else if (cpu->exception != 0) {
+      cpu->exception = 0;
+    }
+  }
+  if (save_current) SaveCurrent(cpu, cpu->lr);
+  int prev = current_thread_;
+  LoadMain(cpu);
+  ++switches_total_;
+  ++switches_to_main_;
+  if (prev >= 0) {
+    ThreadEntry& p = threads_[static_cast<size_t>(prev)];
+    ::mem_write16(cpu, p.thread_guest + 712u, 1u);
+    if (cpu->exception != 0) cpu->exception = 0;
+  }
+  ::mem_write32(cpu, cpu->gpr[13] - 21244u, 0u);
+  if (cpu->exception != 0) cpu->exception = 0;
+  UpdateReadyMask(cpu);
+  if (DeliverViCallbacks(cpu)) return true;
+  return true;
+}
+
+bool Hle::SwitchToWorker(CpuState* cpu, size_t idx, bool save_current) {
+  if (idx >= threads_.size()) return false;
+  ThreadEntry& next = threads_[idx];
+  if (!next.runnable || next.suspended || next.finished || !next.has_ctx) {
+    return false;
+  }
+  if (save_current) SaveCurrent(cpu, cpu->lr);
+  int prev = current_thread_;
+  if (prev >= 0) {
+    ThreadEntry& p = threads_[static_cast<size_t>(prev)];
+    ::mem_write16(cpu, p.thread_guest + 712u, 1u);
+    if (cpu->exception != 0) cpu->exception = 0;
+  }
+  current_thread_ = static_cast<int>(idx);
+  next.started = true;
+  ++next.switches_in;
+  ++switches_total_;
+  LoadContext(cpu, next.ctx);
+  ::mem_write16(cpu, next.thread_guest + 712u, 2u);
+  if (cpu->exception != 0) cpu->exception = 0;
+  ::mem_write32(cpu, cpu->gpr[13] - 21244u, 0u);
+  if (cpu->exception != 0) cpu->exception = 0;
+  UpdateReadyMask(cpu);
+  return true;
+}
+
+bool Hle::SwitchOnSleep(CpuState* cpu) {
+  if (current_thread_ < 0) {
+    if (cpu->lr != kOsReceiveSleepRet && cpu->lr != kOsSendSleepRet) {
+      return false;
+    }
+    // Cola viva, NO la guardada en el marco: el prologo de
+    // Receive guarda el r31 del LLAMADOR en +36 antes de
+    // poner r31 = cola (y Send guarda el r28 del llamador
+    // en +24 antes de poner r28 = cola). Leer el marco daba
+    // la base P (0x803A7120) en vez de la cola prepare
+    // (0x803A764C): ese fue el fallo del run36 (el
+    // principal nunca veia su cola con mensaje).
+    if (cpu->lr == kOsReceiveSleepRet) {
+      blocked_queue_ = cpu->gpr[31];
+      blocked_kind_ = 1;
+    } else {
+      blocked_queue_ = cpu->gpr[28];
+      blocked_kind_ = 2;
+    }
+  }
+  if (MainReady(cpu)) {
+    if (SwitchToMain(cpu, true)) return true;
+  }
+  size_t n = threads_.size();
+  size_t start = 0;
+  if (n > 0) {
+    start = current_thread_ < 0
+                ? 0
+                : (static_cast<size_t>(current_thread_) + 1) % n;
+    for (size_t k = 0; k < n; ++k) {
+      size_t idx = (start + k) % n;
+      if (static_cast<int>(idx) == current_thread_) continue;
+      ThreadEntry& t = threads_[idx];
+      if (t.runnable && !t.suspended && !t.finished) {
+        if (SwitchToWorker(cpu, idx, true)) return true;
+      }
+    }
+  }
+  return false;
+}
+
+void Hle::WriteThreadGuestFields(CpuState* cpu, ThreadEntry* t) {
+  if (cpu == nullptr || t == nullptr) return;
+  uint32_t thread = t->thread_guest;
+  uint32_t sp = (t->stack & ~7u) - 8u;
+  ::mem_write16(cpu, thread + 712u, 1u);
+  ::mem_write16(cpu, thread + 714u, 1u);
+  ::mem_write32(cpu, thread + 716u, t->suspend_count);
+  ::mem_write32(cpu, thread + 720u, t->priority);
+  ::mem_write32(cpu, thread + 724u, t->priority);
+  ::mem_write32(cpu, thread + 728u, 0xFFFFFFFFu);
+  for (uint32_t off = 744u; off <= 760u; off += 4u) {
+    ::mem_write32(cpu, thread + off, 0u);
+  }
+  ::mem_write32(cpu, thread + 772u, t->stack);
+  ::mem_write32(cpu, thread + 776u, t->stack - t->stack_size);
+  ::mem_write32(cpu, t->stack - t->stack_size, 0xDEADBABEu);
+  for (int i = 0; i < 32; ++i) {
+    uint32_t v = 0;
+    if (i == 1) v = sp;
+    if (i == 2) v = cpu->gpr[2];
+    if (i == 3) v = t->val;
+    if (i == 13) v = cpu->gpr[13];
+    ::mem_write32(cpu, thread + static_cast<uint32_t>(i * 4), v);
+  }
+  ::mem_write32(cpu, thread + 128u, 0u);
+  ::mem_write32(cpu, thread + 132u, 0u);
+  ::mem_write32(cpu, thread + 136u, 0u);
+  ::mem_write32(cpu, thread + 140u, 0u);
+  ::mem_write32(cpu, thread + 408u, t->entry);
+  ::mem_write32(cpu, thread + 412u, 0x9032u);
+  for (uint32_t off = 420u; off <= 432u; off += 4u) {
+    ::mem_write32(cpu, thread + off, 0u);
+  }
+  uint32_t next = ::mem_read32(cpu, 0x800000E0u);
+  if (cpu->exception == 0) {
+    if (next != 0) {
+      ::mem_write32(cpu, next + 764u, thread);
+    } else {
+      ::mem_write32(cpu, 0x800000DCu, thread);
+    }
+    ::mem_write32(cpu, thread + 768u, next);
+    ::mem_write32(cpu, thread + 764u, 0u);
+    ::mem_write32(cpu, 0x800000E0u, thread);
+  }
+  if (cpu->exception != 0) cpu->exception = 0;
+}
+
+
 bool Hle::HandleHostCall(CpuState* cpu, uint32_t address) {
   // Evento DSP (Fase 5, desbloqueo salInitDsp): NO es una
   // sustitucion de funcion, sino la entrega del evento que el
@@ -1052,20 +1382,182 @@ bool Hle::HandleHostCall(CpuState* cpu, uint32_t address) {
       return Return(cpu, 0);
     }
     case kOsCreateThread: {
-      ThreadEntry t;
-      t.thread_guest = cpu->gpr[3];
-      t.runnable = false;
-      threads_.push_back(t);
-      SFA_LOGI("hle: OSCreateThread registrado (guest 0x%08X, "
-               "sin ejecucion real: chassis monohilo)",
-               t.thread_guest);
+      // Fase 9: captura completa (entry/val/stack/prioridad)
+      // y contexto inicial como OSInitContext, mas espejo
+      // guest en el struct (ver WriteThreadGuestFields).
+      // Prioridad fuera de 0..31: el huesped devuelve 0.
+      int32_t prio = static_cast<int32_t>(cpu->gpr[8]);
+      if (prio < 0 || prio > 31) {
+        SFA_LOGI("hle: OSCreateThread rechazado (prioridad %d)",
+                 prio);
+        return Return(cpu, 0);
+      }
+      ThreadEntry* existing = FindThread(cpu->gpr[3]);
+      bool recreated = existing != nullptr;
+      ThreadEntry* t = nullptr;
+      if (existing != nullptr) {
+        t = existing;
+      } else {
+        threads_.push_back(ThreadEntry());
+        t = &threads_.back();
+      }
+      t->thread_guest = cpu->gpr[3];
+      t->entry = cpu->gpr[4];
+      t->val = cpu->gpr[5];
+      t->stack = cpu->gpr[6];
+      t->stack_size = cpu->gpr[7];
+      t->priority = cpu->gpr[8];
+      t->suspend_count = 1;
+      t->runnable = false;
+      t->started = false;
+      t->suspended = true;
+      t->finished = false;
+      t->switches_in = 0;
+      t->yields = 0;
+      t->suspends = 0;
+      t->canary_warned = false;
+      // Contexto inicial (OSInitContext): pc=entry, lr=
+      // trampolin de salida, sp=(stack&~7)-8, gpr3=val,
+      // gpr2/gpr13 del creador, msr/srr1=0x9032, resto 0.
+      t->ctx = ThreadContext();
+      t->ctx.pc = t->entry;
+      t->ctx.lr = kThreadExitTrampoline;
+      t->ctx.gpr[1] = (t->stack & ~7u) - 8u;
+      t->ctx.gpr[2] = cpu->gpr[2];
+      t->ctx.gpr[3] = t->val;
+      t->ctx.gpr[13] = cpu->gpr[13];
+      // 0x9032 de OSInitContext + bit FP (0x2000, PPC_MSR_FP):
+      // en hardware real el primer FP del hilo salta al
+      // manejador del SO (vector 0x800, fuera del DOL: el
+      // chassis no puede ejecutarlo) y su efecto neto es
+      // dejar FP activo con el contexto FP propio del hilo
+      // (a cero, como OSInitContext). Activarlo en la
+      // creacion es ese mismo efecto; sin el, el primer
+      // FP del hilo de video (YUV) aborta con 0x20.
+      t->ctx.msr = 0xB032u;
+      t->ctx.srr0 = t->entry;
+      t->ctx.srr1 = 0x9032u;
+      t->has_ctx = true;
+      WriteThreadGuestFields(cpu, t);
+      SFA_LOGI("hle: OSCreateThread %s (guest 0x%08X, entry "
+               "0x%08X, val 0x%08X, stack 0x%08X+%u, prio %u)",
+               recreated ? "re-creado" : "registrado", t->thread_guest,
+               t->entry, t->val, t->stack, t->stack_size, t->priority);
       return Return(cpu, 1);
     }
     case kOsResumeThread: {
-      for (ThreadEntry& t : threads_) {
-        if (t.thread_guest == cpu->gpr[3]) t.runnable = true;
+      // Fase 9: [716]-- con clamp; solo a 0 vuelve a listo.
+      // Sin adelanto: el hilo corre cuando el actual ceda.
+      ThreadEntry* t = FindThread(cpu->gpr[3]);
+      if (t == nullptr) {
+        SFA_LOGI("hle: OSResumeThread sobre hilo desconocido "
+                 "0x%08X (sin efecto, retorno 1 como antes)",
+                 cpu->gpr[3]);
+        return Return(cpu, 1);
+      }
+      if (t->suspend_count > 0) --t->suspend_count;
+      t->suspended = t->suspend_count > 0;
+      if (t->suspend_count == 0) {
+        bool was_ready = t->runnable && !t->finished;
+        t->runnable = true;
+        ::mem_write32(cpu, t->thread_guest + 716u, 0u);
+        ::mem_write16(cpu, t->thread_guest + 712u, 1u);
+        ::mem_write32(cpu, cpu->gpr[13] - 21244u, 1u);
+        if (cpu->exception != 0) cpu->exception = 0;
+        UpdateReadyMask(cpu);
+        if (!was_ready) {
+          SFA_LOGI("hle: OSResumeThread: hilo 0x%08X listo "
+                   "(entry 0x%08X, prio %u)",
+                   t->thread_guest, t->entry, t->priority);
+        }
+      } else {
+        ::mem_write32(cpu, t->thread_guest + 716u, t->suspend_count);
+        if (cpu->exception != 0) cpu->exception = 0;
       }
       return Return(cpu, 1);
+    }
+    case kOsSuspendThread: {
+      // Fase 9: [716]++ y retorno del contador anterior
+      // (como el huesped). Auto-suspension: cede la CPU al
+      // siguiente listo; sin relevo, retorno instantaneo
+      // (desviacion solo en deadlock, registrada).
+      ThreadEntry* t = FindThread(cpu->gpr[3]);
+      if (t == nullptr) {
+        SFA_LOGI("hle: OSSuspendThread sobre hilo desconocido "
+                 "0x%08X (sin efecto, retorno 0)",
+                 cpu->gpr[3]);
+        return Return(cpu, 0);
+      }
+      uint32_t old = t->suspend_count;
+      ++t->suspend_count;
+      t->suspended = true;
+      ++t->suspends;
+      ::mem_write32(cpu, t->thread_guest + 716u, t->suspend_count);
+      ::mem_write16(cpu, t->thread_guest + 712u, 1u);
+      if (cpu->exception != 0) cpu->exception = 0;
+      UpdateReadyMask(cpu);
+      if (current_thread_ >= 0 &&
+          t == &threads_[static_cast<size_t>(current_thread_)]) {
+        // Auto-suspension del hilo en curso: guardar con
+        // gpr3 = contador anterior (valor de retorno) y ceder.
+        cpu->gpr[3] = old;
+        ++t->yields;
+        if (MainReady(cpu)) {
+          if (SwitchToMain(cpu, true)) return true;
+        }
+        size_t n = threads_.size();
+        size_t start =
+            (static_cast<size_t>(current_thread_) + 1) % n;
+        for (size_t k = 0; k < n; ++k) {
+          size_t idx = (start + k) % n;
+          if (static_cast<int>(idx) == current_thread_) continue;
+          ThreadEntry& cand = threads_[idx];
+          if (cand.runnable && !cand.suspended && !cand.finished) {
+            if (SwitchToWorker(cpu, idx, true)) return true;
+          }
+        }
+        ++scheduler_fallbacks_;
+        SFA_LOGI("sched: OSSuspendThread sin relevo para hilo "
+                 "0x%08X (continua: desviacion solo en deadlock)",
+                 t->thread_guest);
+        return Return(cpu, old);
+      }
+      return Return(cpu, old);
+    }
+    case kThreadExitTrampoline: {
+      // Una funcion de hilo retorno: marcar terminada y
+      // cambiar; sin relevo, volver al principal aunque su
+      // cola no este lista (gira diagnosticable), y si ni
+      // eso es posible, exception ruidosa.
+      if (current_thread_ < 0) {
+        SFA_LOGE("sched: trampolin de salida alcanzado desde "
+                 "el principal (pc=0x%08X, lr=0x%08X)",
+                 cpu->pc, cpu->lr);
+        cpu->exception = 1;
+        return true;
+      }
+      ThreadEntry& t = threads_[static_cast<size_t>(current_thread_)];
+      t.finished = true;
+      t.suspended = true;
+      SFA_LOGI("sched: hilo 0x%08X terminado (entry 0x%08X, "
+               "switches_in=%llu)",
+               t.thread_guest, t.entry,
+               static_cast<unsigned long long>(t.switches_in));
+      UpdateReadyMask(cpu);
+      if (MainReady(cpu)) {
+        if (SwitchToMain(cpu, false)) return true;
+      }
+      size_t n = threads_.size();
+      for (size_t k = 0; k < n; ++k) {
+        ThreadEntry& cand = threads_[k];
+        if (cand.runnable && !cand.suspended && !cand.finished) {
+          if (SwitchToWorker(cpu, k, false)) return true;
+        }
+      }
+      if (main_saved_ && SwitchToMain(cpu, false)) return true;
+      SFA_LOGE("sched: hilo terminado sin relevo (deadlock)");
+      cpu->exception = 1;
+      return true;
     }
     case kDvdInit:
       dvd_init_done_ = true;
@@ -1309,21 +1801,31 @@ bool Hle::HandleHostCall(CpuState* cpu, uint32_t address) {
       cpu->pc = cpu->lr;
       return true;
     }
-    case kOsSleepThread:
-      // Sueno instantaneo (ver kOsSleepThread en hle.h) y, en
-      // Fase 6a, un retrace entregado: waitNextFrame duerme
-      // aqui esperando el siguiente retrace, asi que cada
-      // sueno completado incrementa el contador VI (un
-      // retrace por frame dormido, la cadencia que el juego
-      // espera; VIWaitForRetrace hace lo propio cuando se
-      // le llama). El poke directo de globales PAD de la
-      // Fase 5b se elimina: padUpdate recomputa los globales
-      // desde el buffer PADRead, asi que ese poke se borraba
-      // antes de leerse y solo ensuciaba el diagnostico; la
-      // via valida es PADRead (Fase 6b).
-      ++retrace_count_;
-      if (DeliverViCallbacks(cpu)) return true;
+    case kOsSleepThread: {
+      // Fase 9: el retrace solo lo avanza el hilo principal
+      // (antes todos los suenos eran del principal, asi que
+      // el conteo es comparable; los suenos de trabajadores
+      // no son retraces). Un sueno por cola cede la CPU al
+      // planificador; un sueno de frame mantiene el camino
+      // anterior (entrega VI + retorno instantaneo).
+      if (current_thread_ < 0) ++retrace_count_;
+      if (current_thread_ >= 0) {
+        ThreadEntry& cur = threads_[static_cast<size_t>(current_thread_)];
+        ++cur.yields;
+      }
+      bool attempted =
+          current_thread_ >= 0 || cpu->lr == kOsReceiveSleepRet ||
+          cpu->lr == kOsSendSleepRet;
+      if (SwitchOnSleep(cpu)) return true;
+      // Un sueno de frame del principal no es un fallo del
+      // planificador (por diseno no cambia de hilo): solo
+      // cuentan los suenos por cola sin relevo.
+      if (attempted && !threads_.empty()) ++scheduler_fallbacks_;
+      if (current_thread_ < 0) {
+        if (DeliverViCallbacks(cpu)) return true;
+      }
       return Return(cpu, 0);
+    }
     case kGxInitFifoBase:
     case kGxInitFifoPtrs:
     case kGxInitFifoLimits:
@@ -1344,7 +1846,12 @@ bool Hle::HandleHostCall(CpuState* cpu, uint32_t address) {
       // la ventana LC a cero. El búfer ya esta a cero en el
       // arranque; se vuelve a poner a cero aqui para que una
       // segunda llamada tenga la misma semantica.
+      // Fase 9: ademas espeja el mfhid2/oris 0x100F/mthid2
+      // del huesped (0x802424A4): sin el bit LCE (0x10000000)
+      // THPVideoDecode devuelve el error 28 y el hilo de
+      // video se suspende sin enviar PrepareReady(1).
       std::memset(cpu->locked_cache, 0, GC_LC_SIZE);
+      cpu->hid2 |= 0x100F0000u;
       return Return(cpu, 0);
     case kLcLoadBlocks: {
       // Load: RAM (r4) -> LC (r3). r5 = bloques de 32 B, 0 = 128
@@ -1372,6 +1879,31 @@ bool Hle::HandleHostCall(CpuState* cpu, uint32_t address) {
                  mem, lc, blocks);
       }
       return Return(cpu, mem & 0x0FFFFFFFu);
+    }
+    case kLcStoreData: {
+      // LCStoreData huesped (0x802425F0): copia bytes de RAM
+      // a LC en bloques de 32 B (bucle que llama a
+      // LCStoreBlocks por trozos de 4096 B) y devuelve
+      // ceil(bloques/128). Sin esta entrada HLE, el bucle
+      // huesped llama intra-chunk a LCStoreBlocks y choca
+      // con mtdmau (sin implementar en cpu.c) -> excepcion
+      // de programa en el hilo de video durante el primer
+      // frame THP. Copia sincrona (el DMA real es asincrono
+      // y LCQueueWait HLE ya devuelve de inmediato, asi que
+      // el modelo es consistente); bytes=0 no copia y
+      // devuelve 0, como el huesped.
+      uint32_t mem = cpu->gpr[3];
+      uint32_t lc = cpu->gpr[4];
+      uint32_t bytes = cpu->gpr[5];
+      uint32_t blocks = (bytes + 31u) >> 5;
+      if (blocks != 0) {
+        if (!LcDmaCopy(cpu, mem, lc, blocks * 32u, false)) {
+          SFA_LOGE("hle: LCStoreData fuera de ventana LC r3=0x%08X "
+                   "r4=0x%08X bytes=%u (sin copia)",
+                   mem, lc, bytes);
+        }
+      }
+      return Return(cpu, (blocks + 127u) >> 7);
     }
     case kLcQueueWait:
       // DMA sincrono: la cola esta vacia siempre; el huesped

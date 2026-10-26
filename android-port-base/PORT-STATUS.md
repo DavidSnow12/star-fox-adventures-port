@@ -2062,3 +2062,313 @@ arranque, NO jugable).
    rumble.
 5. Paquete de datos Pack B, APK jugable y test en Tab S8.
    La APK Fase 0 sigue siendo solo arranque (ver abajo).
+
+## Fase 9 (2026-10-26, este tramo): hilos THP reales, prepare desbloqueado, bucle principal en marcha
+
+El bloqueador nº 1 de la Fase 8 (el juego detenido en
+`OSReceiveMessage` esperando un mensaje de los hilos THP)
+queda **resuelto sin inventar contenido**: el mensaje lo
+produce la decodificación huésped real del primer frame de
+`starfox.thp`, ejecutada por los hilos registrados.
+
+### 1. Planificador cooperativo en el HLE (semántica implementada)
+
+Un solo flujo de despachos (el chassis) cambia el
+`CPUState` entre hilos: guarda los registros del hilo
+actual en su `ThreadEntry` (o en `main_ctx_` para el
+principal, que no tiene `ThreadEntry` porque su `OSThread`
+lo crea el SO antes de `main`) y carga los del siguiente,
+con el PC en su punto de reanudación (LR del
+sleep/suspend, o la entrada en el primer arranque).
+Compartido y NO guardado/restaurado por hilo: RAM,
+`host_call`, `timebase`, búfer LC y sus etiquetas (memoria
+compartida como la RAM), `hid2`, `downcount` (el chassis
+lo repone antes de cada despacho); la reserva
+`lwarx`/`stwcx` se limpia al cambiar (semántica PPC por
+procesador). Sin rodajas de tiempo: un hilo que nunca
+duerme ni se suspende nunca cede (si eso ocurre alguna
+vez, se verá como un run con PC fijo en el tope de
+despachos y se diagnosticará entonces).
+
+Disparadores de cambio:
+
+- Sleep en cola del principal (LR 0x80244AC0 Receive o
+  0x802449F8 Send): registra la cola bloqueada y su tipo,
+  y cambia. El principal es elegido PRIMERO si
+  `MainReady()` (cola Receive con `used > 0`, o cola Send
+  con `used < capacidad`); si no, round-robin sobre
+  trabajadores reanudados, no suspendidos y no terminados,
+  empezando tras el hilo actual.
+- Sleep de cualquier trabajador: intento de cambio siempre
+  (los trabajadores no tienen sleeps de frame).
+- Sleep de frame del principal (`waitNextFrame`, LR en
+  código de juego): NO cambia — mantiene la entrega VI +
+  retorno inmediato anterior. La planificación de
+  trabajadores en el bucle de frame es un paso siguiente
+  explícito, no hecho aquí.
+- `OSSuspendThread` sobre el hilo actual: guarda con valor
+  de retorno = contador viejo de suspensión y cambia al
+  principal si está listo, si no round-robin; sin relevo,
+  retorno inmediato (giro, como antes) y un contador de
+  fallback del planificador.
+- Retorno de una función de hilo: el LR inicial de todo
+  hilo creado es el trampolín sintético de salida
+  0x80003004; al llegar, el hilo se marca terminado y el
+  planificador cambia sin guardar su contexto; sin relevo,
+  cambio forzado al principal si está guardado, si no
+  excepción (fallo ruidoso, no silencioso).
+- `OSResumeThread`: solo marca listo (sin preempción
+  inmediata). Un hilo reanudado corre cuando el hilo
+  actual cede la próxima vez. Esto mantiene atómica la
+  secuencia prepare del principal (Create → Start vídeo →
+  Start audio → Start read → Receive) antes de que corra
+  ningún trabajador.
+
+Callbacks VI: el contador de retrace solo avanza en sleeps
+del principal (en los runs 30–33 todos los sleeps eran del
+principal, así que los conteos siguen siendo comparables).
+Al volver al principal, se intenta `DeliverViCallbacks()`
+con retorno = PC de reanudación del principal (mecanismo
+del trampolín de la Fase 8), así que las cadenas VI siguen
+ocurriendo en los despertares del principal, pero caen
+bruscamente durante la fase prepare bloqueada porque el
+principal ya no gira: cambio documentado, no regresión,
+siempre que el juego avance (y avanza: ver punto 4).
+
+Entrega al principal registrada: al cambiar de vuelta al
+principal mientras esperaba en una cola Receive que ya
+tiene mensaje, la entrega se registra ANTES de que el
+principal la consuma (dirección de cola, valor del mensaje,
+dirección huésped y entrada del hilo remitente; tope de
+10.000 entradas, las 20 primeras en log).
+
+Campos huésped `OSThread` escritos por el nuevo
+`OSCreateThread` HLE (espejo best-effort de la semántica
+SDK leída en el código huésped: estado `[712] = 1`,
+suspensión `[716] = 1`, prioridad `[720] = [724]`,
+`[728] = -1`, `[744..760] = 0`, pila `[772] = tope`,
+fondo `[776] = tope - tamaño` con canario `0xDEADBABE`,
+contexto vía `OSInitContext`: PC `[408] = entrada`, SP
+`[4] = (pila alineada a 8) - 8`, MSR `[412] = 0x9032`,
+gpr3 `[12] = val`, gpr2 `[8]` y gpr13 `[52]` del creador,
+resto a cero; lista global de hilos en `0x800000DC`/
+`0x800000E0`). Desviación documentada: los campos LR/CTR
+del contexto `[132]`/`[136]` se escriben a 0 (el huésped
+los deja obsoletos); el contexto host usa el trampolín de
+salida, así que ningún cambio host se ve afectado y ningún
+código huésped de cambio de contexto corre en este modelo.
+Diagnóstico de canario: al guardar un contexto de
+trabajador se comprueba la palabra del fondo de pila
+contra `0xDEADBABE` y cualquier cambio se registra una
+vez por hilo (en los runs 39/41 no saltó).
+
+### 2. Cuatro correcciones encadenadas, cada una con evidencia
+
+El desbloqueo necesitó cuatro correcciones; ninguna es un
+parche falso y cada una se diagnosticó por su síntoma:
+
+1. **Cola bloqueada: registro vivo, no marco** (run36).
+   El principal nunca despertaba pese a que la cola
+   prepare tenía mensaje: el código guardaba la cola
+   leyendo `[sp+36]` en el marco de Receive, pero el
+   prólogo de Receive guarda el r31 del LLAMADOR en +36
+   ANTES de poner r31 = cola (y Send guarda el r28 del
+   llamador en +24 antes de poner r28 = cola). Leer el
+   marco daba la base P (0x803A7120) en vez de la cola
+   prepare (0x803A764C). Corrección: Receive → cola =
+   gpr[31] vivo; Send → cola = gpr[28] vivo.
+2. **LCEnable HLE: falta el bit LCE de HID2** (run36→37).
+   Con la cola ya correcta, el hilo de vídeo se suspendía
+   tras decodificar con resultado 28 en `Q+164`. El 28 de
+   `THPVideoDecode` (0x80264E1C) es su rama HID2: salta
+   cuando el bit LCE (0x10000000) está LIMPIO (la
+   decodificación usa la caché bloqueada). El
+   `_LCEnable` huésped (0x802424A4) hace
+   `mfhid2; oris 0x100F; mthid2`; el HLE de la Fase 8 solo
+   ponía el búfer a cero. Corrección: el HLE LCEnable
+   ahora espeja `hid2 |= 0x100F0000` además de poner el
+   búfer a cero.
+3. **Hilos: falta el bit FP del MSR** (run37→38). Con LCE,
+   el hilo de vídeo abortaba con excepción
+   `FP_UNAVAILABLE` (0x20) en el vector 0x800. El MSR
+   inicial de `OSInitContext` es 0x9032, sin FP (bit
+   0x2000). En hardware real el primer FP del hilo salta
+   al manejador del SO (vector 0x800, fuera del DOL: el
+   chassis no puede ejecutarlo) y su efecto neto es dejar
+   FP activo con el contexto FP propio del hilo (a cero,
+   como `OSInitContext`). Corrección: el MSR inicial de
+   los hilos es 0xB032 (0x9032 + FP); el guardado/
+   restaurado FP por hilo ya existía en `ThreadContext`
+   (fpr/ps1), así que la semántica es la misma.
+4. **`LCStoreData` HLE: bypass intra-chunk a `mtdmau`**
+   (run38→39). Con FP, el hilo de vídeo abortaba con
+   excepción de programa en 0x802425D8 (`mtdmau`, dentro
+   de `LCStoreBlocks` 0x802425CC). `LCStoreBlocks` SÍ está
+   en la tabla HLE, pero `LCStoreData` (0x802425F0, mismo
+   chunk) lo llama con `goto` intra-chunk sin pasar por
+   `host_call`, y `mtdmau` no está implementado en cpu.c.
+   Corrección: `LCStoreData` entra en la tabla HLE con
+   copia síncrona real vía `LcDmaCopy` (RAM → LC, en
+   bloques de 32 B, como el bucle huésped que llama a
+   `LCStoreBlocks` por trozos de 4096 B; r5 = 0 ≡ 128
+   bloques) y retorno `ceil(bloques/128)`, espejo exacto
+   del cálculo huésped (`bloques = (bytes+31)>>5`,
+   retorno `(bloques+127)>>7`; bytes = 0 no copia y
+   devuelve 0). El DMA real es asíncrono y `LCQueueWait`
+   HLE ya devuelve de inmediato, así que el modelo es
+   consistente. La tabla HLE pasa de 58 a 59 entradas
+   (dentro de `log_count_[64]`).
+
+### 3. Mensajes entregados: contenido real, no inventado
+
+El mensaje esperado por `prepareAttractMode` es
+`PrepareReady(1)`, enviado por `AttractMovieVideo_Decode`
+(0x80119CA8) al final del bucle de componentes si el flag
+`[r13-23284]` sigue puesto (el envío 0 solo ocurre en
+error de lectura o de decodificación). En run39/run41 el
+principal despierta **3 veces** con el mensaje exacto:
+
+- Cola 0x803A764C (prepare, capacidad 1), mensaje
+  `0x00000001`, remitente hilo huésped 0x803A9CA8, entrada
+  0x80119F2C (`AttractMovieVideo_Decoder`, streaming,
+  prioridad 15). Las 3 entregas son idénticas en run39 y
+  run41 (determinista).
+
+El 1 no se inyecta: lo produce la decodificación huésped
+real del frame 0 de `starfox.thp` (48.931.320 B): el hilo
+de lectura lee el frame real por `DVDReadPrio` (el búfer
+0x807A7280 coincide byte a byte con el frame del disco,
+JPEG SOI en el offset 16), el hilo de audio procesa los
+componentes de audio, y el hilo de vídeo decodifica el
+componente JPEG con `THPVideoDecode` + `__THPDecompressYUV`
+(20 llamadas `LCStoreData` HLE en el run: planos Y
+8192 B a LC 0xE0000000 y U/V 2048 B a 0xE0002800/
+0xE0003200, desde las texturas 0x80818C00/0x80F747E0/
+0x80F507E0 y siguientes). Tras cada éxito, el vídeo
+envía una textura lista a la cola `video_ready_tex` y
+`PrepareReady(1)` a la cola prepare.
+
+### 4. Punto alcanzado tras el desbloqueo (run41, código final)
+
+- `dispatch_cap` 5M, **0 exceptions**, PC final
+  0x80051580 dentro de `addSphereMapTexStage`
+  (0x8005152C, 0x1E0): el principal está en mitad de un
+  dibujo (montaje de una etapa de textura sphere-map),
+  no atascado.
+- Planificador: 24 cambios, 3 a principal, 0 fallbacks,
+  hilo actual = principal. Hilos: vídeo 3 entradas / 3
+  cesiones / 0 suspensiones; audio 2 / 2; lectura 2 / 2;
+  hilo de error (0x803ACA78) nunca reanudado, como antes.
+- Colas al final: prepare vacía (consumida); `read_free`
+  3/10; `read_filled` 6/10 (primer índice 4);
+  `read_q3` vacía (primer índice 3, consumida por vídeo);
+  `video_free_tex` 3/3 libres de nuevo; `video_ready_tex`
+  2/3 (texturas 0x803A7814, 0x803A7824 esperando
+  display); `audio_free` 3/3; `audio_ready` 3/3 llena.
+- Estado prepare: P+1592 = 1, P+1596 = 2, P+1597 = 2
+  (1 = preparado tras el primer éxito; 2 = reproducción
+  en marcha), P+1599 = 1, Q+108 = 2 componentes, Q+208 =
+  2, Q+176 = 0x58, Q+180 = 0x1680.
+- Bucle principal en marcha: retrace 38, cadenas VI 38
+  (pre/post equilibradas), callback pre sigue siendo
+  `videoSwapFrameBuffers` (0x80049AAC) y el callback post
+  ya NO es `gpuErrorHandler` sino `PlayControl`
+  (0x8011897C, 0x3B0): la función de control de juego
+  que cada retrace consume texturas decodificadas vía
+  `PopDecodedTextureSet` (0x80119C34) y avanza la
+  reproducción. Es decir: **la película de atracción
+  (attract movie) está reproduciéndose** — prepare con
+  éxito, frames decodificándose y texturas listas para
+  display. NO se afirma pantalla de título: el título
+  como tal (menú con input) sigue pendiente de probar a
+  nivel de pantalla (ver punto 7).
+- Dibujo real: FIFO 15.021.078 B (frente a 56.389 B en
+  run35), `GXLoadTexObj` ×10.870 (frente a ×2), OSReport
+  95 líneas / 45 cambios (frente a 22/17), PADRead ×27,
+  DVDOpen ×132, async ×131, `DVDReadPrio` ×30,
+  `LCLoadBlocks` ×270, `LCStoreBlocks` ×105,
+  `LCQueueWait` ×384.
+
+### 5. Verificación host (runs 36–41, sin regresión enmascarada)
+
+- run36 (planificador, cola mal leída): hilos corriendo
+  (lectura/audio 731.058 cambios cada uno) pero principal
+  sin despertar nunca; cola prepare con mensaje 0
+  (fracaso por error 28 de decodificación) sin consumir.
+  Diagnóstico: punto 2.1.
+- run37 (cola corregida, sin LCE): excepción 0x20 en el
+  hilo de vídeo (FP). Diagnóstico: punto 2.3.
+- run38 (LCE + FP, sin LCStoreData): excepción de
+  programa en `mtdmau` (0x802425D8). Diagnóstico: 2.4.
+- run39 (todo corregido): desbloqueo completo, cifras
+  del punto 4.
+- run41 (código final, sin trazas de depuración):
+  **idéntico a run39** en todos los contadores y en FIFO
+  (15.021.078 B exactos, determinista), mismo PC final,
+  mismas 3 entregas.
+- run40unit (`test_phase6`, modo unit, con el HLE nuevo):
+  TODO OK, 0 fallos.
+- run40press (`test_phase6`, modo press, Start desde
+  PADRead nº 3): idéntico a run39/run41 en todos los
+  contadores (DVDOpen ×132, GXLoadTexObj ×10.870, FIFO
+  15.021.078 B exactos, 3 despertares con mensaje 1).
+  Held0 = Prev0 = 0x1000, Just0 = 0 al final: el flanco
+  quedó consumido por la lógica del juego tras avanzar
+  (en run32 el juego estaba atascado en prepare y el
+  flanco seguía sin consumir: Just0 = 0x1000). No es una
+  regresión de PAD — el código PAD no se tocó — sino la
+  consecuencia del propio desbloqueo. La prueba de input
+  a nivel de pantalla de título sigue pendiente (punto 7).
+- Comparación run35 → run41 (cambios documentados, resto
+  comparable): OSSleepThread ×996.986 → ×52 y cadenas VI
+  155.286 → 38 (el principal ya no gira en prepare: es el
+  cambio de diseño del punto 1, no una regresión);
+  DVDOpen ×121 → ×132, async ×119 → ×131, `DVDReadPrio`
+  ×10 → ×30 (el pipeline THP fluye y el juego carga más
+  tras el desbloqueo); FIFO, GXLoadTexObj y OSReport
+  suben porque el juego dibuja y avanza (punto 4).
+  Held/Just/Prev en modo baseline: 0/0/0 en ambos (sin
+  pulsación en ese modo).
+
+### 6. Build NDK (verificación Fase 9)
+
+Build `ndk-build` (directorio nuevo bajo `work-port/`,
+fuera del repo; JOBS=2, 179 C + runtime C++ desde cero):
+PASS, **0 errores**, exit 0.
+`libstarfox.so` **27.340.304 B**, ELF64 `DYN` AArch64,
+SHA-256
+`c2ba48298589299a53b6e735811ef063e8b4af1a2ff999d1fa7c7c1a1915efa2`
+(Fase 8: 27.329.920 B,
+`6105885b664b41ec8e19dc385f5e943a36a475074eb04f6b67177e360b19bf7e`;
+delta +10.384 B por el planificador y el `LCStoreData`
+HLE), comprobación del script «OK: ningún símbolo
+mem_/ppc_/func_/dolrecomp_ sin resolver», 153 undefined
+totales (**igual que en Fase 8: delta 0**, solo libs del
+sistema). `android_main` en `T`.
+APK Fase 0 intacta: SHA-256
+`b07a6af555246d442808208563efa8b0d423c7bd916aa9fc8938b1484bbf07d1`
+(57.916 B, sin reconstruir en este tramo; sigue siendo
+solo arranque, NO jugable).
+
+### 7. Qué queda (tras Fase 9, en orden)
+
+1. Pantalla de título a nivel de juego: runs más largos y
+   input (Start) en el bucle `PlayControl`/título para
+   confirmar el paso de la película de atracción al menú
+   y la lectura de JustPressed allí; la prueba de la Fase
+   8 medía el flanco solo a nivel `padUpdate`.
+2. Renderer GX en APK (GLES3) con el camino ya verificado
+   en host; display de las texturas THP listas; THP de
+   audio (los búferes `audio_ready` ya se llenan).
+3. CARD (guardado) y resto de HLE que el bucle principal
+   vaya pidiendo al avanzar más allá del título.
+4. Mapeo ID de sonido del juego → WAV; secuencias MusyX;
+   DSP real.
+5. Botones táctiles en pantalla (layout por definir),
+   rumble.
+6. Paquete de datos Pack B, APK jugable y test en Tab S8.
+   La APK Fase 0 sigue siendo solo arranque (ver abajo).
+   Limitación conocida del planificador (punto 1): sin
+   rodajas de tiempo y sin planificación de trabajadores
+   en sleeps de frame del principal; si un hilo futuro no
+   cede nunca, se diagnosticará por PC fijo en el tope.

@@ -169,6 +169,7 @@ class Hle {
   // codigo huesped (addi r3, r3, 1 en la entrada).
   static constexpr uint32_t kLcLoadBlocks = 0x802425A8u;
   static constexpr uint32_t kLcStoreBlocks = 0x802425CCu;
+  static constexpr uint32_t kLcStoreData = 0x802425F0u;
   static constexpr uint32_t kLcQueueWait = 0x8024269Cu;
   // DSP (Fase 5, evento de tarea): DSPAddTask NO esta en la
   // tabla HLE (su codigo huesped corre de verdad: lista de
@@ -259,8 +260,24 @@ class Hle {
   static constexpr uint32_t kOsEnableScheduler = 0x80246780u;
   static constexpr uint32_t kOsCreateThread = 0x80246C54u;
   static constexpr uint32_t kOsResumeThread = 0x80247014u;
+  static constexpr uint32_t kOsSuspendThread = 0x8024729Cu;
   static constexpr uint32_t kOsInitContext = 0x80242DD8u;
   static constexpr uint32_t kOsInitMessageQueue = 0x80244940u;
+  static constexpr uint32_t kOsSendMessage = 0x802449A0u;
+  static constexpr uint32_t kOsReceiveMessage = 0x80244A68u;
+  // Retornos de OSSleepThread dentro del SDK (ver codigo
+  // huesped): Receive duerme en 0x80244ABC (lr 0x80244AC0,
+  // cabeza del bucle) y Send en 0x802449F4 (lr 0x802449F8).
+  // El planificador (Fase 9) los usa para distinguir un
+  // sueno por cola (ceder la CPU) de un sueno de frame.
+  static constexpr uint32_t kOsReceiveSleepRet = 0x80244AC0u;
+  static constexpr uint32_t kOsSendSleepRet = 0x802449F8u;
+  // PC sintetico de salida de hilo (Fase 9): lr inicial de
+  // todo hilo creado, vecino del trampolin VI (0x80003000).
+  // Nunca es codigo real (el DOL empieza en 0x80003100); si
+  // una funcion de hilo retorna, aterriza aqui, el HLE la
+  // marca terminada y cambia al siguiente hilo listo.
+  static constexpr uint32_t kThreadExitTrampoline = 0x80003004u;
   // OSSleepThread (Fase 5, bucle de juego): el chassis es
   // monohilo y no entrega interrupciones (VI retrace, DVD,
   // ARQ...), asi que un hilo dormido no lo despertaria nadie:
@@ -268,13 +285,21 @@ class Hle {
   // esperando el siguiente retrace y SelectThread gira sin
   // fin con la mascara de listos a 0 (run13). HLE: el sueno
   // termina al instante (igual que VIWaitForRetrace, que ya
-  // era "retrace simulado, nunca espera"). No se toca el
-  // struct del hilo huesped: el chassis no lo consulta.
-  // LIMITACION: no hay suspension real ni planificador; un
-  // bucle que espere un mensaje que nunca llega seguira
-  // girando (se vera como bucle de despachos, no como giro
-  // en SelectThread) y pedira el siguiente HLE (p. ej. el
-  // callback async de DVD).
+  // era "retrace simulado, nunca espera").
+  // FASE 9 — planificador cooperativo (ver ThreadEntry y
+  // SwitchOnSleep en hle.cpp): un sueno por cola (lr en
+  // Receive/Send) ya NO retorna al instante: guarda el
+  // contexto del hilo actual y despacha el siguiente hilo
+  // listo (main primero si su cola ya tiene mensaje, si no
+  // round-robin entre hilos reanudados). Un sueno de frame
+  // (waitNextFrame, lr en codigo del juego) mantiene el
+  // comportamiento anterior (entrega VI + retorno): el
+  // planificado por frame queda como siguiente paso
+  // documentado, no como hecho. El SelectThread huesped
+  // nunca corre: todo cambio de contexto es host, y los
+  // campos del struct OSThread que el HLE escribe son un
+  // espejo best-effort (ver OSCreateThread en hle.cpp),
+  // no el estado autoritativo (ese vive en ThreadEntry).
   static constexpr uint32_t kOsSleepThread = 0x8024740Cu;
   static constexpr uint32_t kGxInitFifoBase = 0x80256868u;
   static constexpr uint32_t kGxInitFifoPtrs = 0x802568D4u;
@@ -446,10 +471,77 @@ class Hle {
     long size = 0;
     std::string host_path;
   };
+  // Contexto por hilo (Fase 9): solo lo que es propio de un
+  // hilo. Compartido y NO guardado/restaurado: ram/ram_size,
+  // host_call, external_user_data, timebase (avanza con el
+  // chassis, no por hilo), locked_cache y sus tags (memoria
+  // compartida, como la RAM), hid2 (SPR global de CPU) y
+  // downcount (el chassis lo repone antes de cada despacho).
+  // La reserva lwarx/stwcx se limpia al cambiar de hilo
+  // (semantica PPC: una reserva es por procesador, y el
+  // cambio de contexto la invalida).
+  struct ThreadContext {
+    uint32_t gpr[32] = {};
+    double fpr[32] = {};
+    double ps1[32] = {};
+    uint32_t pc = 0;
+    uint32_t lr = 0;
+    uint32_t ctr = 0;
+    uint32_t cr = 0;
+    uint32_t xer = 0;
+    uint32_t fpscr = 0;
+    uint32_t msr = 0;
+    uint32_t srr0 = 0;
+    uint32_t srr1 = 0;
+    uint32_t dar = 0;
+    uint32_t dsisr = 0;
+    uint32_t ear = 0;
+    uint32_t sr[16] = {};
+    uint32_t gqr[8] = {};
+    uint32_t program_exception = 0;
+  };
   struct ThreadEntry {
     uint32_t thread_guest = 0;
+    // runnable = reanudado al menos una vez (legado: antes
+    // solo significaba "registrado y marcado runnable").
     bool runnable = false;
+    uint32_t entry = 0;
+    uint32_t val = 0;
+    uint32_t stack = 0;
+    uint32_t stack_size = 0;
+    uint32_t priority = 0;
+    uint32_t suspend_count = 1;
+    bool started = false;
+    bool suspended = true;
+    bool finished = false;
+    ThreadContext ctx;
+    bool has_ctx = false;
+    bool canary_warned = false;
+    uint64_t switches_in = 0;
+    uint64_t yields = 0;
+    uint64_t suspends = 0;
   };
+
+ public:
+  // Estadistica del planificador (Fase 9), para tests host.
+  const std::vector<ThreadEntry>& ThreadsForTest() const {
+    return threads_;
+  }
+  int CurrentThreadIndexForTest() const { return current_thread_; }
+  uint64_t SchedulerSwitches() const { return switches_total_; }
+  uint64_t SchedulerSwitchesToMain() const { return switches_to_main_; }
+  uint64_t SchedulerFallbacks() const { return scheduler_fallbacks_; }
+  struct MainWakeDelivery {
+    uint32_t queue = 0;
+    uint32_t message = 0;
+    uint32_t sender_guest = 0;
+    uint32_t sender_entry = 0;
+  };
+  const std::vector<MainWakeDelivery>& MainWakeDeliveries() const {
+    return main_wake_deliveries_;
+  }
+
+ private:
 
   void LogCall(CpuState* cpu, const char* name, uint32_t address);
   bool Return(CpuState* cpu, uint32_t value);
@@ -576,6 +668,32 @@ class Hle {
   // contador de la cola del juego al aterrizar en el bucle
   // de espera de aramInit.
   uint32_t pending_arq_completions_ = 0;
+  // Planificador cooperativo (Fase 9, ver hle.cpp).
+  // current_thread_ = indice en threads_, o -1 = hilo
+  // principal (que no tiene ThreadEntry: su struct OSThread
+  // lo crea el OS antes de main y nunca pasa por
+  // OSCreateThread HLEado). main_ctx_ es su contexto
+  // guardado en el ultimo sueno por cola; blocked_* es la
+  // cola en la que quedo esperando (0 = ninguna).
+  int current_thread_ = -1;
+  ThreadContext main_ctx_;
+  bool main_saved_ = false;
+  uint32_t blocked_queue_ = 0;
+  int blocked_kind_ = 0;  // 0 ninguna, 1 Receive, 2 Send
+  uint64_t switches_total_ = 0;
+  uint64_t switches_to_main_ = 0;
+  uint64_t scheduler_fallbacks_ = 0;
+  std::vector<MainWakeDelivery> main_wake_deliveries_;
+  ThreadEntry* FindThread(uint32_t guest);
+  void SaveCurrent(CpuState* cpu, uint32_t resume_pc);
+  void LoadContext(CpuState* cpu, const ThreadContext& ctx);
+  void LoadMain(CpuState* cpu);
+  bool MainReady(CpuState* cpu);
+  bool SwitchToMain(CpuState* cpu, bool save_current);
+  bool SwitchToWorker(CpuState* cpu, size_t idx, bool save_current);
+  bool SwitchOnSleep(CpuState* cpu);
+  void UpdateReadyMask(CpuState* cpu);
+  void WriteThreadGuestFields(CpuState* cpu, ThreadEntry* t);
 };
 
 }  // namespace sfa
