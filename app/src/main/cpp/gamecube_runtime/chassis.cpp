@@ -246,6 +246,7 @@ ChassisResult RunChassis(CpuState* cpu, Hle* hle,
         (pc == 0x8000D220u ||  // AudioStream_Play
          pc == 0x8000D03Cu ||  // AudioStream_StopCurrent
          pc == 0x8000D158u ||  // AudioStream_StartPrepared
+         pc == 0x8000CFB8u ||  // AudioStream_GetCurrentId (Tramo 9)
          pc == 0x80273218u ||  // sndFXStartEx
          pc == 0x8027C34Cu ||  // sndSeqPlayEx
          pc == 0x80272F80u ||  // sndSeqStop (Tramo 6)

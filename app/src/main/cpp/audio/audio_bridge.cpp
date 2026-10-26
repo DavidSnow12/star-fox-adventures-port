@@ -17,6 +17,17 @@ namespace {
 // Direcciones guest verificadas en codigo/symbols.map.
 constexpr uint32_t kAudioStreamPlay = 0x8000D220u;
 constexpr uint32_t kAudioStreamStopCurrent = 0x8000D03Cu;
+// Tramo 9 (patch-A, observacion): AudioStream_StartPrepared y
+// AudioStream_GetCurrentId. El chassis debe anadir GetCurrentId
+// a la lista de hook (diff de chassis.cpp, 1 linea); StartPrepared
+// ya estaba en la lista pero solo se contaba.
+constexpr uint32_t kAudioStreamStartPrepared = 0x8000D158u;
+constexpr uint32_t kAudioStreamGetCurrentId = 0x8000CFB8u;
+// currentId huesped (GetCurrentId: lwz r3, -26904(r13); r13 =
+// 0x803E4B40 en el arranque real; StartPrepared escribe ahi el
+// prepared B). Solo para observacion en OnGetCurrentId; verificar
+// en integracion si r13 base cambiara (no cambia el sonido).
+constexpr uint32_t kGuestCurrentIdAddr = 0x803DE228u;
 constexpr uint32_t kSndFxStartEx = 0x80273218u;
 constexpr uint32_t kSndSeqPlayEx = 0x8027C34Cu;
 constexpr uint32_t kSndSeqStop = 0x80272F80u;
@@ -108,8 +119,128 @@ class AdpCachedReader : public NativeReader {
 
 AudioBridge::AudioBridge() {
   // Preset huesped (Tramo 5, seq_host.py): CC7=127, CC10=64.
-  cc7_.fill(127);
-  cc10_.fill(64);
+  for (SongSlot& slot : song_slots_) {
+    slot.cc7.fill(127);
+    slot.cc10.fill(64);
+  }
+}
+
+// ---- Tramo 9: slots de cancion ----
+AudioBridge::SongSlot* AudioBridge::FindSlot(uint32_t handle) {
+  for (SongSlot& slot : song_slots_) {
+    if (slot.active && slot.handle == handle) return &slot;
+  }
+  return nullptr;
+}
+const AudioBridge::SongSlot* AudioBridge::FindSlot(uint32_t handle) const {
+  for (const SongSlot& slot : song_slots_) {
+    if (slot.active && slot.handle == handle) return &slot;
+  }
+  return nullptr;
+}
+AudioBridge::SongSlot* AudioBridge::FirstActiveSlot() {
+  SongSlot* best = nullptr;
+  for (SongSlot& slot : song_slots_) {
+    if (slot.active && (best == nullptr || slot.handle < best->handle))
+      best = &slot;
+  }
+  return best;
+}
+const AudioBridge::SongSlot* AudioBridge::FirstActiveSlot() const {
+  const SongSlot* best = nullptr;
+  for (const SongSlot& slot : song_slots_) {
+    if (slot.active && (best == nullptr || slot.handle < best->handle))
+      best = &slot;
+  }
+  return best;
+}
+bool AudioBridge::AnySongActive() const {
+  for (const SongSlot& slot : song_slots_) {
+    if (slot.active) return true;
+  }
+  return false;
+}
+bool AudioBridge::SeqActive() const { return AnySongActive(); }
+int AudioBridge::CurrentSeqTrack() const {
+  const SongSlot* slot = FirstActiveSlot();
+  return slot != nullptr && slot->seq.Song() != nullptr
+             ? static_cast<int>(slot->seq.Song()->track_id)
+             : -1;
+}
+std::vector<int> AudioBridge::ActiveSeqTracks() const {
+  std::vector<int> out;
+  for (const SongSlot& slot : song_slots_) {
+    if (slot.active && slot.seq.Song() != nullptr)
+      out.push_back(static_cast<int>(slot.seq.Song()->track_id));
+  }
+  return out;
+}
+size_t AudioBridge::ActiveSongCount() const {
+  size_t n = 0;
+  for (const SongSlot& slot : song_slots_) {
+    if (slot.active) ++n;
+  }
+  return n;
+}
+uint32_t AudioBridge::SeqHandleForTrack(uint32_t track) const {
+  for (const SongSlot& slot : song_slots_) {
+    if (slot.active && slot.track_id == track) return slot.handle;
+  }
+  return 0;
+}
+float AudioBridge::SeqVolume() const {
+  const SongSlot* slot = FirstActiveSlot();
+  return slot != nullptr ? slot->vol_current : 1.0f;
+}
+float AudioBridge::SeqVolumeTarget() const {
+  const SongSlot* slot = FirstActiveSlot();
+  return slot != nullptr ? slot->vol_to : 1.0f;
+}
+float AudioBridge::SeqVolumeOf(uint32_t handle) const {
+  const SongSlot* slot = FindSlot(handle);
+  return slot != nullptr ? slot->vol_current : 1.0f;
+}
+bool AudioBridge::SlotMusicActive(const SongSlot* slot) const {
+  if (slot == nullptr) return false;
+  size_t idx = static_cast<size_t>(slot - song_slots_.data());
+  for (const MusicVoice& v : music_voices_) {
+    if (v.active && v.slot == idx) return true;
+  }
+  return false;
+}
+void AudioBridge::StopSlotMusic(SongSlot* slot) {
+  if (slot == nullptr) return;
+  size_t idx = static_cast<size_t>(slot - song_slots_.data());
+  for (MusicVoice& v : music_voices_) {
+    if (v.active && v.slot == idx) {
+      v.active = false;
+      v.pcm.clear();
+      v.pos = 0;
+    }
+  }
+}
+void AudioBridge::StopSlot(SongSlot* slot) {
+  if (slot == nullptr) return;
+  StopSlotMusic(slot);
+  slot->seq.Stop();
+  slot->mute_active = false;
+  slot->vol_current = 1.0f;
+  slot->vol_from = 1.0f;
+  slot->vol_to = 1.0f;
+  slot->vol_t = 0.0;
+  slot->vol_dur = 0.0;
+  slot->active = false;
+  SFA_LOGI("bridge: sndSeqStop (slot handle %u detenido)", slot->handle);
+}
+void AudioBridge::FinishSlots() {
+  for (SongSlot& slot : song_slots_) {
+    if (slot.active && slot.seq.Finished() && !SlotMusicActive(&slot)) {
+      uint32_t h = slot.handle;
+      StopSlot(&slot);
+      SFA_LOGI("bridge: MusyX cancion terminada (handle %u, slot "
+               "liberado)", h);
+    }
+  }
 }
 
 // ---- Musica MusyX (Tramo 6) ----
@@ -134,67 +265,99 @@ int AudioBridge::OnSeqPlay(uint32_t group_id, uint32_t seq_id,
              group_id, seq_id);
     return 0;
   }
-  // Tramo 8 — params reales (SynthPlayParams, layout
-  // medido en RAM huesped en el Tramo 7, big-endian):
-  // +0 flags u32, +4 mute[2] u32, +12 speed u16, +14
-  // vol.time u16, +16 vol.target u8, +17 numVolDefs u8,
-  // +20 volDefs ptr, +24 numFaded u8, +28 faded ptr.
-  // flags: bit 0 = mutes, bit 1 = speed, bit 2 = volumen,
-  // bit 3 = seqVolumeDefinitions (0 en la llamada medida).
-  // Sin RAM huesped (o params fuera de rango): defaults
-  // v1 (speed 256, sin mutes, volumen 1,0) y se registra.
-  // El volumen de params es el punto de partida del fade,
-  // NO una ganancia estatica: la llamada real trae
-  // target 0 y luego sndSeqVolume sube a 60 en 500 ms; una
-  // ganancia estatica 0 silenciaria la cancion.
+  // Tramo 8 - params reales (SynthPlayParams, layout medido en RAM
+  // huesped en el Tramo 7, big-endian): +0 flags u32, +4 mute[2]
+  // u32, +12 speed u16, +14 vol.time u16, +16 vol.target u8,
+  // +17 numVolDefs u8, +20 volDefs ptr, +24 numFaded u8, +28
+  // faded ptr. flags: bit 0 = mutes, bit 1 = speed, bit 2 =
+  // volumen, bit 3 = seqVolumeDefinitions (0 en la llamada
+  // medida). Sin RAM huesped (o params fuera de rango):
+  // defaults v1 (speed 256, sin mutes, volumen 1,0).
+  // El volumen de params es el punto de partida del fade, NO
+  // una ganancia estatica (la llamada real trae target 0 y
+  // luego sndSeqVolume sube; una ganancia estatica 0 la
+  // silenciaria).
   uint32_t speed = 256;
   uint32_t params_flags = 0;
-  params_mute_[0] = 0xFFFFFFFFu;
-  params_mute_[1] = 0xFFFFFFFFu;
-  params_mute_active_ = false;
-  seq_vol_current_ = 1.0f;
-  seq_vol_from_ = 1.0f;
-  seq_vol_to_ = 1.0f;
-  seq_vol_t_ = 0.0;
-  seq_vol_dur_ = 0.0;
+  uint32_t mute0 = 0xFFFFFFFFu, mute1 = 0xFFFFFFFFu;
+  bool mute_active = false;
+  float vol_init = 1.0f;
   bool params_read = false;
   if (guest_ram_ != nullptr && params_ptr >= 0x80000000u) {
     uint32_t off = params_ptr - 0x80000000u;
     if (off + 32 <= guest_ram_size_) {
-      const uint8_t* p = guest_ram_ + off;
+      const uint8_t* q = guest_ram_ + off;
       auto rd32 = [&](int o) -> uint32_t {
-        return (static_cast<uint32_t>(p[o]) << 24) |
-               (static_cast<uint32_t>(p[o + 1]) << 16) |
-               (static_cast<uint32_t>(p[o + 2]) << 8) |
-               static_cast<uint32_t>(p[o + 3]);
+        return (static_cast<uint32_t>(q[o]) << 24) |
+               (static_cast<uint32_t>(q[o + 1]) << 16) |
+               (static_cast<uint32_t>(q[o + 2]) << 8) |
+               static_cast<uint32_t>(q[o + 3]);
       };
       auto rd16 = [&](int o) -> uint32_t {
-        return (static_cast<uint32_t>(p[o]) << 8) |
-               static_cast<uint32_t>(p[o + 1]);
+        return (static_cast<uint32_t>(q[o]) << 8) |
+               static_cast<uint32_t>(q[o + 1]);
       };
       params_flags = rd32(0);
-      params_mute_[0] = rd32(4);
-      params_mute_[1] = rd32(8);
+      mute0 = rd32(4);
+      mute1 = rd32(8);
       uint32_t p_speed = rd16(12);
-      uint32_t p_vol_target = p[16];
-      params_mute_active_ = (params_flags & 1u) != 0;
+      uint32_t p_vol_target = q[16];
+      mute_active = (params_flags & 1u) != 0;
       if ((params_flags & 2u) != 0 && p_speed != 0) speed = p_speed;
       if ((params_flags & 4u) != 0) {
-        float v = static_cast<float>(p_vol_target > 127 ? 127
-                                                        : p_vol_target) /
-                  127.0f;
-        seq_vol_current_ = v;
-        seq_vol_from_ = v;
-        seq_vol_to_ = v;
+        vol_init = static_cast<float>(p_vol_target > 127 ? 127
+                                                         : p_vol_target) /
+                   127.0f;
       }
       params_read = true;
     }
   }
-  StopAllMusic();
-  seq_.Stop();
-  cc7_.fill(127);
-  cc10_.fill(64);
-  seq_.Start(song, speed);
+  // Tramo 9 - varias canciones a la vez (limite v1 roto): si el
+  // track ya suena, se reinicia SU slot; si no, se usa el primer
+  // slot libre. Las demas canciones NO se tocan (antes,
+  // StopAllMusic() + seq_.Stop() las cortaban: en G3, al
+  // arrancar 95 la 22 se cortaba). Sin slot libre: no se
+  // arranca y se cuenta (no se roba una cancion en curso).
+  SongSlot* slot = nullptr;
+  for (SongSlot& sl : song_slots_) {
+    if (sl.active && sl.track_id == seq_id) {
+      slot = &sl;
+      break;
+    }
+  }
+  if (slot == nullptr) {
+    for (SongSlot& sl : song_slots_) {
+      if (!sl.active) {
+        slot = &sl;
+        break;
+      }
+    }
+  }
+  if (slot == nullptr) {
+    ++seq_slots_full_;
+    SFA_LOGI("bridge: sndSeqPlayEx grupo %u cancion %u sin slot "
+             "libre (4 canciones en curso, no se roba)",
+             group_id, seq_id);
+    return 0;
+  }
+  bool restarting = slot->active;
+  if (restarting) StopSlot(slot);
+  slot->handle = next_seq_handle_++;
+  slot->group_id = group_id;
+  slot->track_id = seq_id;
+  slot->speed = speed;
+  slot->mute[0] = mute0;
+  slot->mute[1] = mute1;
+  slot->mute_active = mute_active;
+  slot->vol_current = vol_init;
+  slot->vol_from = vol_init;
+  slot->vol_to = vol_init;
+  slot->vol_t = 0.0;
+  slot->vol_dur = 0.0;
+  slot->cc7.fill(127);
+  slot->cc10.fill(64);
+  slot->active = true;
+  slot->seq.Start(song, speed);
   SeqStarted rec;
   rec.group_id = group_id;
   rec.seq_id = seq_id;
@@ -203,17 +366,17 @@ int AudioBridge::OnSeqPlay(uint32_t group_id, uint32_t seq_id,
   rec.params_ptr = params_ptr;
   rec.speed = speed;
   rec.params_flags = params_flags;
+  rec.handle = slot->handle;
   seq_started_.push_back(rec);
   SFA_LOGI("bridge: sndSeqPlayEx grupo %u cancion %u -> tabla "
            "verificada (gid %u, BPM %u, %zu notas, %.1f ticks/s, "
            "params huesped 0x%08X %s: flags %u speed %u mutes %s "
-           "vol %.3f)",
+           "vol %.3f, handle %u%s)",
            group_id, seq_id, song->group_id, song->bpm,
            song->note_count, MusyxTicksPerSecond(song->bpm),
            params_ptr, params_read ? "leidos" : "sin leer",
-           params_flags, speed,
-           params_mute_active_ ? "activos" : "no",
-           seq_vol_current_);
+           params_flags, speed, mute_active ? "activos" : "no",
+           vol_init, slot->handle, restarting ? ", reinicio" : "");
   if (song->group_id != group_id) {
     SFA_LOGI("bridge: aviso MusyX: group_id %u != gid de tabla %u "
              "(equivalencia sgid<->gid sin verificar; se arranca "
@@ -224,64 +387,144 @@ int AudioBridge::OnSeqPlay(uint32_t group_id, uint32_t seq_id,
 }
 
 void AudioBridge::OnSeqStop() {
-  if (!seq_.Active() && MusyxActiveNotes() == 0) return;
-  StopAllMusic();
-  seq_.Stop();
-  params_mute_active_ = false;
-  seq_vol_current_ = 1.0f;
-  seq_vol_from_ = 1.0f;
-  seq_vol_to_ = 1.0f;
-  seq_vol_t_ = 0.0;
-  seq_vol_dur_ = 0.0;
-  SFA_LOGI("bridge: sndSeqStop (cancion host detenida)");
+  for (SongSlot& slot : song_slots_) {
+    if (slot.active) StopSlot(&slot);
+  }
+  SFA_LOGI("bridge: sndSeqStop (todas las canciones detenidas)");
 }
 
-// Tramo 8 — fade de musica (sndSeqVolume, ver .h). El
-// handle solo se registra: el bridge es de una sola
-// cancion, asi que cualquier fade con cancion activa es
-// el de esa cancion (si el juego mezclara dos canciones,
-// este modelo seria insuficiente y habria que indexar el
-// fade por handle: limitacion v1, documentada).
+int AudioBridge::OnSeqStopHandle(uint32_t handle) {
+  SongSlot* slot = FindSlot(handle);
+  if (slot != nullptr) {
+    StopSlot(slot);
+    return 1;
+  }
+  // Fallback: una unica cancion activa se detiene aunque el
+  // handle no coincida (cubre handle 0 y llamadas "para la
+  // cancion en curso"); sin cancion, nada que hacer.
+  size_t active = ActiveSongCount();
+  if (active == 1) {
+    SongSlot* only = FirstActiveSlot();
+    SFA_LOGI("bridge: sndSeqStop handle %u sin coincidencia, "
+             "unica cancion activa (handle %u): se detiene",
+             handle, only->handle);
+    StopSlot(only);
+    return 1;
+  }
+  if (active == 0) return 0;
+  ++seq_stop_unmatched_;
+  SFA_LOGI("bridge: sndSeqStop handle %u sin coincidencia con "
+           "%zu canciones activas: no se detiene ninguna",
+           handle, active);
+  return 0;
+}
+
+// Tramo 8 - fade de musica (sndSeqVolume, ver .h); Tramo 9: el
+// fade se aplica AL SLOT DEL HANDLE (en G3: 60/500 ms a
+// handle 1 = cancion 22, 100/500 ms a handle 2 = cancion 95;
+// antes, con una sola cancion, cualquier fade era "la"
+// cancion). Sin coincidencia y una unica cancion activa,
+// se aplica a esa (mismo fallback que OnSeqStopHandle).
 bool AudioBridge::OnSeqVolume(uint32_t volume, uint32_t time_ms,
                               uint32_t seq_handle) {
-  if (!seq_.Active()) {
+  SongSlot* slot = FindSlot(seq_handle);
+  if (slot == nullptr && ActiveSongCount() == 1) {
+    slot = FirstActiveSlot();
+    SFA_LOGI("bridge: sndSeqVolume handle %u sin coincidencia, "
+             "unica cancion activa (handle %u): se aplica",
+             seq_handle, slot->handle);
+  }
+  if (slot == nullptr) {
     SFA_LOGI("bridge: sndSeqVolume vol %u tiempo %u handle %u "
-             "sin cancion activa (ignorado)",
+             "sin cancion correspondiente (ignorado)",
              volume, time_ms, seq_handle);
     return false;
   }
   float target =
       static_cast<float>(volume > 127 ? 127 : volume) / 127.0f;
-  seq_vol_from_ = seq_vol_current_;
-  seq_vol_to_ = target;
-  seq_vol_t_ = 0.0;
-  seq_vol_dur_ = static_cast<double>(time_ms) / 1000.0;
-  if (seq_vol_dur_ <= 0.0) seq_vol_current_ = target;
+  slot->vol_from = slot->vol_current;
+  slot->vol_to = target;
+  slot->vol_t = 0.0;
+  slot->vol_dur = static_cast<double>(time_ms) / 1000.0;
+  if (slot->vol_dur <= 0.0) slot->vol_current = target;
   SFA_LOGI("bridge: sndSeqVolume vol %u -> %.3f en %u ms "
-           "(handle %u, desde %.3f)",
-           volume, target, time_ms, seq_handle, seq_vol_from_);
+           "(handle %u, cancion %u, desde %.3f)",
+           volume, target, time_ms, seq_handle, slot->track_id,
+           slot->vol_from);
   return true;
 }
 
-void AudioBridge::AdvanceSeqVolume(double dt_seconds) {
-  if (seq_vol_dur_ <= 0.0 || seq_vol_t_ >= seq_vol_dur_) {
-    seq_vol_current_ = seq_vol_to_;
+void AudioBridge::AdvanceSlotVolume(SongSlot* slot, double dt_seconds) {
+  if (slot == nullptr) return;
+  if (slot->vol_dur <= 0.0 || slot->vol_t >= slot->vol_dur) {
+    slot->vol_current = slot->vol_to;
     return;
   }
-  seq_vol_t_ += dt_seconds;
-  double f = seq_vol_t_ >= seq_vol_dur_
+  slot->vol_t += dt_seconds;
+  double f = slot->vol_t >= slot->vol_dur
                  ? 1.0
-                 : seq_vol_t_ / seq_vol_dur_;
-  seq_vol_current_ = static_cast<float>(
-      seq_vol_from_ + (seq_vol_to_ - seq_vol_from_) * f);
+                 : slot->vol_t / slot->vol_dur;
+  slot->vol_current = static_cast<float>(
+      slot->vol_from + (slot->vol_to - slot->vol_from) * f);
+}
+
+void AudioBridge::AdvanceSeqVolume(double dt_seconds) {
+  for (SongSlot& slot : song_slots_) {
+    if (slot.active) AdvanceSlotVolume(&slot, dt_seconds);
+  }
+}
+
+// Tramo 9 - observacion de streams (patch-A, ver INFORME.md
+// §1): StartPrepared confirma el pendiente de Play; un
+// segundo StartPrepared sin pendiente nuevo es doble
+// arranque (devuelve false, no duplica sonido: el bridge
+// ya suena desde Play y el juego ya esta en playing=1).
+bool AudioBridge::OnStartPrepared() {
+  ++start_prepared_entries_;
+  if (pending_prepared_id_ == 0) {
+    SFA_LOGI("bridge: StartPrepared sin stream pendiente "
+             "(duplicado o sin Play previo: sin efecto)");
+    return false;
+  }
+  uint32_t id = pending_prepared_id_;
+  pending_prepared_id_ = 0;
+  ++start_prepared_confirms_;
+  SFA_LOGI("bridge: StartPrepared confirma stream %u (juego en "
+           "playing)", id);
+  return true;
+}
+
+bool AudioBridge::OnGetCurrentId() {
+  ++getcurrentid_polls_;
+  if (guest_ram_ == nullptr ||
+      kGuestCurrentIdAddr < 0x80000000u ||
+      kGuestCurrentIdAddr - 0x80000000u + 4 > guest_ram_size_) {
+    return false;
+  }
+  uint32_t off = kGuestCurrentIdAddr - 0x80000000u;
+  const uint8_t* q = guest_ram_ + off;
+  uint32_t value = (static_cast<uint32_t>(q[0]) << 24) |
+                   (static_cast<uint32_t>(q[1]) << 16) |
+                   (static_cast<uint32_t>(q[2]) << 8) |
+                   static_cast<uint32_t>(q[3]);
+  getcurrentid_last_ = value;
+  // currentId es indice+1 (340 para 1301), NO el id de stream:
+  // solo se compara cero / no-cero, y solo fuera de la
+  // ventana Play->StartPrepared (pendiente != 0).
+  bool guest_playing = value != 0;
+  bool bridge_playing = stream_voice_.active || StreamSourceActive();
+  if (pending_prepared_id_ == 0 && guest_playing != bridge_playing) {
+    ++getcurrentid_mismatches_;
+    SFA_LOGI("bridge: GetCurrentId desajuste: juego currentId=%u "
+             "(%s) vs bridge stream %s",
+             value, guest_playing ? "sonando" : "parado",
+             bridge_playing ? "activo" : "inactivo");
+  }
+  return true;
 }
 
 void AudioBridge::StopAllMusic() {
-  for (MusicVoice& v : music_voices_) {
-    v.active = false;
-    v.pcm.clear();
-    v.pos = 0;
-  }
+  for (SongSlot& slot : song_slots_) StopSlotMusic(&slot);
 }
 
 bool AudioBridge::MusyxVoicePcmCopy(size_t note_index,
@@ -305,7 +548,7 @@ size_t AudioBridge::MusyxActiveNotes() const {
 }
 
 bool AudioBridge::StartMusicNote(const MusyxNote& note,
-                                 size_t note_index) {
+                                 size_t note_index, size_t slot_idx) {
   const MusyxSampleEntry* entry = LookupSampleEntry(note.sample_id);
   if (entry == nullptr) {
     Unresolved u;
@@ -333,7 +576,9 @@ bool AudioBridge::StartMusicNote(const MusyxNote& note,
                 static_cast<double>(Audio::kOutputRate);
   if (!(step > 0.0)) return false;
   // Duracion en frames a 48 kHz (key-off en time+length).
-  const MusyxSong* song = seq_.Song();
+  const MusyxSong* song =
+      slot_idx < song_slots_.size() ? song_slots_[slot_idx].seq.Song()
+                                    : nullptr;
   double tps = song != nullptr ? MusyxTicksPerSecond(song->bpm) : 384.0;
   size_t dur_frames = static_cast<size_t>(
       static_cast<double>(note.length_ticks) / tps *
@@ -349,7 +594,9 @@ bool AudioBridge::StartMusicNote(const MusyxNote& note,
                   loop_start + loop_len <= src_frames;
   // Pan CC10 vigente en el note-on (formula del render
   // Tramo 5, balance lineal, no ley DSP).
-  uint32_t pan = note.midi < 16 ? cc10_[note.midi] : 64;
+  uint32_t pan = 64;
+  if (note.midi < 16 && slot_idx < song_slots_.size())
+    pan = song_slots_[slot_idx].cc10[note.midi];
   double gl = 1.0, gr = 1.0;
   if (pan <= 64) {
     gl = 1.0;
@@ -408,7 +655,7 @@ bool AudioBridge::StartMusicNote(const MusyxNote& note,
       }
     }
     ++musyx_stolen_;
-    SFA_LOGI("bridge: MusyX voz robada (16 ocupadas, nota %zu)",
+    SFA_LOGI("bridge: MusyX voz robada (32 ocupadas, nota %zu)",
              note_index);
   }
   Played p;
@@ -424,14 +671,15 @@ bool AudioBridge::StartMusicNote(const MusyxNote& note,
   slot->base_gain = static_cast<float>(note.mac_vol) / 127.0f;
   slot->midi = note.midi;
   slot->note_index = note_index;
+  slot->slot = slot_idx;
   slot->active = true;
   ++musyx_started_;
   return true;
 }
 
-void AudioBridge::StopMusicNote(size_t note_index) {
+void AudioBridge::StopMusicNote(size_t slot_idx, size_t note_index) {
   for (MusicVoice& v : music_voices_) {
-    if (v.active && v.note_index == note_index) {
+    if (v.active && v.slot == slot_idx && v.note_index == note_index) {
       v.active = false;
       v.pcm.clear();
       v.pos = 0;
@@ -441,15 +689,16 @@ void AudioBridge::StopMusicNote(size_t note_index) {
   }
 }
 
-void AudioBridge::PumpSequencer(double dt_seconds) {
-  if (!seq_.Active()) return;
+void AudioBridge::PumpSlot(SongSlot* slot, double dt_seconds) {
+  if (slot == nullptr || !slot->seq.Active()) return;
+  size_t slot_idx = static_cast<size_t>(slot - song_slots_.data());
   std::vector<MusyxSequencer::Event> events;
-  seq_.Advance(dt_seconds, &events);
+  slot->seq.Advance(dt_seconds, &events);
   for (const MusyxSequencer::Event& e : events) {
     if (e.kind == MusyxSequencer::Event::kCc && e.cc != nullptr) {
       if (e.cc->midi < 16) {
-        if (e.cc->cc == 7) cc7_[e.cc->midi] = e.cc->value;
-        if (e.cc->cc == 10) cc10_[e.cc->midi] = e.cc->value;
+        if (e.cc->cc == 7) slot->cc7[e.cc->midi] = e.cc->value;
+        if (e.cc->cc == 10) slot->cc10[e.cc->midi] = e.cc->value;
       }
     } else if (e.kind == MusyxSequencer::Event::kLoop) {
       // Tramo 8: al envolver, los CC vuelven al snapshot
@@ -459,24 +708,39 @@ void AudioBridge::PumpSequencer(double dt_seconds) {
       // 101/75). Los CC de la ventana del bucle que vencen
       // despues reescriben estos valores en orden.
       for (int m = 0; m < 16; ++m) {
-        cc7_[m] = seq_.LoopCc7(static_cast<uint32_t>(m));
-        cc10_[m] = seq_.LoopCc10(static_cast<uint32_t>(m));
+        slot->cc7[m] = slot->seq.LoopCc7(static_cast<uint32_t>(m));
+        slot->cc10[m] = slot->seq.LoopCc10(static_cast<uint32_t>(m));
       }
+    } else if (e.kind == MusyxSequencer::Event::kSectionLoop) {
+      // Tramo 9: vuelta de seccion en la fase de bucle por
+      // secciones. Los CC quedan congelados en fin de
+      // primer pase (los CC por seccion y vuelta no se
+      // repiten en esta version; ver INFORME.md §3): el
+      // evento solo se registra, no toca los CC.
+      SFA_LOGI("bridge: MusyX cancion %u seccion %u vuelta nueva "
+               "(handle %u)",
+               slot->track_id, e.section_id, slot->handle);
     } else if (e.kind == MusyxSequencer::Event::kNoteOn &&
                e.note != nullptr) {
       // Tramo 8: mute de params (flags bit 0). Bit a 1 =
       // pista activa; bit a 0 = nota silenciada (no se
       // arranca voz ni se cuenta como nota iniciada; su
       // NoteOff posterior no encuentra voz y no hace nada).
-      if (params_mute_active_ && e.note->midi < 64) {
-        uint32_t word = params_mute_[e.note->midi / 32];
+      if (slot->mute_active && e.note->midi < 64) {
+        uint32_t word = slot->mute[e.note->midi / 32];
         uint32_t bit = (word >> (e.note->midi % 32)) & 1u;
         if (bit == 0) continue;
       }
-      StartMusicNote(*e.note, e.note_index);
+      StartMusicNote(*e.note, e.note_index, slot_idx);
     } else if (e.kind == MusyxSequencer::Event::kNoteOff) {
-      StopMusicNote(e.note_index);
+      StopMusicNote(slot_idx, e.note_index);
     }
+  }
+}
+
+void AudioBridge::PumpSequencer(double dt_seconds) {
+  for (SongSlot& slot : song_slots_) {
+    if (slot.active) PumpSlot(&slot, dt_seconds);
   }
 }
 
@@ -643,6 +907,12 @@ bool AudioBridge::OnStreamPlay(uint32_t stream_id) {
              stream_id);
     return false;
   }
+  // Tramo 9 (patch-A): el stream queda pendiente de confirmar
+  // por StartPrepared (el juego solo esta en playing tras
+  // StartPrepared; el bridge, como en v1, ya suena desde
+  // Play: el pendiente es observacion, no puerta de sonido).
+  pending_prepared_id_ = stream_id;
+  last_stream_id_ = stream_id;
   // Tramo 5, orden: cache PCM -> ADP por bloques -> WAV
   // en memoria -> silencio + unresolved. El ADP es la
   // fuente de verdad (su PCM es bit a bit el WAV host);
@@ -699,6 +969,9 @@ bool AudioBridge::OnStreamPlay(uint32_t stream_id) {
     return true;
   }
   // 4) Nada reproducible: silencio + unresolved, sin crash.
+  // Sin sonido no hay nada que confirme StartPrepared.
+  pending_prepared_id_ = 0;
+  last_stream_id_ = 0;
   Unresolved u;
   u.id = stream_id;
   u.kind = "stream";
@@ -718,6 +991,8 @@ void AudioBridge::OnStreamStop() {
   stream_voice_.active = false;
   stream_voice_.pcm.clear();
   stream_voice_.pos = 0;
+  pending_prepared_id_ = 0;
+  last_stream_id_ = 0;
   SFA_LOGI("bridge: stop de stream (solo voz de stream)");
 }
 
@@ -1049,6 +1324,12 @@ bool AudioBridge::OnAudioEntry(uint32_t pc, uint32_t r3,
     OnStreamStop();
     return true;
   }
+  if (pc == kAudioStreamStartPrepared) {
+    return OnStartPrepared();
+  }
+  if (pc == kAudioStreamGetCurrentId) {
+    return OnGetCurrentId();
+  }
   if (pc == kSndFxStartEx) {
     // sndFXStartEx (Fase 18, layout verificado en código
     // huésped): r3=fxId, r4=volume, r5=pan, r6=studio.
@@ -1072,8 +1353,9 @@ bool AudioBridge::OnAudioEntry(uint32_t pc, uint32_t r3,
     return OnSeqPlay(r3, r4, r6) == 1;
   }
   if (pc == kSndSeqStop) {
-    OnSeqStop();
-    return true;
+    // Tramo 9: r3 = handle (ver OnSeqStopHandle; con una
+    // unica cancion, el fallback cubre handle 0).
+    return OnSeqStopHandle(r3) == 1;
   }
   if (pc == kSndSeqVolume) {
     // sndSeqVolume (Tramo 8, layout verificado en codigo
@@ -1138,7 +1420,8 @@ void AudioBridge::Tick() {
   // Tick procesa tick 0). Los eventos que vencen con el
   // avance de este Tick se procesan en el Tick siguiente:
   // latencia de arranque <= 1 bloque (85 ms), documentada.
-  if (seq_.Active()) PumpSequencer(0.0);
+  // Tramo 9: PumpSequencer itera los slots activos.
+  PumpSequencer(0.0);
   // Una fuente en streaming que llego a EOF en el Tick
   // anterior se cierra aqui (no en mitad de la mezcla).
   if (stream_source_ != nullptr && stream_source_->AtEof()) {
@@ -1154,7 +1437,7 @@ void AudioBridge::Tick() {
   bool stream_on = StreamSourceActive();
   size_t nmusic = MusyxActiveNotes();
   if (nvoices == 0 && !stream_on && nmusic == 0) {
-    if (seq_.Active()) {
+    if (AnySongActive()) {
       // Sin voces pero con cancion en curso: el reloj debe
       // seguir hasta la proxima nota (huecos entre notas).
       // Se entrega un bloque de silencio y se avanza.
@@ -1165,10 +1448,7 @@ void AudioBridge::Tick() {
                        static_cast<double>(Audio::kOutputRate));
       PumpSequencer(static_cast<double>(kFeedFrames) /
                     static_cast<double>(Audio::kOutputRate));
-      if (seq_.Finished() && MusyxActiveNotes() == 0) {
-        seq_.Stop();
-        SFA_LOGI("bridge: MusyX cancion terminada (slot liberado)");
-      }
+      FinishSlots();
     }
     return;
   }
@@ -1264,10 +1544,15 @@ void AudioBridge::Tick() {
                    static_cast<double>(Audio::kOutputRate));
   for (MusicVoice& v : music_voices_) {
     if (!v.active) continue;
+    // Tramo 9: CC7 y fade del slot de la voz, no globales.
+    const SongSlot& vs =
+        v.slot < song_slots_.size()
+            ? song_slots_[v.slot]
+            : song_slots_[0];
     float g = v.base_gain *
-              static_cast<float>(v.midi < 16 ? cc7_[v.midi] : 127) /
+              static_cast<float>(v.midi < 16 ? vs.cc7[v.midi] : 127) /
               127.0f *
-              seq_vol_current_;
+              vs.vol_current;
     for (size_t f = 0; f < block; ++f) {
       if (v.pos + f >= v.Total()) continue;
       size_t idx = v.pos + f;
@@ -1325,14 +1610,9 @@ void AudioBridge::Tick() {
       v.pos = 0;
     }
   }
-  if (seq_.Active()) {
-    PumpSequencer(static_cast<double>(block) /
-                  static_cast<double>(Audio::kOutputRate));
-    if (seq_.Finished() && MusyxActiveNotes() == 0) {
-      seq_.Stop();
-      SFA_LOGI("bridge: MusyX cancion terminada (slot liberado)");
-    }
-  }
+  PumpSequencer(static_cast<double>(block) /
+                static_cast<double>(Audio::kOutputRate));
+  FinishSlots();
 }
 
 }  // namespace sfa

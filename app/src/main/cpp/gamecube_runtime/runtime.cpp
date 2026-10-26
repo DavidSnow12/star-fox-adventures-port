@@ -3,6 +3,7 @@
 #include "cpu/cpu.h"
 #include "gamecube_runtime/dol_loader.h"
 #include "log.h"
+#include "renderer/frame_capture.h"
 
 namespace sfa {
 
@@ -111,14 +112,25 @@ void GameCubeRuntime::Shutdown() {
   SFA_LOGI("runtime: apagado");
 }
 
+void GameCubeRuntime::RequestFrameCapture(const char* dir,
+                                          const char* scene) {
+  if (dir == nullptr || scene == nullptr || scene[0] == '\0') return;
+  capture_dir_ = dir;
+  capture_scene_ = scene;
+  capture_pending_ = true;
+  SFA_LOGI("runtime: captura de frame pedida (dir %s, escena %s, "
+           "indice %d)",
+           dir, scene, capture_index_);
+}
+
 void GameCubeRuntime::FeedGxFrame() {
   if (!gx_capture_on_) return;
   // Texloads HLE nuevas: su fifo_offset es relativo al buffer
   // de captura vigente (se resetea tras cada drenaje), asi que
   // se convierten a offset global sumando gx_fifo_base_.
   const std::vector<Hle::TexLoad>& loads = hle_.TexLoads();
+  std::vector<GxTexLoad> conv;
   if (loads.size() > gx_texloads_converted_) {
-    std::vector<GxTexLoad> conv;
     for (size_t i = gx_texloads_converted_; i < loads.size(); ++i) {
       GxTexLoad gl;
       gl.fifo_offset = gx_fifo_base_ + loads[i].fifo_offset;
@@ -137,6 +149,42 @@ void GameCubeRuntime::FeedGxFrame() {
              static_cast<unsigned long long>(gx_fifo_base_), len);
   }
   const uint8_t* data = sfa_fifo_capture_data();
+  // Tramo 9: gancho de captura de frame. Punto temporal
+  // critico: ANTES del parseo y ANTES del reset de captura,
+  // con la RAM viva tal cual esta tras la rebanada. El
+  // segmento FIFO y la RAM salen de aqui juntos: si se
+  // escribieran despues del siguiente slice, la ventana
+  // temporal estaria rota y la captura se descartaria
+  // (ver CAPTURA_MUNDO_T9.md). Tras escribir, el frame
+  // sigue su drenaje normal (el juego no se interrumpe).
+  if (capture_pending_) {
+    capture_pending_ = false;
+    FrameCaptureMeta meta;
+    meta.index = capture_index_;
+    meta.scene = capture_scene_;
+    meta.fifo_base = gx_fifo_base_;
+    meta.overflow = sfa_fifo_capture_overflow();
+    std::vector<FrameTexLoad> ft;
+    for (const GxTexLoad& t : conv) {
+      FrameTexLoad f;
+      f.fifo_offset = t.fifo_offset;
+      f.tex_obj = t.tex_obj;
+      f.map = t.map;
+      ft.push_back(f);
+    }
+    bool ok = false;
+    if (len > 0 && data != nullptr) {
+      ok = WriteFrameCapture(capture_dir_, meta, data,
+                             static_cast<size_t>(len),
+                             memory_.RamData(), memory_.RamSize(), ft);
+    }
+    SFA_LOGI("runtime: captura de frame %d (%s): fifo %llu B, "
+             "ram %u B, overflow %llu, escena %s",
+             capture_index_, ok ? "ok" : "FALLO",
+             len, memory_.RamSize(), meta.overflow,
+             capture_scene_.c_str());
+    ++capture_index_;
+  }
   if (len > 0 && data != nullptr) {
     if (!gx_parser_.Feed(data, static_cast<size_t>(len),
                          gx_fifo_base_)) {

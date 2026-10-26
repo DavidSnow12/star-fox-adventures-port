@@ -1,9 +1,11 @@
 #include "renderer/gx_gl.h"
 
+#include <cstring>
 #include <map>
 #include <string>
 
 #include "log.h"
+#include "renderer/efb_copy.h"
 #include "renderer/gx_tev.h"
 
 namespace sfa {
@@ -199,6 +201,15 @@ bool GxGlRenderer::InitGl() {
 }
 
 void GxGlRenderer::ShutdownGl() {
+  // Tramo 9: el target EFB no puede sobrevivir al apagado.
+  if (efb_rbo_ != 0) glDeleteRenderbuffers(1, &efb_rbo_);
+  if (efb_tex_ != 0) glDeleteTextures(1, &efb_tex_);
+  if (efb_fbo_ != 0) glDeleteFramebuffers(1, &efb_fbo_);
+  efb_rbo_ = 0;
+  efb_tex_ = 0;
+  efb_fbo_ = 0;
+  efb_w_ = 0;
+  efb_h_ = 0;
   if (checker_tex_ != 0) glDeleteTextures(1, &checker_tex_);
   checker_tex_ = 0;
   if (vbo_ != 0) glDeleteBuffers(1, &vbo_);
@@ -780,6 +791,141 @@ int GxGlRenderer::DrawDraws(const std::vector<GxDraw>& draws,
     }
   }
   return drawn;
+}
+
+// --- Tramo 9: target EFB + copia a RAM huesped ---
+//
+// La parte pura (formato, conversion, escritura) vive en
+// renderer/efb_copy.h; aqui solo hay GL: FBO RGBA8 + depth,
+// readback con flip vertical y contadores. Sin cableado en
+// Frame(), estas funciones no se llaman solas y DrawDraws
+// sigue dibujando a pantalla como siempre.
+
+namespace {
+void DeleteEfbTarget(GLuint* fbo, GLuint* tex, GLuint* rbo) {
+  if (*rbo != 0) glDeleteRenderbuffers(1, rbo);
+  if (*tex != 0) glDeleteTextures(1, tex);
+  if (*fbo != 0) glDeleteFramebuffers(1, fbo);
+  *rbo = 0;
+  *tex = 0;
+  *fbo = 0;
+}
+}  // namespace
+
+bool GxGlRenderer::BeginEfbTarget(int width, int height) {
+  if (width <= 0 || height <= 0) return false;
+  if (efb_fbo_ != 0 && efb_w_ == width && efb_h_ == height) {
+    glBindFramebuffer(GL_FRAMEBUFFER, efb_fbo_);
+    glViewport(0, 0, width, height);
+    return true;
+  }
+  DeleteEfbTarget(&efb_fbo_, &efb_tex_, &efb_rbo_);
+  glGenFramebuffers(1, &efb_fbo_);
+  glGenTextures(1, &efb_tex_);
+  glGenRenderbuffers(1, &efb_rbo_);
+  glBindTexture(GL_TEXTURE_2D, efb_tex_);
+  glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, width, height, 0, GL_RGBA,
+               GL_UNSIGNED_BYTE, nullptr);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+  glBindRenderbuffer(GL_RENDERBUFFER, efb_rbo_);
+  glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT24, width,
+                        height);
+  glBindFramebuffer(GL_FRAMEBUFFER, efb_fbo_);
+  glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
+                         GL_TEXTURE_2D, efb_tex_, 0);
+  glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT,
+                            GL_RENDERBUFFER, efb_rbo_);
+  efb_w_ = width;
+  efb_h_ = height;
+  if (glCheckFramebufferStatus(GL_FRAMEBUFFER) !=
+      GL_FRAMEBUFFER_COMPLETE) {
+    SFA_LOGE("gx_gl: target EFB incompleto (%dx%d)", width, height);
+    DeleteEfbTarget(&efb_fbo_, &efb_tex_, &efb_rbo_);
+    efb_w_ = 0;
+    efb_h_ = 0;
+    return false;
+  }
+  glViewport(0, 0, width, height);
+  return true;
+}
+
+void GxGlRenderer::EndEfbTarget() {
+  // El llamador debe restaurar el viewport de pantalla tras
+  // esto (BeginFrame lo hace por frame; dentro de un frame,
+  // restaurar explicitamente antes de dibujar a pantalla).
+  glBindFramebuffer(GL_FRAMEBUFFER, 0);
+}
+
+bool GxGlRenderer::ReadEfbRgba(std::vector<uint8_t>* out, int* width_out,
+                               int* height_out) {
+  if (out == nullptr || efb_fbo_ == 0 || efb_w_ <= 0 || efb_h_ <= 0)
+    return false;
+  std::vector<uint8_t> raw(
+      static_cast<size_t>(efb_w_) * efb_h_ * 4);
+  glReadPixels(0, 0, efb_w_, efb_h_, GL_RGBA, GL_UNSIGNED_BYTE,
+               raw.data());
+  // glReadPixels es bottom-up; el juego espera top-down
+  // (fila 0 = arriba). Flip por filas, sin GL.
+  out->assign(raw.size(), 0);
+  size_t row_bytes = static_cast<size_t>(efb_w_) * 4;
+  for (int y = 0; y < efb_h_; ++y) {
+    std::memcpy(out->data() + static_cast<size_t>(y) * row_bytes,
+                raw.data() +
+                    static_cast<size_t>(efb_h_ - 1 - y) * row_bytes,
+                row_bytes);
+  }
+  if (width_out != nullptr) *width_out = efb_w_;
+  if (height_out != nullptr) *height_out = efb_h_;
+  return true;
+}
+
+bool GxGlRenderer::CopyEfbToGuestRam(const GxCopy& copy,
+                                     uint8_t* guest_ram,
+                                     uint32_t ram_size,
+                                     std::string* reject_reason) {
+  auto reject = [&](const char* why) {
+    ++efb_copies_rejected_;
+    efb_last_reject_ = why;
+    if (reject_reason != nullptr) *reject_reason = why;
+    return false;
+  };
+  if (efb_fbo_ == 0) return reject("sin-target-EFB");
+  if (guest_ram == nullptr) return reject("ram-nula");
+  EfbCopyDecoded d0 = DecodeEfbCopy(copy);
+  if (!d0.execute) return reject("sin-evento-0x52");
+  std::vector<uint8_t> rgba;
+  int rw = 0, rh = 0;
+  if (!ReadEfbRgba(&rgba, &rw, &rh)) return reject("readback-fallo");
+  EfbCopyDecoded d = d0;
+  EfbCopyFormat f = DecodeCopyFormat(d);
+  bool ok = false;
+  if (f.kind == EfbPixelKind::kXfbLinear2Bpp) {
+    if (f.yscale_flag && (!d.has_yscale || d.yscale_int != 256)) {
+      // Copia con escala: solo con filtro capturado (modelo).
+      if (!d.has_filter) return reject("escala-sin-filtro");
+      int taps[7];
+      DecodeCopyFilter(d.filter53, d.filter54, taps);
+      ok = ExecuteEfbCopyScaledModel(d, f, rgba.data(), rw, rh, taps,
+                                     guest_ram, ram_size);
+      if (!ok) return reject("escala-modelo-rechazada");
+    } else {
+      ok = ExecuteEfbCopyLinear(d, f, rgba.data(), rw, rh, guest_ram,
+                                ram_size);
+      if (!ok) return reject("lineal-rechazada");
+    }
+  } else if (f.kind == EfbPixelKind::kTexRgb565Tiled ||
+             f.kind == EfbPixelKind::kTexRgba8Tiled) {
+    ok = ExecuteEfbCopyTiled(d, f, rgba.data(), rw, rh, guest_ram,
+                             ram_size);
+    if (!ok) return reject("tiled-rechazada");
+  } else {
+    return reject("formato-desconocido");
+  }
+  ++efb_copies_ok_;
+  efb_last_reject_.clear();
+  if (reject_reason != nullptr) reject_reason->clear();
+  return true;
 }
 
 }  // namespace sfa

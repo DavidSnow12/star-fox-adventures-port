@@ -61,6 +61,26 @@ struct MusyxCc {
   uint32_t value = 0;
 };
 
+// Tramo 9 frente A - seccion de bucle por secciones (canciones 22/95).
+// Una seccion = subconjunto de las notas planas (indices en la tabla
+// plana, en orden de tabla == orden de tiempo) que pertenecen a una
+// seccion huesped (seq_host.py). period_ticks (puente) = max(time+
+// length) - min(time) de la seccion; loops = la seccion buclea en el
+// huesped (loopCount > 0 tras 100.000 pasos). La fase de bucle del
+// secuenciador reproduce cada seccion que buclea con sus intervalos
+// exactos, empezando cada vuelta cuando la anterior ha drenado sus
+// NoteOffs (misma convencion que el bucle 99/74 del Tramo 8); las
+// secciones sin bucle no se repiten. Los CC NO se repiten por seccion
+// en esta version (quedan congelados en fin de primer pase; ver
+// INFORME.md): el evento kSectionLoop solo marca la vuelta.
+struct MusyxSection {
+  uint32_t section_id = 0;  // Id de seccion huesped (0..15).
+  const size_t* note_indices = nullptr;  // Indices en la tabla plana.
+  size_t note_count = 0;
+  uint32_t period_ticks = 0;
+  bool loops = false;
+};
+
 struct MusyxSong {
   uint32_t track_id = 0;  // sid de sndSeqPlayEx (trigger->track).
   uint32_t group_id = 0;  // gid del proyecto (.pro) de la cancion.
@@ -89,6 +109,11 @@ struct MusyxSong {
   size_t loop_start_note = static_cast<size_t>(-1);
   size_t loop_cc_index = 0;
   uint32_t loop_period_ticks = 0;
+  // Tramo 9: bucle por secciones (22/95). nullptr/0 = sin secciones
+  // (comportamiento v1/Tramo 8 intacto).
+  const MusyxSection* sections = nullptr;
+  size_t section_count = 0;
+  bool HasSections() const { return sections != nullptr && section_count > 0; }
   bool HasLoop() const {
     return loop_start_note < note_count && loop_period_ticks > 0;
   }
@@ -102,10 +127,14 @@ inline double MusyxTicksPerSecond(uint32_t bpm) {
 class MusyxSequencer {
  public:
   struct Event {
-    enum Kind { kNoteOn, kNoteOff, kCc, kLoop } kind = kNoteOn;
+    enum Kind { kNoteOn, kNoteOff, kCc, kLoop, kSectionLoop } kind =
+        kNoteOn;
     size_t note_index = 0;  // Valido en NoteOn/NoteOff.
     const MusyxNote* note = nullptr;
     const MusyxCc* cc = nullptr;
+    // Valido en kSectionLoop: id de seccion huesped que empieza
+    // una vuelta nueva en la fase de bucle por secciones.
+    uint32_t section_id = 0;
   };
 
   void Start(const MusyxSong* song, uint32_t speed = 256);
@@ -123,12 +152,32 @@ class MusyxSequencer {
   void Advance(double dt_seconds, std::vector<Event>* out);
   bool Active() const { return active_; }
   // Terminada: todos los eventos consumidos (notas y CC) y
-  // ningun NoteOff pendiente. Con bucle nunca es terminal:
-  // solo Stop() (o un nuevo Start) termina la cancion.
+  // ningun NoteOff pendiente. Con bucle (segmento unico o por
+  // secciones con al menos una seccion que buclea) nunca es
+  // terminal: solo Stop() (o un nuevo Start) termina la cancion.
   bool Finished() const {
-    return song_ != nullptr && !song_->HasLoop() &&
-           next_note_ >= song_->note_count &&
-           next_cc_ >= song_->cc_count && pending_offs_.empty();
+    if (song_ == nullptr || song_->HasLoop()) return false;
+    if (next_note_ < song_->note_count ||
+        next_cc_ < song_->cc_count || !pending_offs_.empty())
+      return false;
+    if (song_->HasSections()) {
+      for (size_t i = 0; i < song_->section_count; ++i) {
+        if (song_->sections[i].loops) return false;
+      }
+    }
+    return true;
+  }
+  // Fase de bucle por secciones activa (tras el primer pase).
+  bool InLoopPhase() const { return in_loop_phase_; }
+  // Vueltas completadas de la seccion i-esima de la tabla de
+  // secciones de la cancion (0 si no esta en fase de bucle, no
+  // buclea o no existe). sec_runs_ solo contiene secciones que
+  // buclean, asi que se busca por indice de tabla.
+  uint64_t SectionLaps(size_t section_index) const {
+    for (const SecRun& r : sec_runs_) {
+      if (r.section_index == section_index) return r.lap;
+    }
+    return 0;
   }
   // Vueltas de bucle completadas desde Start().
   uint64_t Loops() const { return loops_; }
@@ -157,8 +206,25 @@ class MusyxSequencer {
   // Snapshot CC de inicio de bucle (ver LoopCc7/LoopCc10).
   uint32_t loop_cc7_[16] = {};
   uint32_t loop_cc10_[16] = {};
-  // NoteOffs pendientes, ordenados por tick de fin.
-  std::vector<std::pair<double, size_t>> pending_offs_;
+  // NoteOffs pendientes, ordenados por tick de fin. section = indice
+  // en la tabla de secciones en fase de bucle, -1 en primer pase.
+  struct PendingOff {
+    double tick = 0.0;
+    size_t note_index = 0;
+    int section = -1;
+  };
+  std::vector<PendingOff> pending_offs_;
+  // Fase de bucle por secciones (Tramo 9): un estado por seccion.
+  struct SecRun {
+    size_t section_index = 0;
+    size_t next = 0;       // Siguiente indice dentro de la seccion.
+    uint64_t lap = 0;      // Vueltas completadas (0 = primera vuelta).
+    double lap_start = 0.0;  // tick_ en el que empezo la vuelta actual.
+    double first_time = 0.0;  // Tiempo de la primera nota de la seccion.
+    size_t pending = 0;    // Notas de la seccion sonando ahora.
+  };
+  std::vector<SecRun> sec_runs_;
+  bool in_loop_phase_ = false;
   bool active_ = false;
 };
 

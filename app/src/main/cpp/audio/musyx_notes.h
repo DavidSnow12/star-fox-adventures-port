@@ -12,6 +12,7 @@
    en el primer pase, dedup consecutivos por canal. */
 #pragma once
 #include "audio/musyx_seq.h"
+#include "audio/musyx_sections.h"
 namespace sfa {
 static const MusyxNote kMusyxNotes99[] = {
     {10, 3058, 797, 110, 114, 120, 0},
@@ -4742,7 +4743,7 @@ static const MusyxSong kMusyxSongs[] = {
     {99, 54, 60, kMusyxNotes99, sizeof(kMusyxNotes99) / sizeof(MusyxNote), kMusyxCc99, sizeof(kMusyxCc99) / sizeof(MusyxCc), 2, 44, 7672},
     {74, 18, 120, kMusyxNotes74, sizeof(kMusyxNotes74) / sizeof(MusyxNote), kMusyxCc74, sizeof(kMusyxCc74) / sizeof(MusyxCc), 3, 87, 29179},
     {5, 0, 70, kMusyxNotes5, sizeof(kMusyxNotes5) / sizeof(MusyxNote), kMusyxCc5, sizeof(kMusyxCc5) / sizeof(MusyxCc)},
-    {22, 0, 120, kMusyxNotes22, sizeof(kMusyxNotes22) / sizeof(MusyxNote), kMusyxCc22, sizeof(kMusyxCc22) / sizeof(MusyxCc)},
-    {95, 49, 60, kMusyxNotes95, sizeof(kMusyxNotes95) / sizeof(MusyxNote), kMusyxCc95, sizeof(kMusyxCc95) / sizeof(MusyxCc)},
+    {22, 0, 120, kMusyxNotes22, sizeof(kMusyxNotes22) / sizeof(MusyxNote), kMusyxCc22, sizeof(kMusyxCc22) / sizeof(MusyxCc), static_cast<size_t>(-1), 0, 0, kMusyxSections22, sizeof(kMusyxSections22) / sizeof(MusyxSection)},
+    {95, 49, 60, kMusyxNotes95, sizeof(kMusyxNotes95) / sizeof(MusyxNote), kMusyxCc95, sizeof(kMusyxCc95) / sizeof(MusyxCc), static_cast<size_t>(-1), 0, 0, kMusyxSections95, sizeof(kMusyxSections95) / sizeof(MusyxSection)},
 };
 }  // namespace sfa

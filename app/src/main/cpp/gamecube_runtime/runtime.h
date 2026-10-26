@@ -11,6 +11,8 @@
 // cargado, Frame() conserva exactamente el comportamiento de la
 // Fase 0 (paso stub + quad): la APK boot-test no cambia.
 
+#include <string>
+
 #include "audio/audio.h"
 #include "audio/audio_bridge.h"
 #include "gamecube_runtime/chassis.h"
@@ -85,6 +87,19 @@ class GameCubeRuntime {
   // Vuelca la traza de hardware a CSV (Fase 4). Devuelve false
   // si no se pudo escribir alguno de los dos ficheros.
   bool DumpHwTrace(const char* csv_path, const char* events_path);
+  // Tramo 9: captura de frame de mundo (ver renderer/
+  // frame_capture.h y CAPTURA_MUNDO_T9.md). Pide que el
+  // PROXIMO FeedGxFrame (tras la siguiente rebanada) escriba
+  // el segmento FIFO acumulado + la RAM viva en ese mismo
+  // punto temporal, en `dir`/frame_<N>_*. `scene` es la
+  // etiqueta puesta por el jugador (nunca inferida); si esta
+  // vacia, la peticion se ignora (el validador la rechaza
+  // como R1). El gancho JNI/boton que llama a esto lo pone
+  // el integrador (ver DIFF.md); sin llamador, esto no se
+  // activa solo. No interrumpe el juego: tras escribir, el
+  // frame sigue su drenaje y parseo normales.
+  void RequestFrameCapture(const char* dir, const char* scene);
+  int FrameCaptureCount() const { return capture_index_; }
 
  private:
   GCMemory memory_;
@@ -118,6 +133,11 @@ class GameCubeRuntime {
   size_t gx_texloads_converted_ = 0;
   bool gx_capture_on_ = false;
   void FeedGxFrame();
+  // Tramo 9: peticion de captura pendiente (ver arriba).
+  bool capture_pending_ = false;
+  std::string capture_dir_;
+  std::string capture_scene_;
+  int capture_index_ = 0;
 };
 
 }  // namespace sfa

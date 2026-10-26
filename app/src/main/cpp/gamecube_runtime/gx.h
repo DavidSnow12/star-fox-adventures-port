@@ -404,14 +404,24 @@ struct GxDraw {
 // Evento de copia EFB (Tramo 6): una escritura BP 0x52 en el
 // stream FIFO. Los regs 0x49/0x4A/0x4B/0x4D son los valores
 // BP vigentes en ese momento (0x4B bajo = destino >> 5, ver
-// GXCopyDisp: 0x4B = (dest>>5)&0xFFFFFF; 0x52 bit 0x4000 =
-// ejecutar). has_* = false si ese reg no se habia escrito
-// antes del disparo. La copia en si (leer EFB y escribir el
-// destino) NO esta implementada: este evento solo la marca.
+// GXCopyDisp: 0x4B = (dest>>5)&0xFFFFFF). Tramo 9: TODO
+// evento 0x52 ejecuta una copia; el bit 14 (0x4000) es la
+// CLASE de destino (1 = display/XFB, 0 = textura), no un
+// gate (GXCopyTex 0x80259E18 no lo fuerza; GXCopyDisp
+// 0x80259CA8 si). has_* = false si ese reg no se habia
+// escrito antes del disparo. has52 = true solo en eventos
+// producidos por el parser al ver un 0x52 real.
 struct GxCopy {
   uint64_t fifo_offset = 0;
+  bool has52 = false;
   uint32_t reg49 = 0, reg4a = 0, reg4b = 0, reg4d = 0, reg52 = 0;
   bool has49 = false, has4a = false, has4b = false, has4d = false;
+  // Tramo 9: escala Y de copia BP 0x4E vigente en el disparo
+  // (GXSetDispCopyYScale 0x80259928: valor = yscale_int de 9
+  // bits; bit 10 de 0x52 = (256 - yscale_int) > 0). Sin 0x4E
+  // previo, has4e = false y la escala es desconocida.
+  uint32_t reg4e = 0;
+  bool has4e = false;
   // Tramo 8: filtro de copia BP 0x53/0x54 vigente en el
   // disparo (GXSetCopyFilter 0x80259A64; YAGCD: 0x53/0x54
   // = copy filter). Valores crudos, sin decodificar a
@@ -429,15 +439,23 @@ struct GxTexLoad {
   int map = 0;
 };
 
-// Decodificador de copia EFB (Tramo 7B, puro: sin EFB,
-// sin escritura en RAM; la copia de pixeles en si sigue
-// pendiente, ver EFB_DISENO.md). Grado de evidencia por
-// campo (no mezclar lo probado con lo supuesto):
-//  - execute: PROBADO. GXCopyDisp 0x80259CA8 hace
-//    ori 0x4000 sobre la sombra 0x1ec antes de escribir
-//    BP 0x52: bit 14 = ejecutar la copia. Los eventos
-//    GxCopy con bit 14 a 0 son escrituras de control
-//    sin disparo (en run39: 166/195).
+// Decodificador de copia EFB (Tramo 7B, corregido Tramo 9,
+// puro: sin EFB, sin escritura en RAM; la copia de pixeles
+// vive en renderer/efb_copy.h). Grado de evidencia por campo
+// (no mezclar lo probado con lo supuesto):
+//  - CORRECCION Tramo 9 (bit 14): NO es un "execute gate".
+//    GXCopyDisp 0x80259CA8 fuerza bit 14 (ori 0x4000) y
+//    GXCopyTex 0x80259E18 NO lo pone: su palabra final es
+//    la sombra 0x1fc sin bit 14. YAGCD: bit 14 "execute ?
+//    (1: to XFB 0: to texture ?!)". Conclusion: TODA
+//    escritura 0x52 ejecuta una copia; bit 14 = clase de
+//    destino (1 = display/XFB, 0 = textura). La lectura
+//    Tramo 7/8 ("sin exec = control, no copia") queda
+//    REFUTADA: las 782 copias "sin exec" del censo son
+//    copias reales a textura via GXCopyTex. El campo
+//    `execute` se conserva por compatibilidad y vale siempre
+//    true para un evento parseado (un GxCopy solo existe
+//    por una escritura 0x52); usar `is_disp` en su lugar.
 //  - dest_guest: PROBADO (reconstruccion). GXCopyDisp
 //    escribe 0x4B = (dest>>5)&0xFFFFFF (rlwinm+oris);
 //    para RAM MEM1 (0x80000000-0x81800000) el bit
@@ -448,34 +466,30 @@ struct GxTexLoad {
 //  - width/height: PROBADO por 3 valores independientes.
 //    0x4A = ((h-1)<<10)|(w-1): 0x077E7F = 640x480,
 //    0x007C1F = 32x32, 0x00EC4F = 80x60.
-//  - stride_bytes: CONVENCION GX (reg x 32). Coherente:
-//    0x28 -> 1280 B (XFB 640 RGB565/YUY2), 0x10 -> 512 B,
-//    0x14 -> 640 B, 0x50 -> 2560 B (pitch del buffer
-//    destino, no width*bpp: el destino puede ser mas
-//    ancho que la copia).
+//  - stride_bytes: CONVENCION GX (reg x 32). Display:
+//    pitch lineal (0x28 -> 1280 B XFB 640). Textura: bytes
+//    por fila de tiles (ver PlanTexCopy en efb_copy.h).
 //  - src_x/src_y: PROVISIONAL (convencion GX, 10 bits
 //    cada uno, mismo estilo que 0x4A). En TODAS las
 //    trazas reg49 = 0 (origen (0,0)): sin contraejemplo
 //    ni confirmacion independiente.
-//  - tex_dest_hint: HIPOTESIS por correlacion perfecta
-//    en trazas (195 run39 + 24922 run19): bit 16 a 1
-//    <=> destinos 0x0Bxxxx (texturas); a 0 <=> XFB
-//    (0x020000/0x0252A8). Tramo 8 refina el desensamblado:
-//    GXCopyDisp 0x80259CA8 y GXCopyTex 0x80259E18 (tamano
-//    completo, no 0x100 B) solo fuerzan bit 14 (ori
-//    0x4000) en la sombra 0x52; el bit 16 NO lo pone el
-//    codigo de copia: llega en la sombra 0x1ec/0x1fc
-//    (destino/formato, GXSetDispCopyDst/GXSetTexCopyDst)
-//    o en el arg desplazado, sin decodificar aun cual
-//    campo lo fija. La hipotesis sigue siendo solo
-//    correlacion, no hecho.
-//  - low52 (bits 0..13 salvo exec): SIN DECODIFICAR
-//    (formato/clear). El filtro NO va en low52: va en
-//    BP 0x53/0x54 (GXSetCopyFilter 0x80259A64, Tramo 8:
-//    defecto 0x595000/0x000015 si vfilter nulo; con
-//    vfilter, empaquetado de 7 bytes sin invertir).
+//  - bit16_marker (antes tex_dest_hint): correlacion
+//    perfecta en trazas (26.233 copias: bit 16 a 1 <=>
+//    destinos 0x0Bxxxx textura; a 0 <=> XFB), con origen
+//    SIN LOCALIZAR (Tramo 9: descartados path A de
+//    GXSetTexCopyDst, arg2 de GXCopyTex y GXSetCopyClamp;
+//    escaneo completo de escrituras a 0x1fc en el DOL).
+//    El puerto no necesita el origen: lee palabras FIFO.
+//  - low52: DECODIFICADO Tramo 9 (ver efb_copy.h):
+//    bits 0-1 clamp, 3-6 formato textura (permutado),
+//    7-8 gamma (YAGCD, crudo), 9 mipmap (textura),
+//    10 escala Y (display), 11 clear, 12-13 Frame2Field.
+//    El filtro NO va en low52: va en BP 0x53/0x54
+//    (GXSetCopyFilter 0x80259A64; Tramo 9: taps
+//    decodificados exactos, ver DecodeCopyFilter).
 struct EfbCopyDecoded {
-  bool execute = false;
+  bool execute = false;  // Tramo 9: siempre true (ver arriba).
+  bool is_disp = false;  // Tramo 9: bit 14 (1 = XFB, 0 = tex).
   bool has_dest = false;
   uint32_t dest_guest = 0;
   bool has_size = false;
@@ -484,17 +498,27 @@ struct EfbCopyDecoded {
   int stride_bytes = 0;
   bool has_src = false;
   int src_x = 0, src_y = 0;
-  bool tex_dest_hint = false;
+  bool tex_dest_hint = false;  // Tramo 9: alias de bit16_marker.
+  bool bit16_marker = false;  // Tramo 9: bit 16.
   uint32_t low52 = 0;
   // Tramo 8: filtro vigente (crudo, ver GxCopy).
   bool has_filter = false;
   uint32_t filter53 = 0, filter54 = 0;
+  // Tramo 9: escala Y BP 0x4E vigente (si se capturo).
+  bool has_yscale = false;
+  int yscale_int = 0;  // 9 bits; flag bit10 = (256 - x) > 0.
 };
 
 inline EfbCopyDecoded DecodeEfbCopy(const GxCopy& c) {
   EfbCopyDecoded d;
-  d.execute = (c.reg52 & 0x4000u) != 0;
+  // Tramo 9: todo evento 0x52 ejecuta una copia (ver arriba);
+  // bit 14 = clase de destino, no gate de ejecucion. Un
+  // GxCopy sin palabra 0x52 (construido a mano, nunca por el
+  // parser) no es un evento de copia: execute = false.
+  d.execute = c.has52;
+  d.is_disp = (c.reg52 & 0x4000u) != 0;
   d.tex_dest_hint = (c.reg52 & 0x10000u) != 0;
+  d.bit16_marker = d.tex_dest_hint;
   d.low52 = c.reg52 & 0x3FFFu;
   if (c.has4b) {
     d.has_dest = true;
@@ -522,25 +546,38 @@ inline EfbCopyDecoded DecodeEfbCopy(const GxCopy& c) {
     d.filter53 = c.reg53;
     d.filter54 = c.reg54;
   }
+  if (c.has4e) {
+    d.has_yscale = true;
+    d.yscale_int = static_cast<int>(c.reg4e & 0x1FFu);
+  }
   return d;
 }
 
-// --- Plan de copia EFB (Tramo 8, puro, sin formato) ---
+// --- Plan de copia EFB (Tramo 8, corregido Tramo 9) ---
 //
 // La copia de pixeles tiene dos partes separables:
 // (a) el trazado de filas (independiente del formato:
 //     origen fila a fila, destino con pitch = stride),
 //     implementado aqui y probado en host; (b) la
-//     conversion de formato + filtro (EFB -> YUY2/RGB565/
-//     textura + coeficientes 0x53/0x54), NO implementada:
-//     los bits de formato de low52 no estan decodificados
-//     y el filtro solo se guarda crudo (ver GxCopy).
-// PlanEfbCopy valida (a) para un bytes_per_pixel dado
-// por el llamador (el llamador, no esta funcion, decide
-// el formato: 2 para XFB RGB565/YUY2 640, etc.): sin
-// exec, sin destino/tamano/stride, destino fuera de
-// MEM1 (0x80000000-0x81800000), stride menor que la
-// fila, o copia que excede la RAM dada -> false.
+//     conversion de formato + filtro, implementada en
+//     renderer/efb_copy.h (formato low52 y taps 0x53/0x54
+//     decodificados Tramo 9; YUY2/RGB565/RGBA8/tiled).
+// PlanEfbCopy es el plan LINEAL (display/XFB): exige
+// is_disp (Tramo 9: el plan lineal es geometricamente
+// incorrecto para texturas, que van en tiles; una copia
+// a textura debe planearse con PlanTexCopy en efb_copy.h,
+// no con esta funcion). Correccion Tramo 9: el antiguo
+// requisito `execute` (bit 14) se sustituye por is_disp:
+//   - una copia a textura real (bit 14 = 0) ya NO se
+//     rechaza como "sin exec": se rechaza aqui por ser
+//     textura (plan lineal no aplicable) y se acepta en
+//     PlanTexCopy;
+//   - una palabra 0x000C00 (destino XFB con bit 14 = 0,
+//     inconsistente: clase textura + destino XFB) sigue
+//     rechazada, ahora por clase, no por "falta de exec".
+// Sin destino/tamano/stride, destino fuera de MEM1
+// (0x80000000-0x81800000), stride menor que la fila, o
+// copia que excede la RAM dada -> false.
 // CopyEfbRows copia filas con pitches distintos
 // (src_pitch, dst_pitch = stride): el nucleo de (a).
 struct EfbCopyPlan {
@@ -552,7 +589,7 @@ struct EfbCopyPlan {
 inline bool PlanEfbCopy(const EfbCopyDecoded& d, uint32_t ram_size,
                         int bytes_per_pixel, EfbCopyPlan* plan) {
   if (plan == nullptr) return false;
-  if (!d.execute || !d.has_dest || !d.has_size || !d.has_stride)
+  if (!d.is_disp || !d.has_dest || !d.has_size || !d.has_stride)
     return false;
   if (d.dest_guest < 0x80000000u ||
       d.dest_guest >= 0x81800000u)

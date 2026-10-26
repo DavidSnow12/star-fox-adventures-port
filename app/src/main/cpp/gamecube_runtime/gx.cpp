@@ -251,6 +251,7 @@ GxParser::StreamResult GxParser::ParseStream(const uint8_t* data, size_t len,
       if ((v >> 24) == 0x52) {
         GxCopy c;
         c.fifo_offset = fifo_offset;
+        c.has52 = true;
         c.reg52 = v & 0xFFFFFF;
         auto take = [&](uint32_t reg, uint32_t* out, bool* has) {
           auto it = bp_.find(reg);
@@ -265,6 +266,8 @@ GxParser::StreamResult GxParser::ParseStream(const uint8_t* data, size_t len,
         take(0x4D, &c.reg4d, &c.has4d);
         take(0x53, &c.reg53, &c.has53);
         take(0x54, &c.reg54, &c.has54);
+        // Tramo 9: escala Y BP 0x4E vigente en el disparo.
+        take(0x4E, &c.reg4e, &c.has4e);
         copies_.push_back(c);
       }
       pos += 5;

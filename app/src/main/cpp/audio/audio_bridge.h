@@ -216,12 +216,57 @@ class AudioBridge {
   // primer pase.
   // Devuelve 1 si arranco, 0 si la cancion no tiene tabla
   // verificada (unresolved "musyx_cancion") o no hay audio.
-  // Sustituye cualquier cancion host en curso (una sola
-  // cancion a la vez en v1, como la voz de stream unica).
+  // Tramo 9: ya NO sustituye otras canciones (limite v1 roto):
+  // cada cancion ocupa su slot (max 4); reiniciar el mismo
+  // track reinicia su slot. La voz de stream sigue siendo
+  // unica (un nuevo Play la sustituye).
   int OnSeqPlay(uint32_t group_id, uint32_t seq_id,
                 uint32_t params_ptr);
   // Hook sndSeqStop 0x80272F80: detiene la cancion host.
+  // Tramo 9: OnSeqStop() detiene TODAS las canciones (compat v1).
   void OnSeqStop();
+  // Tramo 9: detiene solo la cancion del handle dado (handles
+  // asignados por OnSeqPlay en orden de arranque: 1, 2, ...,
+  // igual que los seqHandle del juego medidos en G3: 22->1,
+  // 95->2). Devuelve 1 si detuvo una cancion, 0 si no.
+  // Fallback documentado: con una unica cancion activa, un
+  // handle sin coincidencia detiene esa cancion (cubre
+  // llamadas con handle 0); con varias activas y sin
+  // coincidencia, no detiene ninguna y cuenta en
+  // SeqStopUnmatched() (el juego podria pasar un id de
+  // grupo en vez de un handle: sin traza real de sndSeqStop
+  // en G3, no se inventa la convencion).
+  int OnSeqStopHandle(uint32_t handle);
+  // Tramo 9: observacion de streams (ver .cpp y patch-A).
+  // OnStartPrepared: confirma que el juego alcanzo
+  // AudioStream_StartPrepared para el stream pendiente de
+  // Play; devuelve true si confirmo un pendiente, false si
+  // no habia pendiente (StartPrepared duplicado o esporio).
+  bool OnStartPrepared();
+  // OnGetCurrentId: registra un sondeo del juego a
+  // AudioStream_GetCurrentId; si hay RAM huesped, lee
+  // currentId (0x803DE228, ver .cpp) y cuenta un desajuste
+  // solo fuera de la ventana Play->StartPrepared (en esa
+  // ventana el bridge ya suena y el juego aun no: es el
+  // desfase conocido Play-inmediato vs StartPrepared, no
+  // un fallo). Devuelve true si pudo leer el valor.
+  bool OnGetCurrentId();
+  uint64_t StartPreparedEntries() const { return start_prepared_entries_; }
+  uint64_t StartPreparedConfirms() const { return start_prepared_confirms_; }
+  uint64_t GetCurrentIdPolls() const { return getcurrentid_polls_; }
+  uint64_t GetCurrentIdMismatches() const {
+    return getcurrentid_mismatches_;
+  }
+  uint32_t GetCurrentIdLast() const { return getcurrentid_last_; }
+  uint64_t SeqStopUnmatched() const { return seq_stop_unmatched_; }
+  uint64_t SeqSlotsFull() const { return seq_slots_full_; }
+  // Canciones activas (tracks) y nº de slots ocupados.
+  std::vector<int> ActiveSeqTracks() const;
+  size_t ActiveSongCount() const;
+  // Handle del slot que reproduce el track dado (0 si no).
+  uint32_t SeqHandleForTrack(uint32_t track) const;
+  // Volumen de fade de un handle (1,0 si no existe).
+  float SeqVolumeOf(uint32_t handle) const;
   // Tramo 8 — hook sndSeqVolume 0x80273090 (layout
   // verificado en codigo huesped, Music_ChannelLoaded-
   // Callback 0x8000B4A0: r3=volumen 0..127, r4=tiempo,
@@ -236,9 +281,11 @@ class AudioBridge {
   bool OnSeqVolume(uint32_t volume, uint32_t time_ms,
                    uint32_t seq_handle);
   // Volumen maestro de musica vigente (0..1) y objetivo,
-  // para tests host.
-  float SeqVolume() const { return seq_vol_current_; }
-  float SeqVolumeTarget() const { return seq_vol_to_; }
+  // para tests host. Tramo 9: el de la cancion de menor
+  // handle activa (compat v1: con una cancion, es esa);
+  // sin cancion activa, 1,0. Por handle, SeqVolumeOf().
+  float SeqVolume() const;
+  float SeqVolumeTarget() const;
 
   // Avance de reproduccion: mezcla un bloque de hasta
   // kFeedFrames de todas las voces activas y lo entrega al
@@ -279,6 +326,7 @@ class AudioBridge {
     uint32_t bpm = 0;
     size_t notes = 0;
     uint32_t params_ptr = 0;
+    uint32_t handle = 0;  // Tramo 9: handle asignado al slot.
     // Tramo 8: params aplicados (defaults v1 si no hay RAM
     // huesped o params fuera de rango: speed 256, flags 0).
     uint32_t speed = 256;
@@ -287,20 +335,19 @@ class AudioBridge {
   const std::vector<SeqStarted>& SeqStartedEntries() const {
     return seq_started_;
   }
-  int CurrentSeqTrack() const {
-    return seq_.Active() && seq_.Song() != nullptr
-               ? static_cast<int>(seq_.Song()->track_id)
-               : -1;
-  }
-  bool SeqActive() const { return seq_.Active(); }
+  int CurrentSeqTrack() const;
+  bool SeqActive() const;
   size_t MusyxActiveNotes() const;
   uint64_t MusyxNotesStarted() const { return musyx_started_; }
   uint64_t MusyxNotesEnded() const { return musyx_ended_; }
   uint64_t MusyxStolen() const { return musyx_stolen_; }
   // CC7 vigente por canal MIDI (tras los eventos del
   // secuenciador; 127 antes del primer evento del canal).
+  // Tramo 9: el de la cancion de menor handle activa.
   uint32_t MusyxCc7(uint32_t midi) const {
-    return midi < 16 ? cc7_[midi] : 127;
+    const SongSlot* slot = FirstActiveSlot();
+    if (slot == nullptr || midi >= 16) return 127;
+    return slot->cc7[midi];
   }
   // Solo tests host: copia del PCM (48 kHz, sin ganancia
   // CC7) de la voz de musica de note_index, si esta activa.
@@ -351,11 +398,12 @@ class AudioBridge {
   // metadato, pan CC10 del note-on; la ganancia CC7 se
   // aplica en Tick por bloque, no aqui). Roba la voz mas
   // antigua si las 16 estan ocupadas (cuenta musyx_stolen_).
-  bool StartMusicNote(const MusyxNote& note, size_t note_index);
-  void StopMusicNote(size_t note_index);
+  bool StartMusicNote(const MusyxNote& note, size_t note_index,
+                        size_t slot_idx);
+  void StopMusicNote(size_t slot_idx, size_t note_index);
   void StopAllMusic();
-  // Avanza el secuenciador dt segundos y procesa sus
-  // eventos (CC7/CC10, note-on/off). Llamado por Tick().
+  // Avanza los secuenciadores dt segundos y procesa sus
+  // eventos (CC7/CC10, note-on/off, bucles). Llamado por Tick().
   void PumpSequencer(double dt_seconds);
   // Resuelve el .adp de un WAV de stream por indice
   // insensible a caso (con reconstruccion del indice al
@@ -406,25 +454,60 @@ class AudioBridge {
 
   Audio* audio_ = nullptr;
   // Tramo 8: RAM huesped (no poseida) para params, y
-  // estado de params/fade de la cancion en curso.
+  // Tramo 9: para leer currentId en OnGetCurrentId.
   const uint8_t* guest_ram_ = nullptr;
   uint32_t guest_ram_size_ = 0;
-  // Mutes de SynthPlayParams (flags bit 0): bit por pista
-  // MusyX (nota.midi); bit a 1 = pista activa (seq.c:1261,
-  // Tramo 7). Solo se aplica si flags & 1; en otro caso
-  // todo activo (el caso medido real, flags=6, ignora los
-  // mutes). El mapeo bit->midi es el supuesto documentado
-  // del Tramo 8 (verificado solo sinteticamente).
-  uint32_t params_mute_[2] = {0xFFFFFFFFu, 0xFFFFFFFFu};
-  bool params_mute_active_ = false;
-  // Volumen maestro de musica (fade sndSeqVolume): se
-  // aplica en Tick al mezclar, no al PCM almacenado.
-  float seq_vol_current_ = 1.0f;
-  float seq_vol_from_ = 1.0f;
-  float seq_vol_to_ = 1.0f;
-  double seq_vol_t_ = 0.0;
-  double seq_vol_dur_ = 0.0;
+  // Tramo 9 - canciones simultaneas (limite v1 roto): hasta
+  // 4 slots de cancion, cada uno con su secuenciador, sus
+  // CC, sus mutes y su fade. Las voces de musica (32) son
+  // un pool compartido (polifonia maxima medida: 22 sola
+  // 17, 95 sola 5; 22+95 simultaneas caben en 32 con
+  // margen; el robo, si llegara, es global por antiguedad
+  // y se cuenta en musyx_stolen_). El handle de slot se
+  // asigna en orden de arranque (1, 2, ...) y coincide
+  // con los seqHandle del juego en G3 (22->1, 95->2).
+  static constexpr size_t kMaxSongs = 4;
+  struct SongSlot {
+    MusyxSequencer seq;
+    std::array<uint32_t, 16> cc7{};
+    std::array<uint32_t, 16> cc10{};
+    uint32_t handle = 0;
+    uint32_t group_id = 0;
+    uint32_t track_id = 0;
+    uint32_t speed = 256;
+    uint32_t mute[2] = {0xFFFFFFFFu, 0xFFFFFFFFu};
+    bool mute_active = false;
+    float vol_current = 1.0f;
+    float vol_from = 1.0f;
+    float vol_to = 1.0f;
+    double vol_t = 0.0;
+    double vol_dur = 0.0;
+    bool active = false;
+  };
+  std::array<SongSlot, kMaxSongs> song_slots_{};
+  uint32_t next_seq_handle_ = 1;
+  SongSlot* FindSlot(uint32_t handle);
+  const SongSlot* FindSlot(uint32_t handle) const;
+  SongSlot* FirstActiveSlot();
+  const SongSlot* FirstActiveSlot() const;
+  bool AnySongActive() const;
+  void StopSlot(SongSlot* slot);
+  void StopSlotMusic(SongSlot* slot);
+  bool SlotMusicActive(const SongSlot* slot) const;
+  void FinishSlots();
+  void PumpSlot(SongSlot* slot, double dt_seconds);
+  void AdvanceSlotVolume(SongSlot* slot, double dt_seconds);
   void AdvanceSeqVolume(double dt_seconds);
+  // Tramo 9 - observacion de streams (patch-A).
+  uint32_t pending_prepared_id_ = 0;  // Play resuelto sin confirmar.
+  uint32_t last_stream_id_ = 0;
+  uint64_t start_prepared_entries_ = 0;
+  uint64_t start_prepared_confirms_ = 0;
+  uint64_t getcurrentid_polls_ = 0;
+  uint64_t getcurrentid_mismatches_ = 0;
+  uint32_t getcurrentid_last_ = 0;
+  uint64_t seq_stop_unmatched_ = 0;
+  uint64_t seq_slots_full_ = 0;
   std::string wav_root_;
   std::string cache_root_;
   std::string indexed_root_;
@@ -445,13 +528,12 @@ class AudioBridge {
     float base_gain = 1.0f;  // mac_vol/127.
     uint32_t midi = 0;
     size_t note_index = 0;
+    size_t slot = 0;  // Tramo 9: indice en song_slots_.
     bool active = false;
     size_t Total() const { return pcm.size() / 2; }
   };
   std::array<MusicVoice, kMaxMusicVoices> music_voices_;
-  MusyxSequencer seq_;
-  std::array<uint32_t, 16> cc7_{};
-  std::array<uint32_t, 16> cc10_{};
+  // (Tramo 9: los secuenciadores y CC viven en song_slots_.)
   std::vector<SeqStarted> seq_started_;
   uint64_t musyx_started_ = 0;
   uint64_t musyx_ended_ = 0;

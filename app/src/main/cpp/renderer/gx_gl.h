@@ -115,6 +115,45 @@ class GxGlRenderer {
   // indexados y opacos se cuentan en quads_skipped_).
   int DrawDraws(const std::vector<GxDraw>& draws,
                 const TexResolver& resolver);
+  // Tramo 9: target EFB (FBO) para copias EFB de pixeles.
+  // Orden de cableado (lo hace el integrador en Frame(), NO
+  // aqui: este parche no cambia el camino de dibujo actual):
+  //   BeginEfbTarget(w, h) -> DrawDraws(...) ->
+  //   por cada evento GxCopy del frame: CopyEfbToGuestRam(...)
+  //   -> EndEfbTarget() -> restaurar viewport de pantalla.
+  // Sin este cableado, DrawDraws sigue dibujando a pantalla
+  // como siempre y las copias se rechazan con
+  // "sin-target-EFB" (contador, no crash). El readback se
+  // entrega en orden top-down (glReadPixels es bottom-up:
+  // ReadEfbRgba invierte las filas). La textura EFB es
+  // RGBA8 + depth renderbuffer (los draws usan depth).
+  bool BeginEfbTarget(int width, int height);
+  void EndEfbTarget();
+  // Lee el target EFB vigente a RGBA8 top-down. Debe llamarse
+  // con el FBO EFB enlazado (entre Begin y End). Devuelve
+  // false sin tocar `out` si no hay target o el FBO esta
+  // incompleto.
+  bool ReadEfbRgba(std::vector<uint8_t>* out, int* width_out,
+                   int* height_out);
+  // Ejecuta UNA copia EFB (evento GxCopy del parser) desde el
+  // target EFB vigente a la RAM huesped (`guest_ram`,
+  // ram_size bytes, base 0x80000000). La decision de formato
+  // y la escritura viven en renderer/efb_copy.h (puro); aqui
+  // solo se lee el FBO y se cuentan ok/rechazadas. Con copia
+  // con escala Y y filtro capturado usa el modelo con escala
+  // (ExecuteEfbCopyScaledModel); sin filtro capturado, la
+  // copia con escala se rechaza (no se inventa filtro).
+  // `reject_reason` (si no es nulo) recibe el motivo del
+  // rechazo, para boot.log: sin-target-EFB, ram-nula,
+  // sin-evento-0x52, readback-fallo, escala-sin-filtro,
+  // escala-modelo-rechazada, lineal-rechazada,
+  // tiled-rechazada, formato-desconocido. No escribe nada
+  // en RAM si rechaza.
+  bool CopyEfbToGuestRam(const GxCopy& copy, uint8_t* guest_ram,
+                         uint32_t ram_size, std::string* reject_reason);
+  int EfbCopiesOk() const { return efb_copies_ok_; }
+  int EfbCopiesRejected() const { return efb_copies_rejected_; }
+  const std::string& EfbLastReject() const { return efb_last_reject_; }
 
   int QuadsDrawn() const { return quads_drawn_; }
   int QuadsSkipped() const { return quads_skipped_; }
@@ -195,6 +234,16 @@ class GxGlRenderer {
                         uint8_t r, uint8_t g, uint8_t b);
   void DrawTriVertices(const GlTri& tri, GLuint tex, bool use_tex,
                        uint8_t r, uint8_t g, uint8_t b);
+
+  // Tramo 9: target EFB (ver metodos publicos).
+  GLuint efb_fbo_ = 0;
+  GLuint efb_tex_ = 0;
+  GLuint efb_rbo_ = 0;
+  int efb_w_ = 0;
+  int efb_h_ = 0;
+  int efb_copies_ok_ = 0;
+  int efb_copies_rejected_ = 0;
+  std::string efb_last_reject_;
 
   GLuint program_ = 0;
   GLuint vbo_ = 0;
