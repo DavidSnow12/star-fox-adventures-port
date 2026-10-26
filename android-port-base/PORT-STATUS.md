@@ -5344,9 +5344,49 @@ entorno de la vía, tras un reemplazo de VM).
 
 **Build Tramo 6 (coordinador, NDK):** 0 errores, 0 símbolos
 mem_/ppc_/func_/dolrecomp_ sin resolver (214 undefined
-solo de sistema), `libstarfox.so` 27.865.152 B, SHA-256
-`04137fe3168dcc7ed6df7eb6cba904f6a202c7c182ff7f80ec90d47c4070683c`,
+solo de sistema), `libstarfox.so` 27.865.408 B, SHA-256
+`02e3bcadd98edb8b444307207e282810134d6e49f4703d24c8d50f6b52ef4f39`,
 ELF64 AArch64, `android_main` y `func_80003100` en T,
-`OnFxStartDoubled` y `OnSeqPlay` en T. APK GX20: ver
-sección siguiente (se añade tras el build en este mismo
-tramo).
+`OnFxStartDoubled` y `OnSeqPlay` en T (la lib del primer
+build del coordinador, 27.865.152 B / SHA
+`04137fe3…`, quedó sustituida por la rebuild del pipeline
+APK; la lib interior de la APK es idéntica a la lib NDK
+final, mismo SHA).
+
+## APK de prueba GX20 (Tramo 6, PRUEBA — NO jugable)
+
+`android-port-base/app-debug-gx20-test.apk`, 12.702.374 B,
+SHA-256
+`2ce7f95d90d7bb292e5e4d27208c3133be65f45a3faa4ec61221a1ff15a64c71`,
+SHA-1 `db2055525fadc5ed6286792b342ae5e098994067`
+(commit de este tramo, push verificado con `git ls-remote`):
+`com.starfox.port` v11 / `0.11.0-gx20-test`, apksigner
+Verifies (v2+v3, 1 firmante, alias test), zipalign OK,
+manifiesto minSdk 26 / targetSdk 34 / arm64-v8a /
+debuggable (build de prueba expresa), solo permiso
+VIBRATE, `lib/arm64-v8a/libstarfox.so` interior 27.865.408
+B, SHA-256 `02e3bcad…` (idéntico al build NDK final),
+sin datos del juego dentro. Build manual (Gradle daemon
+con fallo conocido): javac --release 17, d8, aapt2 link,
+zipalign -f 4, firma keystore de prueba alias test.
+Etiqueta: PRUEBA — arranca, clear + quad + TEV de mundo
+anclado con indirecto real bajo gate + texgen-POS + Fog
+lineal (con las limitaciones documentadas en Tramo 6),
+SAF + táctil + CARD + botón «añadir audio» visible
+(píldora nativa, sin robar táctil) + bridge con primer
+SFX real en host, doblaje 96/162/820, streams por WAV o
+ADP por bloques con caché PCM, secuenciador MusyX
+cableado (99/74/5 por vía sintética, sin llamada real en
+juego todavía), mezcla de voces y bucles en host, rumble
+JNI (pendiente de prueba en hardware). NO es la APK
+jugable al 100 %: sin juego real con input y audio
+verificado en Tab S8, sin datos dentro (inerte sin
+sfa-data/), sin música en juego todavía, sin rumble
+positivo verificado. La cuestión 1367 sigue abierta.
+Pasos de prueba en Tab S8: ver
+`android-port-base/GUIA-PRUEBA-TIER1-CACHE.md` y
+`android-port-base/GUIA-PRUEBA-RUMBLE.md` en esta misma
+rama (pack de test = base SAF + overlay Tier 1, 365,24
+MiB totales; overlay transferido 133,20 MiB; libre
+recomendado ≥1,5 GB; extraer `boot.log` antes de
+relanzar, porque cada arranque lo trunca).
