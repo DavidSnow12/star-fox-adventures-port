@@ -1,15 +1,20 @@
 #pragma once
 
-// Renderer — STUB GLES3 de la base.
+// Renderer — EGL/GLES3 + GX (Fase 10).
 //
-// Solo inicializa EGL con la ventana nativa, limpia la pantalla con
-// un color fijo y hace swap. El GX real de GameCube (display lists,
-// TEV, texturas CMPR/RGB5A3/RGBA8 ya extraídas, etc.) es trabajo
-// posterior; este stub existe para validar la superficie, el loop
-// y el enlace con EGL/GLES3 antes de tocar GX.
+// Clear + quad de prueba + draws GX traducibles (ver
+// renderer/gx_gl.h): TEV multi-etapa, Rcp_*, EFB y display lists
+// complejas son no-op documentados, no un fallo silencioso.
+// Sin draws GX pendientes, RenderFrame solo hace clear; el
+// llamador dibuja antes (quad de prueba o draws GX).
 
 #include <EGL/egl.h>
 #include <android/native_window.h>
+
+#include <vector>
+
+#include "gamecube_runtime/gx.h"
+#include "renderer/gx_gl.h"
 
 namespace sfa {
 
@@ -22,6 +27,21 @@ class Renderer {
   // stub): la primera imagen útil del runtime será clear + quad,
   // antes de cualquier GX real. En esta base solo registra una vez.
   void DrawQuad();
+  // Fase 10: quad de prueba con textura procedural (damero,
+  // GxGlRenderer::DrawCheckerQuad). No es arte del juego.
+  void DrawTestQuad();
+  // Fase 10: draws GX (parser host) con texturas decodificadas
+  // desde la RAM huesped dada. Sin draws, no dibuja nada.
+  int DrawGxFrame(const std::vector<GxDraw>& draws, const uint8_t* ram,
+                  size_t ram_size);
+  // Orden de frame: BeginFrame (clear) -> DrawTestQuad o
+  // DrawGxFrame -> RenderFrame (swap). Sin BeginFrame, el
+  // contenido del frame anterior persistiria.
+  void BeginFrame();
+  int GxQuadsDrawn() const { return gx_gl_.QuadsDrawn(); }
+  int GxQuadsSkipped() const { return gx_gl_.QuadsSkipped(); }
+  int GxTexturesUploaded() const { return gx_gl_.TexturesUploaded(); }
+  bool GxReady() const { return gx_gl_ready_; }
   void RenderFrame();
 
   bool IsReady() const { return display_ != EGL_NO_DISPLAY; }
@@ -32,6 +52,8 @@ class Renderer {
   EGLContext context_ = EGL_NO_CONTEXT;
   int width_ = 0;
   int height_ = 0;
+  GxGlRenderer gx_gl_;
+  bool gx_gl_ready_ = false;
 };
 
 }  // namespace sfa

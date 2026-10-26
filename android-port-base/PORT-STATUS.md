@@ -48,6 +48,23 @@ registra). Ese es el siguiente bloqueador concreto, no un
 retroceso: los titulares de run30/31/32/33 son idénticos salvo
 los contadores VI. Ver «Fase 8» abajo.
 
+**Fase 10 (2026-10-26, este tramo):** Start programado
+DESPUÉS de la película en marcha SÍ saca al juego del
+bucle attract/title (`TitleMenu_run` deja de despacharse;
+dosis-respuesta monótona con press12/press20 frente al
+baseline run42, idéntico a run41), a un bucle sano
+post-attract con 2 texturas estables y sin ficheros DVD
+nuevos — pero la pantalla nueva NO queda identificada
+como menú principal (ver «Fase 10», punto 1, matiz). El
+renderer GX ya está en la APK (GLES3, QUADS + texturas
+decodificadas, validado en host 602/602 sobre run19),
+pero el parser host se detiene en el FIFO de la película
+en el offset 2497 (opcode 0x03): frames de película
+todavía NO renderizables por este camino. Nueva APK de
+prueba `app-debug-gx-test.apk` (clear + damero, NO
+jugable, sin datos; ver «Fase 10», punto 4). La APK Fase 0
+sigue intacta.
+
 ## Qué funciona (verificado)
 
 - Base Android: NativeActivity, `android_main`, loop, ciclo de vida
@@ -162,10 +179,14 @@ los contadores VI. Ver «Fase 8» abajo.
    actual cubre arranque + eventos DSP/ARQ + callback DVD +
    PAD + sueño instantáneo + callbacks VI + DMA LC + colas
    de mensajes.
-4. **GX real en APK pendiente:** la máquina de estado GX,
-   display lists y texturas convertidas ya existen y están
-   verificadas en host (Fase 5b); falta el mismo camino en
-   la APK (GLES3) para un frame real en dispositivo.
+4. **GX en APK (Fase 10, parcial):** el renderer GLES3 ya
+   existe en la APK (QUADS + texturas decodificadas,
+   validado en host 602/602 sobre run19) y la APK de prueba
+   GX dibuja clear + damero; falta la alimentación GX por
+   frame desde el FIFO (parser con estado incremental) y
+   ampliar el parser (se detiene en el offset 2497 del
+   FIFO de película, opcode 0x03) para un frame real del
+   juego en dispositivo. Ver «Fase 10».
 5. **Audio MusyX/DSP pendiente:** backend AAudio implementado
    (sin probar en dispositivo) y WAV probados en host; falta
    el mapeo ID de sonido del juego → WAV (tablas
@@ -180,17 +201,22 @@ los contadores VI. Ver «Fase 8» abajo.
    desde el PADRead nº 3 (0 en los dos primeros), el run
    termina con Held0 = Just0 = Prev0 = 0x1000, frente a
    Held0 = Prev0 = 0x1000, Just0 = 0 con Start desde el
-   arranque. Falta la misma prueba a nivel de pantalla de
-   título, bloqueada por el pipeline de hilos THP (punto 2
-   arriba).
-7. **Datos sin empaquetar:** no hay paquete de datos para el test.
-   La APK no meterá 2 GB; la vía (APK pequeña + datos aparte) está
-   por decidir con tamaños reales y pasos de instalación.
-8. **Sin Android SDK aquí:** no hay `aapt2/d8/apksigner/zipalign` ni
-   Gradle en este entorno. La APK de este tramo no se ha construido;
-   su build y validación (`apksigner verify`, `zipalign`, manifiesto
-   con `apktool`) quedan pendientes de instalar cmdline-tools o de
-   la vía manual de la skill local.
+   arranque. En Fase 10, la prueba a nivel de bucle de
+   título SÍ se hizo (Start tras la película en marcha
+   rompe el bucle attract/title; ver «Fase 10», punto 1),
+   pero la pantalla nueva no queda identificada como menú.
+7. **Datos (Fase 10, vía definida, SAF pendiente):** Pack B
+   (240 MB, sin `streams/`) aparte, nunca en APK ni en Git;
+   la APK ya acepta `<base>/sfa-data/sys/main.dol` +
+   `<base>/sfa-data/files/` (copia interina por adb, ver
+   «Fase 10», punto 3). Falta el picker SAF + copia en la
+   app; sin lista mínima verificada todavía.
+8. **SDK (Fase 10, resuelto por vía manual):** SDK en
+   `~/tools/android-sdk` (build-tools 34.0.0, platforms
+   android-34); Gradle 8.6 sigue fallando por el daemon,
+   así que la APK se construye por vía manual documentada
+   (`build-apk-manual.sh`, javac/d8/aapt2/zipalign/
+   apksigner) y validada (ver «Fase 10», punto 4).
 9. **Sin ejecución en dispositivo:** no hay runtime Android aquí.
    Todo lo anterior es validación en host/NDK, no una prueba de
    juego en la Tab S8.
@@ -2372,3 +2398,308 @@ solo arranque, NO jugable).
    rodajas de tiempo y sin planificación de trabajadores
    en sleeps de frame del principal; si un hilo futuro no
    cede nunca, se diagnosticará por PC fijo en el tope.
+
+## Fase 10 (2026-10-26, este tramo): Start saca del bucle attract, renderer GX en APK, APK de prueba GX
+
+### 1. Transicion pelicula -> titulo con Start: SI, con matiz honesto
+
+`TitleMenu_run` YA se despachaba en la Fase 9: la pregunta de
+esta fase no era llegar a el, sino salir de su bucle de
+attract con Start. Respuesta: **si, Start rompe el bucle**,
+pero la pantalla nueva **no queda identificada como "menu
+principal con opciones"** (ver matiz al final del punto).
+
+Test host nuevo (fuera del repo, como siempre):
+`work-port/fase2-tests/test_phase10.cpp` (+
+`build_phase10.sh`): como `test_phase9` + pulsacion Start
+mantenida desde un PADRead programado
+(`SetPadInject(true, 0x1000)` + `SetPadPressFromRead(n)`,
+la via valida de las Fases 6-8: flag de muestra fresca
+0x803DE65D, Held/Just/Prev por `padUpdate`) + `texloads.csv`
+de salida. `SFA_PCTRACE=1` registra los despachos de
+`TitleMenu_run`/`TitleMenu_render`/`prepareMovie`/
+`releaseMovieBuffers`/`THPPlayerStop`.
+
+- run42 baseline (press = 0, 5M despachos): reproduccion
+  EXACTA de run41: FIFO 15.021.078 B, SHA-256 identico a
+  run41, OSReport identico, PC final 0x80051580
+  (`addSphereMapTexStage`), PADRead x27, VI cadenas 38,
+  GXLoadTexObj x10.870, DVDOpen x132, async x131,
+  `video_ready_tex` 2/3, 0 exceptions, `TitleMenu_run` x24
+  (primero en el despacho 2.352.692, luego uno por frame,
+  ~107k despachos/frame) y `TitleMenu_render` x23. Sin
+  regresion frente a la Fase 9.
+- run43 press12 (Start desde PADRead #12, 5M): ultimo
+  `TitleMenu_run` en el despacho 3.211.355 (baseline: ultimo
+  en 4.979.572); despues, `TitleMenu_run` x9 en total y
+  `TitleMenu_render` x8: el bucle attract/title se detiene
+  y el juego sigue en otro bucle. PADRead x191, VI cadenas
+  198 (equilibradas pre/post), FIFO 10.095.648 B,
+  GXLoadTexObj x5.028, DVDOpen x130, OSCreateThread x4
+  (baseline x10: los hilos THP ya no se recrean),
+  LCLoadBlocks x0 (x270), LCStoreBlocks x1 (x105),
+  `video_ready_tex` 0/3, Held0 = Prev0 = 0x1000, Just0 = 0
+  (flanco consumido, Start mantenido), 0 exceptions, PC
+  final 0x80015CF0 (`utf8GetNextChar`, en mitad de dibujo
+  de texto). Post callback sigue siendo `PlayControl`
+  (0x8011897C).
+- run44 press20 (Start desde PADRead #20, 5M): ultimo
+  `TitleMenu_run` en 4.149.573; PADRead x90, VI 99, FIFO
+  12.867.490 B, GXLoadTexObj x8.014, OSCreateThread x7,
+  LCStoreBlocks x53, `video_ready_tex` 0/3, Held0 = 0x1000,
+  0 exceptions, PC final 0x800799FC (`gxTevCommitStages`,
+  en mitad de dibujo). Valores intermedios exactos entre
+  press12 y baseline en todos los contadores.
+- Dosis-respuesta monotona: cuanto mas tarde el Start,
+  mas tarde la salida del bucle y mas FIFO/GXLoadTexObj
+  acumulados. Es causalidad, no casualidad de un run.
+- Firma post-transicion (identica en press12 y press20,
+  distinta del baseline): texObjs dominantes 0x80E24E40
+  (mapa 0) + 0x816148C0, frente al conjunto rotante de la
+  pelicula (0x816E2540/0x816DF420/0x80EC6BE0/0x810ABB60...).
+  Sin ficheros DVD nuevos (DVDOpen 130/131 frente a 132) y
+  sin lineas OSReport nuevas (45 cambios en los tres runs):
+  la pantalla nueva reutiliza assets del frontal ya
+  cargados (`gamefront`), no carga un nivel ni un menu
+  nuevo desde disco.
+- MATIZ (no maquillado): la identidad de la pantalla nueva
+  NO esta probada como menu principal con opciones: no hay
+  traza de `TitleMenuItem_*`, ni texto de menu leido, ni
+  DLL UI vigente identificado. Lo probado es la salida del
+  bucle attract/title a un bucle sano post-attract (PADRead
+  y VI por frame, cadenas VI equilibradas, 0 exceptions,
+  dibujo continuo con 2 texturas estables). Siguiente paso
+  para nombrarla: trazar el DLL UI vigente / estado de
+  menu, o renderizar el tramo post-transicion con el parser
+  ampliado (punto 2, limite). NO se afirma "pantalla de
+  titulo con menu" todavia.
+
+### 2. Renderer GX en APK (GLES3): camino host portado, con limite medido
+
+Ficheros nuevos en la rama (este commit):
+
+- `app/src/main/cpp/renderer/gx_translate.{h,cpp}` — sin
+  dependencias GL, testeable en host: `GxDrawToGlQuads()`
+  (la misma transformada que el renderer host de Fase 5b:
+  pos_matrix 3x4, proyeccion orto o perspectiva — camino
+  perspectiva NO validado en run19 —, viewport y region
+  EFB (342,342); salida NDC con y hacia arriba en vez de
+  pixeles de canvas) y `DecodeGxTexObj()` (mismo layout
+  GXTexObj verificado: +8 dims/formato, +12 direccion,
+  +36 tamano base; false si el tamano no coincide o el
+  formato es de paleta/desconocido).
+- `app/src/main/cpp/renderer/gx_gl.{h,cpp}` — GLES3:
+  programa de textura simple, solo QUADS (prim 0x80, 4
+  vertices, atributos directos, con viewport/proyeccion);
+  cualquier otro draw se cuenta en `quads_skipped_` y no
+  se dibuja. Texturas: re-upload en cada frame por
+  textura distinta (deliberadamente lento para una
+  prueba: el contenido de una textura THP cambia en cada
+  frame aunque su texObj sea el mismo, asi que cachear
+  por texObj mostraria el primer frame siempre). Sin
+  textura (tex_obj 0): color diagnostico (32,32,64), como
+  el host. Sin resolver: magenta 1x1, como el host.
+  `DrawCheckerQuad()`: damero 64x64 procedural (codigo,
+  NO arte del juego) para el paso "quad con textura".
+- `app/src/main/cpp/renderer/renderer.{h,cpp}` — orden de
+  frame: `BeginFrame()` (clear) -> `DrawTestQuad()` o
+  `DrawGxFrame(draws, ram, ram_size)` -> `RenderFrame()`
+  (swap). `GxGl` se inicializa tras el contexto EGL; si
+  falla, el renderer sigue haciendo clear (fallo en log).
+- `app/src/main/cpp/gamecube_runtime/runtime.{h,cpp}` —
+  tras `videoInit`, `Frame()` ya NO se detiene: el juego
+  sigue en rebanadas por frame (100.000 despachos o 0,25 s,
+  sin stop-PC), con `game_ended_` solo en exception /
+  unknown_pc / exit (nunca silencioso). Sin captura FIFO
+  en APK (tope 32 MiB: no es la via del renderer).
+  `SetGxDraws()` es el punto de alimentacion GX futuro,
+  hoy vacio. Con juego cargado, NO se dibuja el damero
+  (clear hasta que llegue GX real). Sin juego, clear +
+  damero.
+- `app/src/main/cpp/CMakeLists.txt` — anadidos `gx.cpp`,
+  `gx_texture.cpp`, `gx_gl.cpp`, `gx_translate.cpp` (la
+  via Gradle, cuando funcione, no debe perderlos).
+
+Validacion host (test nuevo, fuera del repo):
+`work-port/fase2-tests/test_gx_gl.cpp` (+ `build_gx_gl.sh`):
+sobre run19, parse_ok = 1, **602/602 draws traducidos, 0
+saltados, 3/3 texturas decodificadas** (IA8 376x104,
+RGB5A3 128x160, CMPR 180x92), primer quad fullscreen NDC
+x [-1,1], y [0.912,-0.916] (= canvas 640x439 del host).
+
+LIMITE MEDIDO (no maquillado): el parser host se detiene
+en el FIFO de la pelicula (run42, run43 y run44) en el
+**offset 2497, opcode desconocido 0x03** (contexto
+`03000300330606000200020022060600`): solo 5 draws
+parseados, 4 traducidos. Es decir: el camino GX portado
+cubre los frames tipo run19 (logos/barra/Dolby), NO los
+frames de pelicula/3D todavia. Ampliar el parser (opcode
+0x03, VATs y prims mas alla de QUADS VAT1) es el
+siguiente paso del renderer, antes de afirmar un frame de
+pelicula en APK.
+
+No-op documentados (no fallos silenciosos): TEV
+multi-etapa, `Rcp_*`, EFB, lighting, y display lists
+complejas mas alla de QUADS directos (el parser host las
+soporta hasta profundidad 4, el renderer GL solo dibuja
+QUADS directos).
+
+THP via `PopDecodedTextureSet` / `video_ready_tex`: en
+host, las texturas listas llegan al dibujo como
+`GXLoadTexObj` ordinarios (el juego las carga como
+texObjs); no hay un camino THP separado en el renderer.
+Cuando el parser cubra esos draws, las texturas THP
+fluiran por el mismo `DrawDraws` (con re-upload por
+frame por reutilizacion del texObj). Hoy: `video_ready_tex`
+2/3 en baseline, 0/3 tras Start (la pelicula ya no se
+muestra).
+
+### 3. Via de datos para la APK de prueba (definida; SAF pendiente)
+
+Layout que ya acepta `native-lib.cpp` (dormido sin
+datos, este commit): si existe
+
+    <base>/sfa-data/sys/main.dol
+    <base>/sfa-data/files/...
+
+donde `<base>` es `internalDataPath` o `externalDataPath`
+de la app, el runtime hace `SetDiscRoot(.../files)` +
+`LoadGame(.../main.dol)` y lo registra en boot.log. Sin
+`sfa-data`, boot.log registra "sin datos (modo clear +
+quad de prueba)" y la APK NO falla: queda en clear +
+damero.
+
+- Pack B = `disc/files/` sin `streams/` = 240 MB
+  (239.678.460 B). Nunca en APK ni en Git (limite
+  100 MB/fichero). El runtime debe leer el arbol nativo
+  del disco, no PNG/WAV/OBJ convertidos.
+- No existe lista minima verificada para arrancar: se
+  medira cuando el runtime registre que abre (el HLE DVD
+  ya loguea cada open; en run42 son 132 opens).
+- Ruta prevista para el usuario (NO implementada aun en
+  esta APK): Drive -> Descargas -> picker SAF en primer
+  arranque -> copia a la carpeta privada de la app
+  (`sfa-data/` de arriba). Ruta interina para esta build
+  de prueba (debuggable, solo para probar): con la APK
+  instalada y la app ya abierta una vez (para que exista
+  su carpeta externa),
+
+      adb push <carpeta-Pack-B>/sys/main.dol \
+        /sdcard/Android/data/com.starfox.port/files/sfa-data/sys/main.dol
+      adb push <carpeta-Pack-B>/files \
+        /sdcard/Android/data/com.starfox.port/files/sfa-data/files
+
+  (MTP a `Android/data/` puede no mostrarse en Android
+  11+, por eso el interino es adb, no MTP.) Tras copiar,
+  cerrar y reabrir la app: boot.log debe decir "juego
+  cargado desde ..." en vez de "sin datos".
+- Estado honesto: **la APK de prueba de esta fase AUN NO
+  puede cargar Pack B por si sola** (falta el picker SAF
+  + copia). Entrega: camino host + APK de arranque con
+  renderer, nunca etiquetada como jugable.
+
+### 4. APK de prueba GX (NO JUGABLE, solo arranque + renderer)
+
+**Fichero en esta rama:**
+`android-port-base/app-debug-gx-test.apk`
+**Tamano:** 12.522.150 bytes
+**SHA-256:**
+`70fedbd289440118e9c21da2ca10498ca2a83601d29247301f406ac124aab8ce`
+**Paquete:** `com.starfox.port`, versionCode 2 /
+`0.2.0-gx-test`, minSdk 26, targetSdk 34, actividad
+`MainActivity` (landscape, `android.app.lib_name`
+`starfox`), `application-debuggable` (SOLO por ser build
+de prueba, etiquetada como tal aqui y en su nombre;
+quitar para release).
+**Contenido:** `lib/arm64-v8a/libstarfox.so`
+(27.360.560 B, el .so de este tramo) +
+`lib/arm64-v8a/libc++_shared.so` (9.236.352 B, NEEDED
+por el .so) + `classes.dex` + `assets/README.md`.
+Sin datos del juego, sin DOL, sin disco.
+**Validacion:** `apksigner verify` OK (v2 y v3, 1
+firmante; v1 desactivada por apksigner al ser minSdk
+26, esperado), `zipalign -c` OK, `aapt2 dump badging`
+correcto (sdkVersion 26, targetSdkVersion 34, sin
+permisos implicitos tras anadir `<uses-sdk>` al
+manifiesto — la primera build de este tramo los tenia
+por asumir minSdk 1, corregido y reconstruido),
+`apktool d` OK (manifiesto: paquete, debuggable de
+prueba, MainActivity; libs arm64-v8a presentes).
+Construida por via manual
+(`android-port-base/build-apk-manual.sh`: javac/d8 con
+`--lib android.jar`/aapt2/zipalign/apksigner) porque
+Gradle 8.6 sigue fallando en este entorno con "Could
+not receive a message from the daemon". El script queda
+en el repo para reproducirla. Firma: keystore de prueba
+autofirmado en `work-port/test-debug.keystore` (fuera
+del repo, no se commitea); al instalar pedira "Instalar
+apps desconocidas" una sola vez para la app instaladora.
+
+**Que hace al abrirla (por codigo, NO probado en
+dispositivo en este tramo):** arranca NativeActivity,
+inicializa EGL/GLES3 + programa GX, y dibuja clear +
+damero procedural centrado, y escribe `boot.log`
+(`StarFoxPort` en logcat). Si no hay `sfa-data`,
+boot.log dice "sin datos (modo clear + quad de
+prueba)". Si hay `sfa-data` copiado por adb (punto 3),
+intenta cargar el DOL y avanzar tras `videoInit` en
+rebanadas por frame (sin GX todavia: clear hasta que
+llegue la alimentacion GX). **No probado en Tab S8 en
+este tramo: no hay ejecucion en dispositivo aqui; el
+boot.log real de dispositivo queda pendiente.**
+
+**Que NO hace / NO es:** no es jugable, no carga el
+juego sin `sfa-data`, no dibuja ningun frame del juego
+(todavia), no tiene sonido de juego, no tiene botones
+tactiles, no tiene picker SAF. Si se abre y se ve clear
++ damero, ESO ES LO ESPERADO en esta fase, no un fallo
+del juego. La APK Fase 0 (`app-debug-boot-test.apk`,
+57.916 B) queda intacta en la rama, sin reconstruir.
+
+### 5. Build NDK (verificacion Fase 10)
+
+Build `ndk-phase10` (directorio nuevo bajo `work-port/`,
+fuera del repo; JOBS=4, 179 C + runtime C++ desde cero;
+2 CPUs en esta VM: el build tardo ~30 min, la mayoria
+en chunks): PASS, **0 errores**.
+`libstarfox.so` **27.360.560 B**, ELF64 `DYN` AArch64,
+SHA-256
+`08eedac321021516333aac1bd7d59a2b841df0ce7d5f95cf4a34bb7391dca5c0`
+(Fase 9: 27.340.304 B,
+`c2ba48298589299a53b6e735811ef063e8b4af1a2ff999d1fa7c7c1a1915efa2`;
+delta +20.256 B por el renderer GX y el gancho de datos),
+comprobacion del script "OK: ningun simbolo
+mem_/ppc_/func_/dolrecomp_ sin resolver", 186 undefined
+totales (Fase 9: 153; **delta +33, todos explicados**:
+31 funciones GLES nuevas del renderer GX + 2 vtables
+RTTI de C++, solo libs del sistema). `android_main`
+en `T`. Compilacion dirigida previa de los 5 ficheros
+tocados con el toolchain NDK: 0 errores.
+Regresion host: run42 identico a run41 (punto 1) y
+`test_phase6` modo unit: TODO OK, 0 fallos.
+
+### 6. Que queda (tras Fase 10, en orden)
+
+1. Nombrar la pantalla post-Start: trazar el DLL UI
+   vigente / estado de menu (o renderizar el tramo
+   post-transicion cuando el parser lo cubra). Sin eso,
+   no afirmar "menu principal".
+2. Renderer GX: ampliar el parser (opcode 0x03 en offset
+   2497 del FIFO de pelicula, VATs y prims mas alla de
+   QUADS VAT1) y alimentar `SetGxDraws()` por frame con
+   estado de parser incremental (hoy el FIFO se acumula
+   y el parser es de stream completo: no sirve por
+   frame tal cual).
+3. Picker SAF + copia de Pack B a `sfa-data/` (punto 3),
+   y prueba real en Tab S8 de la APK GX (boot.log,
+   damero, y luego carga con datos).
+4. CARD (guardado) y resto de HLE que el bucle principal
+   vaya pidiendo al avanzar mas alla del titulo.
+5. Mapeo ID de sonido del juego -> WAV; secuencias MusyX;
+   DSP real.
+6. Botones tactiles en pantalla (layout por definir),
+   rumble.
+7. APK 100% jugable: solo cuando renderer + datos +
+   input tactil + audio esten probados en dispositivo.
+   La APK de este tramo sigue siendo solo arranque con
+   renderer (ver punto 4).

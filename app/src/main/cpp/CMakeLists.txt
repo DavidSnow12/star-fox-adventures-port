@@ -50,7 +50,11 @@ add_library(starfox SHARED
     gamecube_runtime/mem.cpp
     gamecube_runtime/symbol_dispatch.cpp
     gamecube_runtime/smc_ranges.cpp
+    gamecube_runtime/gx.cpp
+    gamecube_runtime/gx_texture.cpp
     renderer/renderer.cpp
+    renderer/gx_gl.cpp
+    renderer/gx_translate.cpp
     audio/audio.cpp
     input/input.cpp
     platform/platform.cpp)

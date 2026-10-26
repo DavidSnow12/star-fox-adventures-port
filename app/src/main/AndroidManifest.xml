@@ -2,14 +2,23 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="com.starfox.port">
 
+    <!-- Sin uses-sdk, aapt2 asume minSdk 1 y anade permisos
+         implicitos (WRITE_EXTERNAL_STORAGE, READ_PHONE_STATE)
+         que este port NO pide: fijar los de build.gradle. -->
+    <uses-sdk
+        android:minSdkVersion="26"
+        android:targetSdkVersion="34" />
+
     <uses-feature
         android:name="android.hardware.touchscreen"
         android:required="false" />
     <uses-feature android:name="android.hardware.screen.landscape" />
 
-    <!-- android:debuggable="true" SOLO para la APK de prueba de
-         arranque (Fase 0): permite leer boot.log con run-as.
-         Quitar para cualquier build de release. -->
+    <!-- android:debuggable="true" SOLO para APKs de prueba
+         (Fase 0 arranque, Fase 10 GX): permite leer boot.log
+         con run-as. Las APKs de prueba se etiquetan como tales
+         en su nombre y en PORT-STATUS. Quitar para cualquier
+         build de release. -->
     <application
         android:allowBackup="false"
         android:debuggable="true"

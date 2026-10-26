@@ -47,11 +47,17 @@ bool Renderer::Init(ANativeWindow* window) {
   eglQuerySurface(display_, surface_, EGL_WIDTH, &width_);
   eglQuerySurface(display_, surface_, EGL_HEIGHT, &height_);
   glViewport(0, 0, width_, height_);
-  SFA_LOGI("renderer: EGL/GLES3 listo, %dx%d", width_, height_);
+  // Fase 10: programa GX tras el contexto vigente. Si falla, el
+  // renderer sigue haciendo clear (el fallo queda en log).
+  gx_gl_ready_ = gx_gl_.InitGl();
+  SFA_LOGI("renderer: EGL/GLES3 listo, %dx%d, gx_gl=%d", width_, height_,
+           gx_gl_ready_ ? 1 : 0);
   return true;
 }
 
 void Renderer::Shutdown() {
+  gx_gl_.ShutdownGl();
+  gx_gl_ready_ = false;
   if (display_ != EGL_NO_DISPLAY) {
     eglMakeCurrent(display_, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
     if (surface_ != EGL_NO_SURFACE) eglDestroySurface(display_, surface_);
@@ -77,12 +83,28 @@ void Renderer::DrawQuad() {
   }
 }
 
-void Renderer::RenderFrame() {
+void Renderer::DrawTestQuad() {
+  if (display_ == EGL_NO_DISPLAY || !gx_gl_ready_) return;
+  gx_gl_.DrawCheckerQuad();
+}
+
+int Renderer::DrawGxFrame(const std::vector<GxDraw>& draws,
+                          const uint8_t* ram, size_t ram_size) {
+  if (display_ == EGL_NO_DISPLAY || !gx_gl_ready_) return 0;
+  return gx_gl_.DrawDraws(
+      draws, [ram, ram_size](uint32_t tex_obj, GxDecodedTex* out) {
+        return DecodeGxTexObj(ram, ram_size, tex_obj, out);
+      });
+}
+
+void Renderer::BeginFrame() {
   if (display_ == EGL_NO_DISPLAY) return;
-  // STUB: solo color de fondo. Un frame real dibujará aquí la salida
-  // del GX traducido, no este clear.
   glClearColor(0.05f, 0.10f, 0.25f, 1.0f);
   glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+}
+
+void Renderer::RenderFrame() {
+  if (display_ == EGL_NO_DISPLAY) return;
   eglSwapBuffers(display_, surface_);
 }
 

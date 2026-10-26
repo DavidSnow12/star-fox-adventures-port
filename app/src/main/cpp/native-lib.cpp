@@ -14,6 +14,9 @@
 
 #include <android_native_app_glue.h>
 
+#include <cstdio>
+#include <string>
+
 #include "gamecube_runtime/runtime.h"
 #include "log.h"
 #include "platform/platform.h"
@@ -36,6 +39,45 @@ void HandleCmd(struct android_app* app, int32_t cmd) {
         state->window_ready = state->renderer.Init(app->window);
         if (state->window_ready) {
           state->runtime.Init();
+          // Fase 10 — carga de datos (dormida sin datos):
+          // si existe un arbol Pack B copiado en la carpeta
+          // privada de la app (interna o externa), se carga.
+          // Layout exacto (ver PORT-STATUS, via de datos):
+          //   <base>/sfa-data/sys/main.dol
+          //   <base>/sfa-data/files/...
+          // Sin SAF todavia: la copia la hace el usuario por
+          // adb (build de prueba) o, cuando exista, el picker
+          // SAF que copiara a esta misma carpeta. Sin datos,
+          // la APK queda en clear + quad de prueba, y eso se
+          // registra en boot.log (no es un fallo).
+          const char* bases[2] = {nullptr, nullptr};
+          std::string internal = sfa::InternalDataPath();
+          if (!internal.empty()) bases[0] = internal.c_str();
+          if (app->activity != nullptr &&
+              app->activity->externalDataPath != nullptr) {
+            bases[1] = app->activity->externalDataPath;
+          }
+          bool tried = false;
+          for (const char* base : bases) {
+            if (base == nullptr) continue;
+            std::string dol = std::string(base) + "/sfa-data/sys/main.dol";
+            std::FILE* probe = std::fopen(dol.c_str(), "rb");
+            if (probe == nullptr) continue;
+            std::fclose(probe);
+            tried = true;
+            std::string files = std::string(base) + "/sfa-data/files";
+            state->runtime.SetDiscRoot(files.c_str());
+            if (state->runtime.LoadGame(dol.c_str())) {
+              SFA_LOGI("native: juego cargado desde %s", dol.c_str());
+            } else {
+              SFA_LOGE("native: LoadGame fallo en %s", dol.c_str());
+            }
+            break;
+          }
+          if (!tried) {
+            SFA_LOGI("native: sin datos sfa-data (modo clear + quad "
+                     "de prueba; ver PORT-STATUS, via de datos)");
+          }
         } else {
           SFA_LOGE("native: renderer no listo, runtime sin arrancar");
         }

@@ -14,6 +14,7 @@
 #include "audio/audio.h"
 #include "gamecube_runtime/chassis.h"
 #include "gamecube_runtime/cpu.h"
+#include "gamecube_runtime/gx.h"
 #include "gamecube_runtime/hle.h"
 #include "gamecube_runtime/memory.h"
 #include "gamecube_runtime/smc_ranges.h"
@@ -43,6 +44,15 @@ class GameCubeRuntime {
   // ventana). Con juego: una rebanada del chassis; sin juego:
   // el paso stub de la base.
   void Frame(Renderer* renderer);
+  // Punto de alimentacion GX futuro (Fase 10: sin productor
+  // todavia): cuando el runtime tenga draws parseados del FIFO
+  // del frame, los deja aqui y Frame() los dibuja en vez del
+  // quad de prueba. Hoy siempre vacio en la APK.
+  void SetGxDraws(const std::vector<GxDraw>& draws) {
+    pending_gx_draws_ = draws;
+  }
+  bool IsGameEnded() const { return game_ended_; }
+  uint64_t PostBootSlices() const { return post_boot_slices_; }
 
   GCMemory* Memory() { return &memory_; }
   SymbolDispatch* Dispatch() { return &dispatch_; }
@@ -75,6 +85,12 @@ class GameCubeRuntime {
   bool boot_reached_main_ = false;
   bool boot_reached_init_ = false;
   bool boot_reached_video_init_ = false;
+  // Fase 10: tras videoInit, el juego sigue en rebanadas por
+  // frame (sin stop-PC). game_ended_ solo en exception /
+  // unknown_pc / exit: nunca silencioso.
+  bool game_ended_ = false;
+  uint64_t post_boot_slices_ = 0;
+  std::vector<GxDraw> pending_gx_draws_;
 };
 
 }  // namespace sfa

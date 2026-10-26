@@ -72,7 +72,27 @@ bool GameCubeRuntime::DumpHwTrace(const char* csv_path,
 
 void GameCubeRuntime::Frame(Renderer* renderer) {
   if (!running_ || renderer == nullptr) return;
-  if (game_loaded_ && !boot_finished_) {
+  renderer->BeginFrame();
+  if (game_loaded_ && boot_finished_ && !game_ended_) {
+    // Fase 10: tras videoInit, el juego NO se detiene: sigue
+    // en rebanadas por frame (100.000 despachos o 0,25 s).
+    // Sin captura FIFO (32 MiB de tope: no es la via del
+    // renderer; la alimentacion GX incremental con parser con
+    // estado queda pendiente, ver PORT-STATUS).
+    ChassisResult slice =
+        RunChassis(&cpu_state_, &hle_, 100000, 0.25, 0);
+    ++post_boot_slices_;
+    if (slice.reason == ChassisResult::kException ||
+        slice.reason == ChassisResult::kUnknownPc ||
+        slice.reason == ChassisResult::kReachedExit) {
+      game_ended_ = true;
+      SFA_LOGI("runtime: juego terminado tras arranque: %s, "
+               "rebanadas post-boot %llu, pc 0x%08X",
+               slice.reason_text,
+               static_cast<unsigned long long>(post_boot_slices_),
+               cpu_state_.pc);
+    }
+  } else if (game_loaded_ && !boot_finished_) {
     // Rebanada del chassis por frame: el arranque completo puede
     // necesitar varias rebanadas; el estado (pc, registros, RAM)
     // vive en cpu_state_ y persiste entre frames.
@@ -100,6 +120,19 @@ void GameCubeRuntime::Frame(Renderer* renderer) {
   }
   audio_.Pump();
   renderer->DrawQuad();
+  if (!pending_gx_draws_.empty()) {
+    // Via GX futura: draws parseados del frame, con texturas
+    // desde la RAM huesped del runtime.
+    renderer->DrawGxFrame(pending_gx_draws_, memory_.RamData(),
+                          memory_.RamSize());
+    pending_gx_draws_.clear();
+  } else if (!game_loaded_) {
+    // Sin juego: clear + quad de prueba con textura (damero
+    // procedural, no arte del juego). Con juego cargado, NO
+    // se dibuja el damero: el frame queda en clear hasta que
+    // la alimentacion GX exista.
+    renderer->DrawTestQuad();
+  }
   renderer->RenderFrame();
 }
 
