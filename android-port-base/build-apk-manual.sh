@@ -43,7 +43,13 @@ javac --release 17 -cp "$ANDROID_JAR" -d "$WORK/classes" \
 echo "== d8 dex =="
 # --lib android.jar: sin el, d8 avisa de que NativeActivity no se
 # encuentra (desugaring) aunque el dex salga; con el, no hay aviso.
-"$BT/d8" --lib "$ANDROID_JAR" --output "$WORK" "$WORK/classes/com/starfox/port/MainActivity.class"
+# Fase 13: pasar TODAS las clases, no solo MainActivity.class:
+# d8 exige las nest mates (MainActivity$CopyStats, la clase de
+# estadisticas de la copia SAF) en el mismo programa; pasar solo
+# la clase principal rompe con "requires its nest mates".
+CLASS_FILES=$(find "$WORK/classes" -name '*.class')
+# shellcheck disable=SC2086
+"$BT/d8" --lib "$ANDROID_JAR" --output "$WORK" $CLASS_FILES
 echo "== aapt2 compile/link =="
 mkdir -p "$WORK/res"
 "$BT/aapt2" compile "$APP/res/values/strings.xml" -o "$WORK/compiled_res.zip"

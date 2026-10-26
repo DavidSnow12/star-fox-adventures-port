@@ -26,9 +26,17 @@ int8_t AxisToStick(float v) {
 
 void Input::Reset() {
   state_ = PadState();
+  touch_.Reset();
   logged_touch_ = false;
-  touch_active_ = false;
-  touch_id_ = -1;
+  logged_no_viewport_ = false;
+}
+
+void Input::SetViewportSize(int width, int height) {
+  if (width <= 0 || height <= 0) return;
+  viewport_w_ = width;
+  viewport_h_ = height;
+  touch_.SetAspect(static_cast<float>(width) /
+                   static_cast<float>(height));
 }
 
 void Input::SetButton(uint16_t bit, bool pressed) {
@@ -99,57 +107,68 @@ bool Input::HandleMotion(AInputEvent* event) {
     return true;
   }
   if ((source & AINPUT_SOURCE_TOUCHSCREEN) != 0) {
-    if (!logged_touch_) {
-      logged_touch_ = true;
-      SFA_LOGI("input: primer evento tactil (mitad izquierda = "
-               "stick, botones tactiles pendientes de layout)");
-    }
-    int32_t action = AMotionEvent_getAction(event);
-    int32_t action_code = action & AMOTION_EVENT_ACTION_MASK;
-    size_t pointer_index =
-        static_cast<size_t>((action & AMOTION_EVENT_ACTION_POINTER_INDEX_MASK) >>
-                            AMOTION_EVENT_ACTION_POINTER_INDEX_SHIFT);
-    size_t count = AMotionEvent_getPointerCount(event);
-    if (pointer_index >= count) return false;
-    int32_t id = AMotionEvent_getPointerId(event, pointer_index);
-    // Primer dedo = stick (arrastre desde el apoyo). No hay
-    // division por mitades todavia: sin ancho de ventana en
-    // este modulo, un criterio "mitad izquierda" seria
-    // arbitrario; los botones tactiles quedan pendientes de
-    // un layout en pantalla explicito.
-    if (action_code == AMOTION_EVENT_ACTION_DOWN ||
-        action_code == AMOTION_EVENT_ACTION_POINTER_DOWN) {
-      touch_active_ = true;
-      touch_id_ = id;
-      touch_anchor_x_ = AMotionEvent_getX(event, pointer_index);
-      touch_anchor_y_ = AMotionEvent_getY(event, pointer_index);
-      return true;
-    }
-    if (touch_active_ && id == touch_id_) {
-      if (action_code == AMOTION_EVENT_ACTION_MOVE) {
-        float dx =
-            (AMotionEvent_getX(event, pointer_index) - touch_anchor_x_) /
-            100.0f;
-        float dy =
-            (AMotionEvent_getY(event, pointer_index) - touch_anchor_y_) /
-            100.0f;
-        state_.stick_x = AxisToStick(dx);
-        state_.stick_y = AxisToStick(-dy);
-        return true;
-      }
-      if (action_code == AMOTION_EVENT_ACTION_UP ||
-          action_code == AMOTION_EVENT_ACTION_POINTER_UP ||
-          action_code == AMOTION_EVENT_ACTION_CANCEL) {
-        touch_active_ = false;
-        touch_id_ = -1;
-        state_.stick_x = 0;
-        state_.stick_y = 0;
-        return true;
-      }
+    return HandleTouch(event);
+  }
+  return false;
+}
+
+// Tactil Fase 13: cada evento Android se traduce a eventos del
+// layout en fracciones (pixeles / tamano de ventana) y el layout
+// decide zona y escribe Held en state_. MOVE recorre TODOS los
+// dedos (un MOVE Android trae todas las posiciones, no solo la
+// del dedo que se movio); DOWN/UP/CANCEL solo el dedo indice.
+// Un dedo que baja fuera de zona no se registra: su MOVE/UP
+// posterior tampoco cambia nada (TouchLayout lo ignora).
+bool Input::HandleTouch(AInputEvent* event) {
+  if (viewport_w_ <= 0 || viewport_h_ <= 0) {
+    if (!logged_no_viewport_) {
+      logged_no_viewport_ = true;
+      SFA_LOGE("input: tactil ignorado, sin tamano de ventana "
+               "(SetViewportSize pendiente)");
     }
     return false;
   }
-  return false;
+  if (!logged_touch_) {
+    logged_touch_ = true;
+    SFA_LOGI("input: tactil por layout Fase 13 (stick + botones "
+             "en pantalla, C-stick reservado sin mapeo)");
+  }
+  int32_t action = AMotionEvent_getAction(event);
+  int32_t action_code = action & AMOTION_EVENT_ACTION_MASK;
+  size_t count = AMotionEvent_getPointerCount(event);
+  bool changed = false;
+  auto to_frac = [&](size_t i, TouchLayout::TouchEvent& out) {
+    out.x = AMotionEvent_getX(event, i) /
+            static_cast<float>(viewport_w_);
+    out.y = AMotionEvent_getY(event, i) /
+            static_cast<float>(viewport_h_);
+    out.id = AMotionEvent_getPointerId(event, i);
+  };
+  if (action_code == AMOTION_EVENT_ACTION_MOVE) {
+    for (size_t i = 0; i < count; ++i) {
+      TouchLayout::TouchEvent ev{TouchLayout::EventType::kMove, 0, 0, 0};
+      to_frac(i, ev);
+      if (touch_.Handle(ev, state_)) changed = true;
+    }
+    return changed;
+  }
+  size_t pointer_index =
+      static_cast<size_t>((action & AMOTION_EVENT_ACTION_POINTER_INDEX_MASK) >>
+                          AMOTION_EVENT_ACTION_POINTER_INDEX_SHIFT);
+  if (pointer_index >= count) return false;
+  TouchLayout::TouchEvent ev{TouchLayout::EventType::kUp, 0, 0, 0};
+  to_frac(pointer_index, ev);
+  if (action_code == AMOTION_EVENT_ACTION_DOWN ||
+      action_code == AMOTION_EVENT_ACTION_POINTER_DOWN) {
+    ev.type = TouchLayout::EventType::kDown;
+  } else if (action_code == AMOTION_EVENT_ACTION_UP ||
+             action_code == AMOTION_EVENT_ACTION_POINTER_UP ||
+             action_code == AMOTION_EVENT_ACTION_CANCEL) {
+    ev.type = TouchLayout::EventType::kUp;
+  } else {
+    return false;
+  }
+  return touch_.Handle(ev, state_);
 }
 
 }  // namespace sfa

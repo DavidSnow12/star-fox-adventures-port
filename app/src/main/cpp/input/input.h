@@ -1,6 +1,6 @@
 #pragma once
 
-// Input — Fase 6b: eventos Android -> PadState de GameCube.
+// Input — Fase 6b (mando/teclado) + Fase 13 (tactil por layout).
 //
 // El estado vive en PadState (input/pad_state.h, sin deps
 // Android) y el HLE lo lee en PADRead (Hle::SetPadState); este
@@ -13,29 +13,36 @@
 //     GC arriba es +127). C-stick: siempre 0 en esta fase
 //     (los ejes AXIS_Z/RZ se ignoran a proposito).
 //   - Teclado: flechas = D-pad, Enter = Start, Z = boton Z.
-//   - Tactil (primer dedo): arrastre desde el punto de
-//     apoyo => stick (100 px = deflexion completa, con
-//     clamp a +-127). Los botones tactiles NO se mapean
-//     todavia: no hay un layout de botones en
-//     pantalla definido y un mapeo inventado (zonas
-//     cuadrantes) seria peor que la ausencia; queda como
-//     siguiente paso con un layout explicito.
+//   - Tactil: layout definido en input/touch_layout.h
+//     (fracciones de pantalla, no pixeles): stick virtual
+//     izquierdo, rombo A/B/X/Y, Z, L/R, Start, D-pad y zona
+//     C-stick reservada SIN MAPEO (substick a 0). El tamano
+//     de ventana lo fija native-lib con SetViewportSize en
+//     INIT_WINDOW; sin tamano, los toques se ignoran (no se
+//     puede clasificar una zona en fracciones sin el).
+//     Multitactil: cada dedo es un boton o el stick, con
+//     seguimiento por pointer id; soltar rearma el flanco.
 //   - Rumble: no-op en esta fase (PADControlMotor no tiene
 //     HLE todavia; el juego no lo ha llamado en los runs).
 // HandleEvent devuelve true solo si el evento cambio el
 // estado (consumido); si no, false para no ocultar eventos
-// al sistema.
+// al sistema. El flanco JustPressed lo calcula padUpdate
+// en el juego (Held & ~Prev); aqui solo se escribe Held.
 
 #include <android/input.h>
 #include <cstdint>
 
 #include "input/pad_state.h"
+#include "input/touch_layout.h"
 
 namespace sfa {
 
 class Input {
  public:
   void Reset();
+  // Tamano de ventana en pixeles (ANativeWindow). Debe llamarse
+  // antes de que lleguen toques; si no, el tactil se ignora.
+  void SetViewportSize(int width, int height);
   // Devuelve true si el evento se consumio (cambio el estado).
   bool HandleEvent(AInputEvent* event);
   const PadState& State() const { return state_; }
@@ -44,14 +51,15 @@ class Input {
  private:
   bool HandleKey(AInputEvent* event);
   bool HandleMotion(AInputEvent* event);
+  bool HandleTouch(AInputEvent* event);
   void SetButton(uint16_t bit, bool pressed);
 
   PadState state_;
+  TouchLayout touch_;
+  int viewport_w_ = 0;
+  int viewport_h_ = 0;
   bool logged_touch_ = false;
-  bool touch_active_ = false;
-  int32_t touch_id_ = -1;
-  float touch_anchor_x_ = 0.0f;
-  float touch_anchor_y_ = 0.0f;
+  bool logged_no_viewport_ = false;
 };
 
 }  // namespace sfa

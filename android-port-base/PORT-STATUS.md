@@ -84,6 +84,30 @@ sin ser jugable y sin probar en dispositivo: quedan
 picker SAF, botones táctiles, sonido y la prueba real
 con datos (ver «Fase 12»).
 
+**Fase 13 (2026-10-26, este tramo):** picker SAF +
+botones táctiles, los dos frentes que faltaban para
+que la APK se pueda usar sin adb y sin mando. En
+primer arranque sin `sfa-data`, la app abre el picker
+de carpetas (Drive → Descargas → carpeta con
+`sys/main.dol` + `files/`), copia Pack B a la carpeta
+privada (misma base que el DOL y que `memcard-a.raw`)
+con progreso en `boot.log`, verifica `main.dol`
+(tamaño + SHA-1) y el conteo de `files/`, y carga el
+juego al terminar sin reiniciar (marcador
+`.saf-copy-done`; si falla, `.saf-copy-error` y la app
+sigue en clear + quad, nunca se rompe). Layout
+táctil DEFINIDO y documentado (fracciones, no
+píxeles): stick virtual izquierdo — el que mueve el
+aviso y los menús, no el D-pad —, rombo A/B/X/Y, Z,
+L/R, Start, D-pad y C-stick reservado sin mapeo.
+Verificado en host: la secuencia táctil del aviso
+produce exactamente el guion PAD de run49b (stick Y
+−80, soltar, A) y el run50 con ese guion reproduce
+run49b en todas las métricas (estado 13, byte 0, FIFO
+idéntico). APK de prueba GX13 en la rama. Sigue sin
+ser jugable, sin sonido de juego y sin probar en
+Tab S8 real: eso es lo que queda (ver «Fase 13»).
+
 ## Qué funciona (verificado)
 
 - Base Android: NativeActivity, `android_main`, loop, ciclo de vida
@@ -3326,15 +3350,18 @@ probar en Tab S8 real.
 
 ### 6. Qué queda (tras Fase 12, en orden)
 
-1. Picker SAF + copia de Pack B a `sfa-data/` y prueba
-   real en Tab S8 (boot.log + frames reales con datos;
-   la tarjeta virtual ya tiene ruta privada fijada, así
-   que en cuanto la APK corra con datos, la partida
-   persistirá entre arranques).
-2. Botones táctiles en pantalla (layout por definir):
-   imprescindibles para navegar el menú de título y el
-   aviso sin tarjeta; el menú del aviso necesita stick
-   Y + A (no D-pad), y el de título, por medir.
+1. ~~Picker SAF + copia de Pack B a `sfa-data/`~~ HECHO
+   en Fase 13 (código + verificación host; falta la
+   prueba real en Tab S8 con datos: boot.log + frames
+   reales. La tarjeta virtual ya tiene ruta privada
+   fijada, así que en cuanto la APK corra con datos, la
+   partida persistirá entre arranques).
+2. ~~Botones táctiles en pantalla (layout por definir)~~
+   HECHO en Fase 13 (layout definido y documentado,
+   verificado en host contra run49b; falta probarlo
+   tocando la pantalla real en Tab S8). El menú del
+   aviso necesita stick Y + A (no D-pad), y el de
+   título, por medir.
 3. Contenido DL en APK con RAM viva (cableado; falta
    probarlo con datos).
 4. TEV multi-etapa / color de selección / alfa I4 en el
@@ -3346,3 +3373,297 @@ probar en Tab S8 real.
    CARD/input + audio estén probados en dispositivo.
    La APK de este tramo sigue siendo solo prueba de
    renderer + CARD (ver punto 5).
+
+## Fase 13 (este tramo): picker SAF + botones táctiles
+
+Dos frentes que bloqueaban usar la APK sin adb y sin
+mando. Ninguno toca el juego, el HLE CARD ni los chunks:
+el picker es Java + un cable JNI mínimo, y el táctil es
+una reescritura del camino de toque de `Input` sobre un
+layout explícito. `main` intacto (18ac28e); todo en
+`android-port-base`.
+
+### 1. Picker SAF + copia de Pack B
+
+Problema: NativeActivity no tiene UI Java (toda la
+pantalla es la ventana nativa), así que no hay un botón
+donde colgar un picker. Vía elegida, documentada porque
+es la decisión que condiciona el resto: el código
+nativo detecta la falta de datos en `INIT_WINDOW` y
+llama por JNI a `MainActivity.requestDataFolder()`;
+Java lanza el Intent en el hilo UI (`runOnUiThread`,
+porque `startActivityForResult` desde el hilo nativo
+no es seguro) y `onActivityResult` copia en un hilo de
+fondo (una copia de ~240 MB no puede bloquear la UI).
+Ficheros: `app/src/main/java/com/starfox/port/
+MainActivity.java` (picker + copia + verificación +
+`boot.log`), `native-lib.cpp` (detección, JNI,
+sondeo del marcador).
+
+Flujo exacto:
+1. Primer arranque sin `sfa-data`: la app abre el
+   picker de carpetas (`ACTION_OPEN_DOCUMENT_TREE`
+   con permiso de lectura persistente). El usuario
+   elige la carpeta de datos (Drive → Descargas →
+   carpeta con `sys/main.dol` + `files/`): se copian
+   los HIJOS de la carpeta elegida a `sfa-data/`
+   (elegir la carpeta padre copiaría una carpeta de
+   más y la verificación fallaría con «FALTA
+   sys/main.dol», registrado en `boot.log`).
+2. Destino: `<base>/sfa-data/`, interna preferida, la
+   MISMA base que usa `native-lib` para el DOL y para
+   `SetCardPath(.../memcard-a.raw)`; externa solo si
+   no hay interna. Sin esta coincidencia, la tarjeta
+   y los datos vivirían en bases distintas.
+3. Progreso en `boot.log` (mismo fichero que el log
+   nativo, carpeta interna, abierto en append desde
+   Java) cada 250 ficheros, más logcat.
+4. Verificación final, sin ambigüedad:
+   - `sys/main.dol` presente, tamaño 3.405.600 B,
+     SHA-1 `c1a6ccdc61c7e719e20ea7cc59c8de09fd183e66`
+     (calculado en streaming, no cargado en RAM).
+   - `files/` con al menos 2.916 ficheros (Pack B =
+     `disc/files/` sin `streams/`: 2.916 ficheros,
+     239.678.460 B, contados en el árbol local).
+     Si el conteo es mayor (el usuario eligió
+     `files/` completo, con `streams/`: 3.874), se
+     registra como aviso, no como error: los
+     ficheros extra no estorban al juego. Si es
+     menor o el DOL no coincide, verificación
+     FALLIDA: no se escribe el marcador de éxito.
+5. Éxito → `<base>/sfa-data/.saf-copy-done` con el
+   resumen; el bucle nativo lo sondea cada 128
+   vueltas sin juego cargado y llama a `TryLoadData`
+   (la carga que antes solo ocurría en `INIT_WINDOW`
+   ahora es una función reutilizable). Fallo →
+   `.saf-copy-error` con la causa. Cancelación del
+   picker → registrado en `boot.log`, sin reintento
+   en esta ejecución (evita un bucle de pickers).
+   En los tres casos sin datos, la app sigue en
+   clear + quad de prueba: nunca falla por falta de
+   datos.
+6. NUNCA se meten datos ni disco en Git ni en la
+   APK: la copia sale siempre de la carpeta del
+   usuario. La APK GX13 solo lleva dex, libs,
+   manifiesto y `assets/README.md` (ver punto 5).
+
+Corrección real encontrada en esta fase (no
+cosmética): el sondeo SAF NO puede usar
+`IsRunning()` como guarda — `Init()` lo pone a true
+aunque no haya juego (el stub de la base también
+«corre») —, así que usa `IsGameLoaded()`. Con
+`IsRunning()` el marcador `.saf-copy-done` nunca se
+habría detectado y el juego no habría cargado tras
+la copia. Queda documentado aquí para que nadie lo
+«simplifique» de vuelta.
+
+Errores que registra `boot.log` (qué falta, exacto):
+«FALTA sys/main.dol», «main.dol NO coincide»
+(tamaño/SHA-1 esperados incluidos), «files/
+INCOMPLETO: faltan al menos N ficheros», «copia
+FALLO: <causa>», «picker cancelado». Una copia
+parcial de un intento cancelado se sobrescribe en
+el siguiente intento (mismos nombres de fichero);
+no hay limpieza de ficheros huérfanos de un Pack
+distinto — limitación honesta, sin efecto para el
+flujo normal (misma carpeta de origen).
+
+### 2. Botones táctiles: layout DEFINIDO
+
+Fichero nuevo `app/src/main/cpp/input/touch_layout.h`
+(sin dependencias Android: solo fracciones + PadState,
+compartido entre la APK y las pruebas host) y
+reescritura del camino táctil de `input/input.cpp` /
+`input.h` sobre él. El tamaño de ventana lo fija
+`native-lib` en `INIT_WINDOW` con
+`ANativeWindow_getWidth/Height` (`SetViewportSize`);
+sin tamaño, los toques se ignoran y se registra en
+`boot.log` (sin tamaño no se puede clasificar una
+zona en fracciones; inventar un tamaño por defecto
+habría puesto los botones en sitios falsos).
+
+Fracciones de pantalla (origen arriba-izquierda, x
+a la derecha, y hacia abajo; paisaje). Distancias en
+«unidades de alto» (dx × aspecto) para que un
+círculo táctil sea un círculo en píxeles en 16:9:
+radio de botón 0,09 (~65 px a 720p), stick con
+aceptación 0,20 y recorrido 0,18 (~130 px).
+
+Diagrama (zonas, centros y qué botón es cada zona;
+el dibujo NO está a escala, las fracciones sí son
+las reales):
+
+```
++----------------------------------------------------------+
+| [L] (0.055,0.12)    [Start] (0.50,0.10)   [R] (0.945,0.12)|
+|                                                          |
+|  (o) STICK                                                |
+|  centro (0.13,0.72)        ( ) C-STICK     [X] (0.845,   |
+|  aceptacion 0.20            RESERVADO        0.58)      |
+|  recorrido 0.18             (0.62,0.70)  [Y] (0.785,0.70) |
+|  zona x 0.01-0.25, y 0.42-0.98  SIN MAPEO  [A] (0.905,   |
+|                                                          |
+|  D-pad: Up (0.255,0.58)                     0.70)        |
+|  Left (0.195,0.70) Right (0.315,0.70)  [B] (0.845,0.82)   |
+|  Down (0.255,0.82)     [Z] (0.72,0.55)                    |
++----------------------------------------------------------+
+```
+
+Mapeo (bits PAD, ver `pad_state.h`):
+- Stick virtual: arrastre desde el apoyo; abajo en
+  pantalla → stick_y negativo (GC: abajo = −127).
+  ES el control de menús: el aviso y (por lo medido
+  en Fase 12) el menú de título se mueven con stick
+  Y (`padGetStickY`), NO con D-pad.
+- A (0.905,0.70) = 0x0100, B (0.845,0.82) = 0x0200,
+  X (0.845,0.58) = 0x0400, Y (0.785,0.70) = 0x0800:
+  rombo alrededor de (0.845,0.70).
+- Z (0.72,0.55) = 0x0010, L (0.055,0.12) = 0x0040 +
+  gatillo 255, R (0.945,0.12) = 0x0020 + gatillo 255,
+  Start (0.50,0.10) = 0x1000.
+- D-pad: Up (0.255,0.58) = 0x0008, Down (0.255,0.82)
+  = 0x0004, Left (0.195,0.70) = 0x0001, Right
+  (0.315,0.70) = 0x0002. Existe para el juego, pero
+  NO mueve el aviso (medido Fase 12).
+- C-stick: zona reservada en (0.62,0.70), radio 0,20,
+  SIN MAPEO en esta fase (sub-stick queda a 0, como
+  en todas las fases previas). Los toques ahí se
+  ignoran a propósito: mapearlo a medias (sin zona
+  muerta ni escala medidas) sería peor que
+  reservarlo. Queda documentado, no olvidado.
+- Prioridad en Down: botones, luego stick, luego
+  C-stick reservado (ignorado), luego exterior
+  (ignorado). Cambio deliberado frente a antes: un
+  toque fuera de zona YA NO mueve el stick (antes
+  cualquier primer dedo era stick en toda la
+  pantalla, y un toque accidental en el centro
+  habría movido el menú).
+- Multitáctil por pointer id: cada dedo es un botón
+  o el stick (un solo stick); MOVE recorre todos los
+  dedos (un MOVE Android trae todas las posiciones).
+- Flanco JustPressed: TouchLayout solo escribe Held
+  en PadState. Just = Held & ~Prev lo calcula
+  `padUpdate` en el juego (0x80014F6C), igual que
+  para mando/teclado: NO hay poke directo de Just.
+  Soltar el stick vuelve stick a 0, lo que rearma
+  el flanco de stick Y para el siguiente toque (el
+  aviso exige soltar entre movimientos: mantener
+  mueve una sola vez).
+
+### 3. Verificación host: la secuencia táctil supera el aviso
+
+Test `work-port/fase2-tests/test_touch13.cpp` (fuera
+del repo, como los demás tests host; alimenta
+fracciones directamente a `TouchLayout`, sin
+Android): TODO OK, 28 comprobaciones. La secuencia
+del aviso — apoyo en (0.13,0.72), arrastre a
+(0.13,0.834), soltar, A en (0.905,0.70), soltar —
+produce EXACTAMENTE los valores PAD del guion
+run49b: stick (0,−80), soltar → (0,0), Held A =
+0x100 con analogA 255, soltar → 0. También probado:
+stick en juego en diagonal (+80,+79), multitáctil
+A+B con suelta independiente, D-pad/Z/L/R/Start,
+C-stick reservado ignorado con sub-stick a 0, y
+toque fuera de zona ignorado (antes era stick).
+
+Run de juego equivalente, `run50-ph13touch`
+(8.000.000 despachos, Start desde PADRead 12, sin
+tarjeta, guion `122:0:0:-80,150:0:0:0,170:256:0:0,
+190:0:0:0` — los valores que emite la prueba
+táctil, con los instantes de run49b, que los pone
+el usuario al tocar, no el layout): REPRODUCE
+run49b en TODAS las métricas de `stdout.log`:
+motivo `dispatch_cap`, PC final `0x80257320`
+(idéntico), FIFO 27.395.620 B (idéntico, overflow
+0), PADRead ×197, `CARDProbeEx → −3` (NOCARD),
+`cardStatus = 13`, `saveByte = 0` (el efecto exacto
+de la acción 2, «Play sin guardar»), sin exception
+ni PC desconocido. El código HLE/CARD no cambió en
+esta fase, así que la identidad con run49b es lo
+esperado y lo que se quería demostrar: cero
+regresión, y el camino táctil llega al mismo
+efecto que el guion de teclado/mando. (El conteo
+`TitleMenu_run ×36` de run49b no se reproduce desde
+`stdout.log` — ese conteo vino de un análisis
+posterior del coordinador, no de una línea del
+informe del test —; la equivalencia aquí se
+establece con estado/byte/FIFO/PC, que sí están en
+el informe.)
+
+### 4. Build NDK (verificación Fase 13)
+
+Build `ndk-fase13` (directorio nuevo, compilación
+completa): **0 errores**. `libstarfox.so`
+**27.426.080 B**, ELF64 AArch64, SHA-256
+`f41d5c3953de6f0c7446cce498961821735a7e21e597af5a2a361398edbe0db4`,
+`android_main` en `T`, comprobación del script «OK:
+ningún símbolo mem_/ppc_/func_/dolrecomp_ sin
+resolver», **191 undefined totales** (frente a 189
+en Fase 12; delta +2 exactamente
+`ANativeWindow_getWidth`/`ANativeWindow_getHeight`
+de `native-lib.cpp`, ambos en libandroid, que ya
+está enlazada con `-landroid`). Compilación
+aislada previa de `input.cpp` y `native-lib.cpp`
+con el NDK también limpia (para no esperar al
+final de los chunks ante un error de sintaxis).
+
+### 5. APK de prueba GX13 (verificación Fase 13)
+
+`android-port-base/app-debug-gx13-test.apk`:
+**12.554.918 B**, SHA-256
+`aeb9f3b253a1b43fe88c4d107961a9356b64837628f94b9bd022b73a3b77d633`,
+`com.starfox.port` v5 / `0.5.0-gx13-test`,
+debuggable solo por ser build de prueba, solo
+arm64-v8a. Validación: apksigner v2+v3 OK (1
+firmante), zipalign OK, badging (sdk 26, target 34,
+MainActivity lanzable), `libstarfox.so` interior con
+SHA idéntico al del build NDK (`f41d5c39…`), sin
+datos ni disco dentro (solo dex, `libc++_shared.so`,
+`libstarfox.so`, manifiesto y `assets/README.md`).
+El dex contiene `requestDataFolder` /
+`onActivityResult` / `.saf-copy-done` (verificado
+por strings). Hace (por código, NO probado en
+dispositivo): todo lo de GX12 (arranca, EGL/GLES3 +
+programa GX, clear + damero sin datos; con
+`sfa-data`, carga el DOL, tarjeta virtual
+persistente) MÁS picker SAF con copia y
+verificación de Pack B, y botones táctiles con el
+layout de arriba. NO hace: no es jugable, sin
+sonido de juego, sin probar en Tab S8 real (ni el
+picker ni el táctil han tocado una pantalla real).
+
+Corrección del script de APK en esta fase:
+`build-apk-manual.sh` pasaba solo
+`MainActivity.class` a d8; con la clase anidada
+`CopyStats` de la copia SAF, d8 rompe («requires
+its nest mates»). Ahora pasa todas las clases de
+`classes/` (ver el script). Sin este fix no hay
+APK GX13; no cambia el resultado para APKs
+anteriores (MainActivity no tenía anidadas).
+
+### 6. Qué queda (tras Fase 13, en orden)
+
+1. Prueba real en Tab S8 (bloqueador de
+   verificación, no de código): instalar GX13,
+   primer arranque sin datos → picker → elegir la
+   carpeta Pack B → comprobar en `boot.log` la
+   copia (2.916 ficheros), la verificación
+   (main.dol + SHA-1) y la carga; después, recorrer
+   el aviso con el stick táctil + A y comprobar que
+   llega al bucle de título. Hasta que eso no pase
+   en dispositivo, picker y táctil son «código
+   verificado en host», no «probado».
+2. Sonido: mapeo ID de sonido del juego → WAV;
+   secuencias MusyX; DSP real. (El backend AAudio /
+   WAV existe desde Fase 7; falta el contenido.)
+3. TEV multi-etapa / color de selección / alfa I4
+   en el renderer (texto y selección correctos en
+   el menú de título).
+4. Contenido DL en APK con RAM viva (cableado;
+   falta probarlo con datos).
+5. Rumble (`PADControlMotor` sin HLE).
+6. APK 100% jugable: solo cuando renderer + datos +
+   CARD/input + audio estén probados en
+   dispositivo. La APK de este tramo sigue siendo
+   solo prueba de renderer + CARD + SAF + táctil
+   (ver punto 5).
