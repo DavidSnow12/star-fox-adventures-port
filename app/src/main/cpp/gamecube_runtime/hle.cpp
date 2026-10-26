@@ -29,6 +29,7 @@ constexpr HleEntry kHleTable[] = {
     {Hle::kDvdClose, "DVDClose"},
     {Hle::kDvdReadAsyncPrio, "DVDReadAsyncPrio"},
     {Hle::kDvdReadPrio, "DVDReadPrio"},
+    {Hle::kDvdCallbackTrampoline, "DVDTrampoline"},
     {Hle::kViInit, "VIInit"},
     {Hle::kViWaitForRetrace, "VIWaitForRetrace"},
     {Hle::kViConfigure, "VIConfigure"},
@@ -1731,21 +1732,51 @@ bool Hle::HandleHostCall(CpuState* cpu, uint32_t address) {
       // codigo huesped, en el punto que el juego espera.
       // Mecanica: el handler HLE corre dentro de
       // dolrecomp_call(cpu, async_addr) con lr = retorno del
-      // llamador. Si hay callback, se deja lr intacto, se
-      // ponen r3 = bytes leidos y r4 = fileInfo (convencion
-      // de cbForReadAsync 0x80249918: r3 resultado, r4
-      // fileInfo) y pc = callback, y se devuelve true: el
-      // chassis despacha el callback a continuacion y su blr
-      // vuelve al retorno del llamador original. Si el
-      // callback es 0, comportamiento anterior (retorno 1/0).
+      // llamador. Si hay callback, se ponen r3 = bytes
+      // leidos y r4 = fileInfo (convencion de cbForReadAsync
+      // 0x80249918: r3 resultado, r4 fileInfo) y pc =
+      // callback, y se devuelve true: el chassis despacha
+      // el callback a continuacion. Si el callback es 0,
+      // comportamiento anterior (retorno 1/0).
+      // Fase 15 (trampolin): el lr del callback YA NO es el
+      // retorno del llamador, sino kDvdCallbackTrampoline
+      // (0x80003008). Antes de la Fase 15 el blr del
+      // callback volvia directo al llamador y entregaba el
+      // retorno DEL CALLBACK como si fuera el de
+      // DVDReadAsyncPrio; en hardware real ese retorno se
+      // descarta (el callback corre en interrupcion, despues
+      // de que DVDReadAsyncPrio ya devolviera 1) y el
+      // llamador nunca lo ve. Eso rompia loadFileByPathAsync
+      // (0x80015AA4: exito solo si r3 != 0) para
+      // streamsLoadedCallback (0x80009594), que devuelve
+      // [count] = 0 porque el directorio aun no se ha
+      // guardado en el modelo sincrono: la carga de
+      // Streams.bin se daba por fallida y el directorio
+      // quedaba a 0 (Fase 14). Ahora el blr aterriza en el
+      // trampolin, que restaura r3 = bytes leidos y salta
+      // al retorno original con lr = retorno original: el
+      // llamador reanuda EXACTAMENTE como antes salvo r3.
+      // Casos borde: got == 0 (fichero vacio) restaura 0,
+      // igual que antes (el wrapper lo trata como
+      // pendiente); got < 0 (error HLE: sin entrada o
+      // destino no escribible) restaura 0, no un -1 que
+      // loadFileByPathAsync tomaria por exito.
       // El wrapper del juego (DVDRead 0x80015888) guarda r3
-      // en su global [r13-26664] y solo sale del bucle si el
-      // valor no es 0/-1/-3: por eso el callback debe llevar
-      // los bytes leidos, no un 0 de "exito". Los callbacks
-      // de carga (initLoadFileReadCb 0x80041EC4, romListReadCb
+      // de ENTRADA al callback en su global [r13-26664] y
+      // solo sale del bucle si el valor no es 0/-1/-3: por
+      // eso el callback debe llevar los bytes leidos, no
+      // un 0 de "exito". Los callbacks de carga
+      // (initLoadFileReadCb 0x80041EC4, romListReadCb
       // 0x8004276C) cierran el fichero (DVDClose HLE) y bajan
       // su contador/flag de pendiente: sin esta entrega, la
       // carga de romlists nunca se daba por terminada.
+      // Alcance verificado en codigo huesped (Fase 15): los
+      // 20 puntos bl a DVDReadAsyncPrio son el wrapper
+      // DVDRead (r3 ignorado tras el retorno: lee el
+      // global), loadFileByPathAsync (solo r3 != 0) y 18
+      // llamadores en chunk_0016/0017 que sobrescriben r3
+      // (o saltan incondicionalmente) al volver; ninguno
+      // compara r3 con 1 ni usa el retorno del callback.
       uint32_t fileinfo = cpu->gpr[3];
       uint32_t callback = cpu->gpr[7];
       int got = DvdRead(cpu, cpu->gpr[3], cpu->gpr[4], cpu->gpr[5],
@@ -1766,18 +1797,61 @@ bool Hle::HandleHostCall(CpuState* cpu, uint32_t address) {
         dvd_async_events_.push_back(ev);
         ++dvd_callbacks_;
         if (got > 0) dvd_async_bytes_ += static_cast<uint64_t>(got);
+        // Fase 15: el callback vuelve por el trampolin, no
+        // directo al llamador. Se apila el retorno original
+        // y el r3 a restaurar (bytes; 0 si got <= 0, ver el
+        // comentario del caso). El callback recibe r3 =
+        // bytes y r4 = fileInfo exactamente como antes; su
+        // propio retorno queda registrado por LogCall del
+        // trampolin (r3 de entrada), no se pierde.
+        DvdCallbackFrame frame;
+        frame.return_pc = cpu->lr;
+        frame.restore_r3 = got > 0 ? static_cast<uint32_t>(got) : 0u;
+        frame.fileinfo = fileinfo;
+        frame.callback = callback;
+        dvd_callback_stack_.push_back(frame);
         SFA_LOGI("hle: DVDReadAsyncPrio: %d B, callback "
-                 "0x%08X despachado (fileInfo 0x%08X)",
-                 got, callback, fileinfo);
+                 "0x%08X despachado via trampolin (fileInfo "
+                 "0x%08X, retorno 0x%08X, r3 a restaurar %u)",
+                 got, callback, fileinfo, frame.return_pc,
+                 frame.restore_r3);
         cpu->gpr[3] = static_cast<uint32_t>(got);
         cpu->gpr[4] = fileinfo;
         cpu->pc = callback;
+        cpu->lr = kDvdCallbackTrampoline;
         return true;
       }
       SFA_LOGI("hle: DVDReadAsyncPrio sincrono: %d B, callback "
                "nulo (sin despacho)",
                got);
       return Return(cpu, got >= 0 ? 1u : 0u);
+    }
+    case kDvdCallbackTrampoline: {
+      // Fase 15, segundo tiempo de la entrega DVD: el blr
+      // del callback aterrizo aqui (su lr era este PC
+      // sintetico). Se desapila el marco LIFO (un callback
+      // puede lanzar otra lectura async antes de volver),
+      // se restaura r3 = bytes leidos y se salta al retorno
+      // original con lr = retorno original, de modo que el
+      // llamador reanuda exactamente como si el callback
+      // hubiese vuelto directo, salvo r3. r4 y el resto de
+      // registros quedan como los dejo el callback, igual
+      // que antes. Sin marco, error interno del HLE: fallo
+      // ruidoso (exception), nunca salto a 0 en silencio.
+      if (dvd_callback_stack_.empty()) {
+        SFA_LOGE("hle: DVDTrampoline sin marco (r3=0x%08X): "
+                 "error interno, exception",
+                 cpu->gpr[3]);
+        cpu->exception = 1;
+        return true;
+      }
+      DvdCallbackFrame frame = dvd_callback_stack_.back();
+      dvd_callback_stack_.pop_back();
+      ++dvd_trampolines_;
+      cpu->gpr[3] = frame.restore_r3;
+      cpu->pc = frame.return_pc;
+      cpu->lr = frame.return_pc;
+      return true;
     }
     case kViInit:
       vi_init_done_ = true;

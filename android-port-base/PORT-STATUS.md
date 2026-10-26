@@ -133,6 +133,34 @@ pero inerte sin payload de audio en Pack B).
 MusyX/DSP sigue pendiente, ahora con la causa
 exacta documentada (ver «Fase 14»).
 
+**Fase 15 (2026-10-26, este tramo): trampolín HLE de
+callbacks DVD + primer stream válido por el camino
+del juego.** El trampolín propuesto en Fase 14 está
+implementado (`kDvdCallbackTrampoline` 0x80003008):
+el blr de un callback DVD ya no entrega el retorno
+del callback como si fuera el de `DVDReadAsyncPrio`,
+sino que restaura r3 = bytes leídos y salta al
+retorno original. Consecuencia directa: el
+directorio de streams queda cargado
+(`dir_ptr` 0x810182E0, `count` 905, antes 0/0) y
+desaparece el error `mm` de doble-free que dejaba
+la carga fallida. El juego en la ventana sigue
+pidiendo SOLO 1367 (×2), que sigue sin resolver
+por la única causa restante: 1367 NO existe en
+`Streams.bin` (escaneo de la tabla en RAM: NO).
+Con el directorio cargado, el código huésped de
+`AudioStream_Play` SÍ entrega un stream válido:
+`Play(1301)` re-despachado desde el juego devuelve
+1, abre `streams/AN/an1301.adp` y el bridge entrega
+1.892.352 frames a 48 kHz con 0 descartados. Lo
+que NO avanza todavía: el estado del juego
+(`currentId`/`playing` en 0, `preparing` 340 =
+índice 339+1) porque el arranque real espera la
+completitud async DVDLow (`PrepareCallback`), que
+el host aún no entrega, y 10 `audioUpdate` no lo
+mueven. APK de prueba GX15 en la rama. Ver
+«Fase 15».
+
 ## Qué funciona (verificado)
 
 - Base Android: NativeActivity, `android_main`, loop, ciclo de vida
@@ -209,6 +237,23 @@ exacta documentada (ver «Fase 14»).
   idénticas a run51. En dispositivo, sonido todavía
   sin probar; el único stream pedido en la ventana
   no resuelve (ver «Fase 14»).
+- **Fase 15 — Trampolín DVD + stream válido por el
+  camino del juego (NUEVO, verificado en host):**
+  `kDvdCallbackTrampoline` 0x80003008 en
+  `gamecube_runtime/hle.{h,cpp}`: todo callback
+  `DVDReadAsyncPrio` vuelve por el trampolín, que
+  restaura r3 = bytes leídos (0 si lectura vacía o
+  fallida) y salta al retorno original con
+  lr = retorno original; en run54, 135/135
+  callbacks con 135 trampolines y pila 0 al final.
+  Directorio de streams cargado (0x810182E0, 905)
+  y error `mm` de doble-free desaparecido. El
+  juego pide solo 1367 (sin resolver: ausente de
+  `Streams.bin`), pero su propio `AudioStream_Play`
+  con 1301 devuelve 1 y el bridge entrega
+  1.892.352 frames con 0 descartados (ver
+  «Fase 15»). En dispositivo, sonido todavía sin
+  probar.
 - **Fase 5 — Bucle de juego en host (NUEVO, verificado):**
   desbloqueos AR/AI/DSP/ARAM/hilos (ver sección «Fase 5»),
   carga DVD completa (89 ficheros) y bucle de frames estable
@@ -276,24 +321,28 @@ exacta documentada (ver «Fase 14»).
    multi-etapa/lighting/EFB (no-op), y la prueba en
    dispositivo con `sfa-data` (sin ejecutar aqui). Ver
    «Fase 11».
-5. **Audio MusyX/DSP pendiente (Fase 14: mapeo HECHO,
-   reproducción del juego BLOQUEADA con causa):**
+5. **Audio MusyX/DSP pendiente (Fase 14: mapeo HECHO;
+   Fase 15: trampolín HECHO, arranque de stream
+   BLOQUEADO con causa nueva):**
    backend AAudio implementado (sin probar en
    dispositivo), tabla ID → WAV generada y bridge
-   verificado en host (ver «Fase 14»). Falta: (a) la
-   reproducción por stream pedida por el juego en
-   host, bloqueada porque el HLE entrega el callback
-   DVD síncrono y su retorno 0 hace fallar
-   `loadFileByPathAsync` (directorio de streams a 0;
-   el siguiente paso concreto es un trampolín que
-   restaure r3 = bytes leídos antes de volver al
-   llamador, sin tocar los wrappers que dependen
-   del comportamiento actual); (b) las secuencias
-   MusyX (`.pro`/`.poo`/`midi.wad`: cargados, sin
-   ninguna petición de reproducción trazada en la
-   ventana) y la emulación DSP (solo el evento de
-   init, no tareas reales); (c) mezcla de voces y
-   payload de audio WAV en Pack B para la APK.
+   verificado en host (ver «Fase 14» y «Fase 15»).
+   ~~(a) El trampolín de callbacks DVD~~ **HECHO en
+   Fase 15** (directorio de streams cargado,
+   0x810182E0/905; el juego sigue pidiendo solo
+   1367, ausente de `Streams.bin`). Falta: (a) la
+   completitud async DVDLow del stream preparado
+   (`AudioStream_PrepareCallback` →
+   `AudioStream_StartPrepared` → `currentId`/
+   `playing`): tras `Play(1301)` = 1, el juego
+   queda en `preparing` 340 con `dvdState` 1 y 10
+   `audioUpdate` no lo mueven (ver «Fase 15»);
+   (b) las secuencias MusyX (`.pro`/`.poo`/
+   `midi.wad`: cargados, sin ninguna petición de
+   reproducción trazada en la ventana) y la
+   emulación DSP (solo el evento de init, no
+   tareas reales); (c) mezcla de voces y payload
+   de audio WAV en Pack B para la APK.
 6. **Input pendiente (parcial):** mando/teclado/táctil-stick
    mapeados; faltan botones táctiles en pantalla (sin layout
    definido, no inventado) y rumble (`PADControlMotor` sin
@@ -4045,10 +4094,11 @@ juego). Falta para música/SFX MusyX, en orden:
 
 ### 8. Qué queda (tras Fase 14, en orden)
 
-1. Trampolín HLE de callbacks de carga (punto 2)
+1. ~~Trampolín HLE de callbacks de carga (punto 2)
    + re-verificar `AudioStream_Play` con un id
    válido (p. ej. 1301) desde el juego, no solo
-   desde el test directo.
+   desde el test directo.~~ **HECHO en Fase 15**
+   (ver abajo).
 2. Layout de `sndFXStartEx`/`sndSeqPlayEx` y
    primer SFX real del juego por el bridge.
 3. Secuencias MusyX + DSP (punto 7), mezcla de
@@ -4059,6 +4109,335 @@ juego). Falta para música/SFX MusyX, en orden:
    dispositivo; sin eso la APK GX14 no suena
    aunque el código esté cableado.
 5. Prueba real en Tab S8 (GX14: picker SAF +
+   táctil + CARD + bridge inerte) y, cuando haya
+   payload, primera escucha real.
+6. TEV multi-etapa, rumble y APK 100% jugable
+   (sin cambios en esta fase; ver «Fase 13»,
+   punto 6).
+
+## Fase 15 (este tramo): trampolín HLE de callbacks DVD + primer stream válido por el camino del juego
+
+Trabajo en `android-port-base` solo; `main` intacto en
+`18ac28e`. Tests host fuera del repo
+(`work-port/fase2-tests/test_phase15.cpp`,
+`build_phase15.sh`): réplica exacta de run51
+(8.000.000 despachos, Start desde PADRead 12, sin
+tarjeta, guion `122:0:0:-80,150:0:0:0,170:256:0:0,
+190:0:0:0`) es run53 (base pre-trampolín), run54
+(trampolín) y run57 (trampolín + bridge); run54-stop
+y run55/run56 paran en el retorno del primer
+`AudioStream_Play` (0x80081B70) y re-despachan el
+código huésped de `Play` con 1301 (ver punto 3).
+
+### 1. El trampolín (semántica, alcance, riesgos)
+
+Ficheros: `app/src/main/cpp/gamecube_runtime/hle.{h,cpp}`
+solo; código huésped intacto, sin cambios en
+`audio/*`, `chassis.*` ni en los wrappers del juego.
+PC sintético nuevo `kDvdCallbackTrampoline` =
+0x80003008 (vecino del trampolín VI 0x80003000 y
+de la salida de hilo 0x80003004; el DOL empieza en
+0x80003100, así que nunca es código real, y
+`dolrecomp_call` consulta `host_call` antes que los
+chunks, así que el HLE lo intercepta siempre).
+
+Semántica exacta, en dos tiempos:
+
+1. `DVDReadAsyncPrio` con callback != 0: lee en
+   síncrono como antes, registra el evento, pone
+   r3 = bytes y r4 = fileInfo para el callback...
+   pero pone lr = 0x80003008 (antes, lr = retorno
+   del llamador) y apila un marco
+   `{retorno_original, r3_a_restaurar, fileInfo,
+   callback}`. El callback corre íntegro como
+   código huésped (cierra el fichero, baja
+   contadores, escribe su global) sin saber que su
+   lr es sintético: su prólogo/epílogo guardan y
+   restauran lr por pila, como cualquier función.
+2. Al hacer blr, el callback aterriza en el
+   trampolín: el HLE desapila (LIFO), pone
+   r3 = bytes leídos, pc = retorno original y
+   lr = retorno original, y devuelve el control.
+   Invariante: al reanudar el llamador, TODO está
+   como si el callback hubiese vuelto directo,
+   SALVO r3. r4 y el resto de registros quedan
+   como los dejó el callback, igual que antes.
+
+Valor restaurado: bytes si `got > 0`; 0 si
+`got == 0` (fichero vacío: misma semántica de
+fallo/pendiente que antes) o `got < 0` (error
+HLE: sin entrada o destino no escribible). Esto
+último es una desviación deliberada del «bytes»
+literal: restaurar -1 (0xFFFFFFFF) haría que
+`loadFileByPathAsync` lo tomase por éxito
+(solo comprueba r3 != 0) con un búfer no
+escrito; restaurar 0 preserva el camino de
+fallo seguro. En los runs, `got < 0` no ocurre
+(todas las lecturas con callback son `got > 0`).
+
+Alcance, verificado en código huésped (no
+supuesto): SOLO `DVDReadAsyncPrio` con callback
+!= 0. El camino sincrono (callback nulo, retorno
+1/0) no cambia; `DVDReadPrio`, los callbacks VI
+(su propio trampolín, Fase 8) y los drenajes ARQ
+no lo usan. Los 20 puntos `bl` a
+`DVDReadAsyncPrio` en el código recompilado son:
+el wrapper `DVDRead` 0x80015888 (tras el retorno
+ignora r3: lee su global [r13-26664], que el
+callback ya escribió con los bytes),
+`loadFileByPathAsync` 0x80015AA4 (solo r3 != 0)
+y 18 llamadores en chunk_0016/0017 que
+sobrescriben r3 (o saltan incondicionalmente) al
+volver; NINGUNO compara r3 con 1 ni usa el
+retorno del callback como dato. Por eso bytes
+(y 1, en el caso de `loadFileByPathAsync`)
+son equivalentes para todos los llamadores
+verificados. Riesgo residual, declarado: si un
+camino futuro llamase a `DVDReadAsyncPrio` por
+puntero de función (no hay ninguno en el código
+recompilado: las 20 llamadas son `bl` directos)
+y usase el retorno del callback, vería bytes en
+vez de ese retorno; el escaneo estático no lo
+cubre, la traza dinámica sí (cada entrega queda
+registrada como `DVDTrampoline` con el r3 del
+callback a la entrada).
+
+Pila, no slot único: un callback que lanzase
+otra lectura async antes de volver apilaría un
+segundo marco y se desapilaría en orden LIFO.
+En los runs no se observa anidamiento
+(profundidad máxima 1, pila 0 al final). Un
+trampolín sin marco es error interno del HLE y
+se marca como exception 1 (fallo ruidoso, nunca
+salto a 0 en silencio); no ha ocurrido en ningún
+run (0 casos en 135 + 121 + 135 entregas).
+
+Efecto colateral positivo y verificado: en la
+base, la carga fallida de `Streams.bin` dejaba
+un intento de doble-free del fileInfo (el
+callback ya lo libera con `DVDClose` + `mm_free`
+con retardo; el camino de fallo de
+`loadFileByPathAsync` lo liberaba otra vez) que
+el juego reportaba como `*** mm Error *** --->
+Can't free ram at this location: 81205e00`
+(1 línea en `osreport.log` de run53). Con el
+trampolín, la carga toma el camino de éxito, no
+hay segundo free y el error desaparece
+(0 líneas en run54/run57).
+
+### 2. Nueva traza de audio: el juego sigue pidiendo solo 1367, ahora por una sola causa
+
+Run53 (base, pre-trampolín) reproduce run51:
+`dispatch_cap`, 8.000.000 despachos, PC final
+0x80257320, exception 0, `DVDOpen` ×133,
+`DVDReadAsyncPrio` ×135, FIFO 27.395.620 B,
+`PADRead` ×197, `cardStatus` = 13, `Play(1367)`
+×2 (desp 2.354.011 y 2.354.497). Parada run53 en
+el retorno del primer Play: `dir_ptr` = 0,
+`count` = 0, retorno de Play = 0.
+
+Run54 (trampolín, misma réplica): `dispatch_cap`,
+8.000.000 despachos, exception 0, `DVDOpen` ×133,
+`DVDReadPrio` ×40, `DVDReadAsyncPrio` ×135,
+`DVDTrampoline` ×135 (1:1, pila 0),
+`DVDClose` ×120, `PADRead` ×197,
+`cardStatus` = 13, `saveByte` = 0, cadenas VI
+210/210/210, cambios de planificador 32 (4 a
+principal, 0 fallbacks), `TitleMenu_run` ×36,
+`audioUpdate` ×36, `AttractMovieAudio_Init` ×4,
+`Play(1367)` ×2 (desp 2.354.145 y 2.354.652, el
+desplazamiento es el coste de los trampolines),
+audio final idéntico a run53, `OSReport` 264
+frente a 265 (la línea menos es el error `mm`
+del punto 1). PC final 0x8025C3B0 frente a
+0x80257320 y FIFO 27.395.255 B frente a
+27.395.620 B (-365 B) y `texloads` 17.554 frente
+a 17.557: el run termina en el límite de
+despachos, así que el punto de corte cae en otro
+punto del bucle de título; la secuencia de
+funciones trazadas (pc/lr) hasta la parada es
+idéntica entre base y trampolín (228 entradas,
+verificada por comparación), y solo deriva el
+conteo de despachos (+151 hasta la parada:
+121 trampolines + 30 de deriva por direcciones
+de heap distintas al conservarse el búfer de
+streams). La comparación byte a byte de `ram.bin`
+difiere (el búfer de streams ya no se libera y
+las asignaciones posteriores caen en otras
+direcciones); los globales de estado del juego
+(UI, CARD, audio) coinciden.
+
+Parada run54 en el retorno del primer Play:
+`dir_ptr` = 0x810182E0, `count` = 905 (19.920/22),
+retorno de Play = 0, y el escaneo de la tabla
+en RAM dice: **id 1367: NO** (primeras entradas
+1 `TTH/ttalk1`, 2 `TTH/ttalk2`, 3 `TTH/ttalk3`,
+4 `TTH/ttalk11`, 7 `MC/MCaveOut`, como en
+`Streams.bin`). El directorio queda cargado
+también al final del run completo (0x810182E0,
+905), no se libera después.
+
+Conclusión del punto 2, sin maquillar: de las
+dos causas de Fase 14, la del HLE está
+RESUELTA y la de la tabla SIGUE: 1367 no existe
+en `Streams.bin` (905 registros; vecinos 1361 y
+1368; el BE16 1367 no aparece en todo el
+fichero, verificado en Fase 14 y de nuevo en la
+tabla cargada en RAM). Ningún stream pedido por
+el juego en esta ventana resuelve todavía, pero
+ya no es por el directorio: es porque el único
+id pedido no está en la tabla. Qué es 1367
+(¿id de otra tabla? ¿id de voz descartado en la
+versión PAL?) sigue abierto y NO se inventa:
+`AudioStream_Play` busca por comparación directa
+del u16 en este directorio (verificado en
+0x8000D2AC–0x8000D2E4), así que con este
+directorio no puede resolverlo.
+
+### 3. `AudioStream_Play` con un id válido, por el código del juego (run55/run56)
+
+El juego en esta ventana no pide ningún id
+válido por sí mismo, así que la verificación se
+hace re-despachando su propio código (test
+`test_phase15.cpp`, fuera del repo): tras la
+parada del punto 2 (directorio cargado, estado
+de audio del juego intacto), el harness pone
+pc = `AudioStream_Play` 0x8000D220, r3 = 1301,
+r4 = `ObjSeq_AudioStreamCallback` 0x800806F0 (el
+mismo callback que usa el juego) y lr = retorno
+de `ObjSeq_start` 0x80081B70. Solo r3/r4
+importan en la entrada: el cuerpo sobrescribe
+r5/r6/r7 antes de leerlos (verificado en
+chunk_0002, 0x8000D314–0x8000D324), así que
+r5/r6/r7 = 0 no son datos inventados que el
+juego lea. Esto NO se presenta como «el juego
+pidió 1301»: es la prueba de que el camino del
+juego (lookup en el directorio cargado +
+`DVDOpen` + preparación + bridge) entrega un
+stream válido.
+
+Resultado (reproducido idéntico en run55 y
+run56):
+
+- `Play(1301)` vuelve en 68 despachos, sin
+  exception, retorno = 1 (éxito = preparación
+  iniciada, ver abajo), `DVDOpen` +1 (el fichero
+  es `streams/AN/an1301.adp`, que existe en el
+  disco), trampolines nuevos = 0 (la preparación
+  usa comandos DVDLow, no `DVDReadAsyncPrio`).
+- Estado del juego tras Play: `streamCurrentId`
+  = 0, `streamPlaying` = 0, `streamPreparingId`
+  = 340, `streamPreparedId` = 0,
+  `streamEndPos` = 0x41C00000. El 340 NO es un
+  id: es índice+1 en el directorio (1301 está en
+  el índice 339 de `Streams.bin`, verificado en
+  el fichero y en la tabla en RAM), que es lo
+  que `Play` guarda en ese global
+  (0x8000D524–0x8000D528).
+- Bridge (hook en la entrada de Play, sin
+  sustituir el código huésped): `Play(1301)`
+  resuelve a `streams/AN/an1301.wav` (32.000 Hz
+  estéreo) y el drenaje entrega submitted =
+  delivered = 1.892.352 frames a 48 kHz
+  (exactamente el número de Fase 7/14), dropped
+  = 0, guard 462, cola vacía. `Play(1367)` sigue
+  no resuelto, como debe ser.
+- Fase C (experimento, run56): 10 llamadas a
+  `audioUpdate` 0x80009BD0 (la misma que
+  `gameLoop` hace por frame, 31 despachos cada
+  una, sin exception) NO mueven el stream:
+  `currentId` = 0, `playing` = 0, `preparing` =
+  340, `prepared` = 0, `dvdState` = 1, `pos` = 0
+  en las 10. La completitud de la preparación NO
+  se sondea por `audioUpdate`: espera el
+  callback async DVDLow
+  (`AudioStream_PrepareCallback` 0x8000D5FC →
+  `AudioStream_StartPrepared`), que el host aún
+  no entrega (no hay modelo de interrupción DVD
+  para comandos DVDLow de streaming). Ese es el
+  siguiente bloqueador exacto para que el
+  stream suene POR EL JUEGO (no solo por el
+  bridge sombra), y no se maquilla: en host, hoy,
+  el sonido de stream del juego es entrega por
+  bridge, no reproducción DSP/ARAM del juego.
+
+Run57 (trampolín + bridge, réplica completa):
+mismas métricas de juego que run54 (PC final
+0x8025C3B0, FIFO 27.395.255 B, `DVDTrampoline`
+135/135, pila 0), hook con 3 entradas exactas
+(`StopCurrent` ×1, `Play(1367)` ×2, ambas no
+resueltas) y verificación directa sin cambios:
+stream 1301 → 1.892.352 frames, trigger SFX 1 →
+104.997 frames (4 muestras), total submitted =
+delivered = 1.997.349, dropped = 0; trigger 45
+→ 0 muestras, stream 970 → no resuelto. Los
+tests WAV y unit previos siguen PASS por esta
+misma ruta (el código de `audio/*` no se tocó
+en esta fase; la entrega 1301/trigger 1
+reproduce sus números exactos de Fase 7/14).
+
+### 4. Build NDK y APK de prueba GX15
+
+Build `ndk-fase15`: **0 errores**. `libstarfox.so`
+**27.616.960 B** (Fase 14: 27.616.232 B; +728 B
+del trampolín), ELF64 AArch64, SHA-256
+`b627ed36333ab011b1642e92ad5f6a4445e0e60530943697c8d382e253fdd485`,
+`android_main` en `T`, **cero**
+`mem_/ppc_/func_/dolrecomp_` sin resolver (191
+undefined totales, solo libs del sistema, igual
+que en Fase 14). Nota de build: el script es
+incremental por fecha y no sigue cabeceras; como
+`hle.h` cambió el layout de la clase `Hle`, se
+reutilizaron los objetos de `ndk-fase14` SALVO
+los 4 `.cpp` que dependen (transitivamente) de
+`hle.h` (`hle`, `chassis`, `runtime`,
+`native-lib`), recompilados de cero y verificados
+por fecha y por la cadena del trampolín dentro
+del `.so`; los chunks y el resto de C++ no
+incluyen `hle.h` (cierre de dependencias
+calculado, 4/20 `.cpp`).
+
+APK de prueba `app-debug-gx15-test.apk`
+(**12.599.974 B**, SHA-256
+`4b59eb5f36bb5577480c75ca6ceff7803c231c2017c5838864098c5c4ef74e36`,
+`com.starfox.port` v7 / `0.7.0-gx15-test`):
+apksigner Verifies (v2+v3, 1 firmante), zipalign
+OK, manifiesto minSdk 26 / arm64-v8a /
+debuggable, `libstarfox.so` interior con el
+mismo SHA-256 que el build NDK, sin datos del
+juego dentro. Curiosidad verificada, no error:
+el tamaño total coincide al byte con GX14
+(12.599.974 B) aunque la lib creció 728 B, porque
+la lib comprime 343 B mejor; los SHA de ambas
+APK y de la lib interior son distintos y la lib
+interior es la nueva. Etiqueta: PRUEBA — clear
++ quad + SAF + táctil + CARD + bridge inerte sin
+`sfa-data/audio`; nunca jugable sin juego
+completo. Nota de entorno: el JDK del sistema
+ya es OpenJDK 21.0.12.1 (la nota de Fase 14
+sobre `~/tools/jdk21` queda superada: esta APK
+se construyó con el JDK del sistema).
+
+### 5. Qué queda (tras Fase 15, en orden)
+
+1. Completitud async DVDLow de streams
+   (`PrepareCallback` → `StartPrepared` →
+   `currentId`/`playing`): el modelo que falta
+   para que un stream suene por el juego y no
+   solo por el bridge. Es de la misma familia
+   que el trampolín (entrega async sin
+   interrupciones), pero en comandos DVDLow de
+   streaming, no en `DVDReadAsyncPrio`.
+2. Layout de `sndFXStartEx`/`sndSeqPlayEx` y
+   primer SFX real del juego por el bridge.
+3. Secuencias MusyX + DSP (punto 7 de Fase 14),
+   mezcla de voces, bucles de muestra.
+4. Payload de audio WAV en Pack B
+   (`sfa-data/audio` con `streams/` y `musyx/`)
+   o decodificación ADP/DSP-ADPCM en el
+   dispositivo; sin eso la APK GX15 no suena
+   aunque el código esté cableado.
+5. Prueba real en Tab S8 (GX15: picker SAF +
    táctil + CARD + bridge inerte) y, cuando haya
    payload, primera escucha real.
 6. TEV multi-etapa, rumble y APK 100% jugable

@@ -124,6 +124,33 @@ class Hle {
   static constexpr uint32_t kDvdClose = 0x80249610u;
   static constexpr uint32_t kDvdReadAsyncPrio = 0x80249858u;
   static constexpr uint32_t kDvdReadPrio = 0x80249948u;
+  // Trampolin de callbacks DVD (Fase 15): PC sintetico, mismo
+  // patron que el trampolin VI (0x80003000) y la salida de
+  // hilo (0x80003004). NUNCA es codigo real (el DOL empieza
+  // en 0x80003100); dolrecomp_call consulta host_call antes
+  // que los chunks, asi que el HLE lo intercepta siempre.
+  // Problema que resuelve (ver hle.cpp, kDvdReadAsyncPrio):
+  // en hardware real DVDReadAsyncPrio devuelve 1 (cola OK)
+  // al instante y el callback corre despues, en interrupcion
+  // (su retorno se descarta); en el HLE sincrono el callback
+  // corre ANTES de volver al llamador y su blr entrega el
+  // retorno del callback como si fuera el de
+  // DVDReadAsyncPrio. loadFileByPathAsync (0x80015AA4)
+  // comprueba r3 != 0 para exito, asi que un callback que
+  // devuelve 0 (streamsLoadedCallback: [count] = 0 porque
+  // el directorio aun no se ha guardado) hacia fallar la
+  // carga aunque la lectura fuese correcta. El trampolin
+  // es el lr del callback: cuando el callback hace blr,
+  // aterriza aqui, el HLE restaura r3 = bytes leidos y
+  // salta al retorno original con lr = retorno original.
+  // Invariante: al reanudar el llamador, TODO esta como si
+  // el callback hubiese vuelto directamente, SALVO r3.
+  // Alcance: solo DVDReadAsyncPrio con callback != 0; el
+  // camino sincrono (callback nulo), DVDReadPrio, los
+  // callbacks VI y los drenajes ARQ no lo usan. La pila
+  // (no un solo slot) cubre un callback que a su vez lance
+  // otra lectura async antes de volver.
+  static constexpr uint32_t kDvdCallbackTrampoline = 0x80003008u;
   static constexpr uint32_t kViInit = 0x8024CE24u;
   static constexpr uint32_t kViWaitForRetrace = 0x8024D29Cu;
   static constexpr uint32_t kViConfigure = 0x8024D764u;
@@ -489,6 +516,23 @@ class Hle {
   const std::vector<DvdAsyncEvent>& DvdAsyncEvents() const {
     return dvd_async_events_;
   }
+  // Trampolines DVD completados (Fase 15): uno por callback
+  // async entregado; en un run sin error debe igualar el
+  // numero de callbacks DVD despachados (dvd_callbacks_) y
+  // la pila debe quedar vacia al final (DvdTrampolineDepth
+  // == 0). Un trampolin sin marco es un error interno del
+  // HLE y se marca como exception en el handler, no se
+  // ignora en silencio.
+  uint64_t DvdCallbackTrampolines() const { return dvd_trampolines_; }
+  size_t DvdCallbackTrampolineDepth() const {
+    return dvd_callback_stack_.size();
+  }
+  struct DvdCallbackFrame {
+    uint32_t return_pc = 0;  // retorno original del llamador
+    uint32_t restore_r3 = 0;  // bytes leidos (0 si lectura fallida/vacia)
+    uint32_t fileinfo = 0;
+    uint32_t callback = 0;
+  };
 
   // Lineas OSReport capturadas (formato ya expandido) y cargas
   // GXLoadTexObj con su offset en el stream FIFO capturado, para
@@ -684,6 +728,9 @@ class Hle {
   uint64_t arq_drained_sync_ = 0;
   uint64_t arq_callbacks_ = 0;
   std::vector<DvdAsyncEvent> dvd_async_events_;
+  // Pila de trampolines DVD pendientes (Fase 15) + contador.
+  std::vector<DvdCallbackFrame> dvd_callback_stack_;
+  uint64_t dvd_trampolines_ = 0;
   void TryLoadFst();
   bool LookupFst(const std::string& name, uint32_t* disc_offset,
                  uint32_t* length) const;
