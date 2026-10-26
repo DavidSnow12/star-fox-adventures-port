@@ -96,6 +96,7 @@
 //    (ver IndPerturbGate); fuera del gate sigue el no-op
 //    contado, no una perturbacion inventada.
 
+#include <cmath>
 #include <cstdint>
 #include <cstdio>
 #include <map>
@@ -289,6 +290,21 @@ inline int IndScaleExpFromSlices(int sc0, int sc1, int sc2) {
 
 // Multiplicador de escala indirecta: 2^exp (potencias de
 // 2 exactas en float; el juego usa exp en [-15, 1]).
+// Tramo 8 (ancla, ver INFORME): el sesgo +17 NO es
+// arbitrario — es el sesgo HW que el propio SDK del
+// DOL aplica (GXSetIndTexMtx 0x8025BBF4: addi r11,
+// r5, 0x11; extsb; rlwimi con rotaciones 22/20/18):
+// un ancla 2^(exp+k) con k != 0 exigiria que el SDK
+// sumase 17-k, no 17, y la ley relativa libogc
+// (matriz/2, escala+1 == matriz, escala) fija la
+// pendiente en 2 por unidad de exp. Lo que el DOL NO
+// puede descartar es un factor constante C != 1 ajeno
+// al exponente (factor = C * 2^exp): el SDK no lo
+// mostraria. Por eso el ancla se declara "reforzada
+// por el sesgo del SDK + censo de trazas", no
+// "probada por el DOL": la prueba definitiva sigue
+// siendo render en dispositivo/hardware (ver
+// discriminador en INFORME Tramo 8).
 inline float IndScaleFactor(int scale_exp) {
   float f = 1.0f;
   if (scale_exp >= 0) {
@@ -406,49 +422,90 @@ inline void DecodeTexGenWord2(uint32_t w, TexGen* tg) {
 }
 
 // Texgen-POS aplicable en el traductor: fuente POS, forma
-// 2x4 o 3x4, postmtx identidad y sin normalizar. Cualquier
-// otro caso conserva el comportamiento anterior (UV
-// directa) y queda documentado como pendiente, no se
-// aproxima con una matriz inventada.
+// 2x4 o 3x4, postmtx identidad. Tramo 8: normalize YA NO
+// excluye (FinalUv lo aplica tras la primera pasada,
+// antes del post, segun libogc GX_SetTexCoordGen2); el
+// caso especial libogc (vertice solo POS + 1 TEX con
+// 2x4: normalizacion omitida por el hardware) queda
+// como discriminador pendiente en dispositivo, ver
+// INFORME Tramo 8. Cualquier otro caso conserva el
+// comportamiento anterior (UV directa).
 inline bool TexGenPosApplicable(const TexGen& tg) {
   return tg.present && tg.src == 0 &&
          (tg.type_form == 0 || tg.type_form == 2) &&
-         tg.postmtx == 125 && tg.normalize == 0;
+         tg.postmtx == 125;
 }
 
-// Texgen-NRM aplicable (Tramo 7B): fuente NRM, forma
-// 2x4 o 3x4, postmtx identidad y sin normalizar. La
-// entrada es la normal del vertice transformada por la
-// parte 3x3 de la matriz de posicion (sin traslacion);
-// exacto si PNMTX es rigida (rotacion+traslacion, el
-// caso del juego: filas ortonormales en trazas), ya que
-// entonces 3x3 = inversa-traspuesta; con escala no
-// uniforme o cizalla la matriz normal GX verdadera es
-// la inversa-traspuesta y aqui se aproxima por 3x3.
-// Caso real en trazas: run39 offset 59080, coord0 NRM
-// forma 2x4 post 125 norm 0, 34/34 vertices con normal
-// (matriz identidad: (s,t) = (nx, ny)).
+// Texgen-NRM aplicable (Tramo 7B, Tramo 8: normalize ya
+// no excluye, se aplica en FinalUv): fuente NRM, forma
+// 2x4 o 3x4, postmtx identidad. La entrada es la normal
+// del vertice transformada por la parte 3x3 de la matriz
+// de posicion (sin traslacion); exacto si PNMTX es
+// rigida (rotacion+traslacion, el caso del juego: filas
+// ortonormales en trazas), ya que entonces 3x3 =
+// inversa-traspuesta; con escala no uniforme o cizalla
+// la matriz normal GX verdadera es la inversa-traspuesta
+// y aqui se aproxima por 3x3. Caso real en trazas:
+// run39 offset 59080, coord0 NRM forma 2x4 post 125
+// norm 0, 34/34 vertices con normal (matriz identidad:
+// (s,t) = (nx, ny)).
 inline bool TexGenNrmApplicable(const TexGen& tg) {
   return tg.present && tg.src == 1 &&
          (tg.type_form == 0 || tg.type_form == 2) &&
-         tg.postmtx == 125 && tg.normalize == 0;
+         tg.postmtx == 125;
 }
 
-// Texgen-TEX aplicable (Tramo 7B): fuente TEX0-7, forma
-// 2x4 o 3x4, sin normalizar. La entrada es el atributo
-// UV de la coord fuente (src-5); si el vertice no trae
-// esa coord, (0,0). La matriz es la TnMIDX de ESTA
-// coord (60 o ausente = identidad), igual que en POS.
+// Texgen-TEX aplicable (Tramo 7B, Tramo 8: normalize ya
+// no excluye, se aplica en FinalUv): fuente TEX0-7,
+// forma 2x4 o 3x4. La entrada es el atributo UV de la
+// coord fuente (src-5); si el vertice no trae esa
+// coord, (0,0). La matriz es la TnMIDX de ESTA coord
+// (60 o ausente = identidad), igual que en POS.
 // Postmtx != 125 se aplica aparte (ver FinalUv) si la
 // matriz post esta capturada en el draw; si no esta,
 // la UV sale sin post (no se inventa matriz).
 // Caso real en trazas: run39 offset 791111, coord2
 // TEX1 forma 2x4 post 70 norm 0 (matriz post 70 =
-// identidad en XF 1304+, verificada por FIFO).
+// identidad en XF 1304+, verificada por FIFO); y el
+// caso norm1 dominante: TEX0 forma 2x4 post 64 norm 1
+// (87289 coords en las 4 trazas grandes, TnMIDX 60).
 inline bool TexGenTexApplicable(const TexGen& tg) {
   return tg.present && tg.src >= 5 && tg.src <= 12 &&
-         (tg.type_form == 0 || tg.type_form == 2) &&
-         tg.normalize == 0;
+         (tg.type_form == 0 || tg.type_form == 2);
+}
+
+// Normalizacion texgen (Tramo 8, libogc
+// GX_SetTexCoordGen2: "normalize tex coord after the
+// first-pass transformation", antes del post):
+//   2x4: (s,t) -> (s,t)/sqrt(s^2+t^2);
+//   3x4: (s,t,q) -> (s,t,q)/sqrt(s^2+t^2+q^2).
+// Vector nulo: se conserva (0,0[,q]) — guarda
+// deliberada: GLSL normalize(0) es indefinido y el
+// comportamiento HW para el vector nulo (20,7% de los
+// vertices norm1 reales son UV (0,0)) no esta
+// documentado; ver discriminador en INFORME Tramo 8.
+// El caso especial libogc (vertice solo POS + 1 TEX,
+// 2x4: el HW omite la normalizacion) NO se aplica
+// aqui: los draws norm1 reales mezclan vertices con
+// normal/color y la condicion exacta por vertice no
+// esta verificada; queda como discriminador.
+inline bool TexGenNormalize(float s, float t, float q, bool is3x4,
+                            float* s_out, float* t_out,
+                            float* q_out) {
+  if (s_out == nullptr || t_out == nullptr || q_out == nullptr)
+    return false;
+  float len2 = s * s + t * t + (is3x4 ? q * q : 0.0f);
+  if (len2 <= 0.0f) {
+    *s_out = s;
+    *t_out = t;
+    *q_out = q;
+    return true;
+  }
+  float inv = 1.0f / std::sqrt(len2);
+  *s_out = s * inv;
+  *t_out = t * inv;
+  *q_out = q * inv;
+  return true;
 }
 
 // Postmtx aplicable: distinto de identidad y dentro del

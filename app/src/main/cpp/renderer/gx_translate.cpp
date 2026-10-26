@@ -127,28 +127,57 @@ bool ApplyTexMatrixPos(const float m[12], float x, float y, float z,
 
 namespace {
 
+// Variantes 3-componentes de ApplyTexMatrix(Pos): SIN
+// division por q (la division se hace una sola vez al
+// final, tras normalize y post, para no dividir dos
+// veces). Para forma 2x4 la fila 3 de la matriz es
+// cero en el stream, asi que q sale 0: el llamador
+// usa q=1 como entrada homogenea del post y no usa
+// q en normalize 2x4 (ver FinalUv).
+void ApplyTexMatrix3(const float m[12], float s, float t, float* s_out,
+                     float* t_out, float* q_out) {
+  *s_out = m[0] * s + m[1] * t + m[2];
+  *t_out = m[4] * s + m[5] * t + m[6];
+  *q_out = m[8] * s + m[9] * t + m[10];
+}
+void ApplyTexMatrixPos3(const float m[12], float x, float y, float z,
+                        float* s_out, float* t_out, float* q_out) {
+  *s_out = m[0] * x + m[1] * y + m[2] * z + m[3];
+  *t_out = m[4] * x + m[5] * y + m[6] * z + m[7];
+  *q_out = m[8] * x + m[9] * y + m[10] * z + m[11];
+}
+
 // UV final de un vertice para un mapa: UV directa con la
 // matriz TnMIDX del vertice si el draw la trae (distinta de
 // identidad); sin matriz o sin UV en el vertice: UV cruda
 // (0,0 si el vertice no trae esa coord).
 // Tramo 6 (texgen-POS): si el draw trae texgen XF para esta
-// coord y es aplicable (fuente POS, forma 2x4/3x4, sin
-// normalizar), la UV NO sale del atributo TEX del
-// vertice sino de la posicion post-PNMTX (mx,my,mz)
-// transformada por la matriz TnMIDX del vertice (60 o
-// matriz ausente = identidad).
+// coord y es aplicable (fuente POS, forma 2x4/3x4), la UV
+// NO sale del atributo TEX del vertice sino de la
+// posicion post-PNMTX (mx,my,mz) transformada por la
+// matriz TnMIDX del vertice (60 o matriz ausente =
+// identidad).
 // Tramo 7B: se anaden NRM (fuente 1: normal transformada
 // por la 3x3 de PNMTX, nnx/nny/nnz; exacta si PNMTX es
 // rigida, ver gx_tev.h) y TEX0-7 (fuente 5-12: atributo
 // UV de la coord fuente, o (0,0) si el vertice no la
-// trae; matriz TnMIDX de ESTA coord). Tras la matriz
-// principal, si el texgen tiene postmtx != 125 y la
-// matriz post esta capturada en draw.post_matrices, se
-// aplica en 2D con q=1 (s',t') = (P0*s+P1*t+P2+P3,
-// P4*s+P5*t+P6+P7): exacto para forma 2x4 (todos los
-// casos de trazas); para forma 3x4 la division por q'
-// tras el post no se modela (sin caso en trazas).
-// normalize != 0,
+// trae; matriz TnMIDX de ESTA coord).
+// Tramo 8: pipeline completo en orden GX (libogc):
+//   1) primera pasada (matriz principal),
+//   2) normalize si el flag esta puesto (2x4: (s,t);
+//      3x4: (s,t,q); vector nulo conservado, ver
+//      TexGenNormalize en gx_tev.h),
+//   3) post (dual texture) si esta capturada:
+//      entrada (s,t,qp) con qp = q si forma 3x4, 1 si
+//      2x4; salida (s',t',q') = P*(s,t,qp,1),
+//   4) forma 3x4: division final por q' (si q' != 0;
+//      q' == 0 conserva (s',t') por guarda). Esto
+//      implementa 3x4+post, que NO aparece en ninguna
+//      traza real (0/92939 draws en 5 trazas): su
+//      prueba es solo sintetica, no de traza.
+//   Sin normalize (Tramo 7B) el resultado es identico
+//   al anterior (la division por q de ApplyTexMatrix
+//   se hace ahora en el paso 4, una sola vez).
 // BINRM/TANGENT/COLOR y post sin matriz capturada
 // conservan el camino anterior (UV directa).
 // El id de matriz del texgen no esta en XF (shadow GX), asi
@@ -164,10 +193,8 @@ void FinalUv(const GxDraw& draw, const GxVertex& v, int map, float mx,
     TexGen tg = DecodeTexGenWord1(draw.texgen_w1[map]);
     DecodeTexGenWord2(draw.texgen_w2[map], &tg);
     bool form_ok = (tg.type_form == 0 || tg.type_form == 2);
-    bool pos_like = tg.present && tg.src == 0 && form_ok &&
-                    tg.normalize == 0;
-    bool nrm_like = tg.present && tg.src == 1 && form_ok &&
-                    tg.normalize == 0;
+    bool pos_like = tg.present && tg.src == 0 && form_ok;
+    bool nrm_like = tg.present && tg.src == 1 && form_ok;
     bool tex_like = TexGenTexApplicable(tg);
     if (pos_like || nrm_like || tex_like) {
       // Identidad segun forma: 2x4 no divide (fila 3 a
@@ -181,31 +208,40 @@ void FinalUv(const GxDraw& draw, const GxVertex& v, int map, float mx,
         if (it != draw.tex_matrices.end() && it->second.size() == 12)
           m = it->second.data();
       }
-      float s = 0.0f, t = 0.0f;
+      float s = 0.0f, t = 0.0f, q = 0.0f;
       if (pos_like) {
-        ApplyTexMatrixPos(m, mx, my, mz, &s, &t);
+        ApplyTexMatrixPos3(m, mx, my, mz, &s, &t, &q);
       } else if (nrm_like) {
-        ApplyTexMatrixPos(m, nnx, nny, nnz, &s, &t);
+        ApplyTexMatrixPos3(m, nnx, nny, nnz, &s, &t, &q);
       } else {
         int src_coord = tg.src - 5;
         float u = v.has_uv[src_coord] ? v.uv_s[src_coord] : 0.0f;
         float vv = v.has_uv[src_coord] ? v.uv_t[src_coord] : 0.0f;
-        ApplyTexMatrix(m, u, vv, &s, &t);
+        ApplyTexMatrix3(m, u, vv, &s, &t, &q);
       }
-      // Matriz post (dual texture) si esta capturada:
-      // entrada (s, t, q=1) para forma 2x4 (q implicito
-      // homogeneo); para forma 3x4 la division por q'
-      // tras el post no se modela (sin caso en trazas).
+      bool is3x4 = (tg.type_form == 2);
+      if (tg.normalize != 0) {
+        TexGenNormalize(s, t, q, is3x4, &s, &t, &q);
+      }
+      // Matriz post (dual texture) si esta capturada.
       if (TexGenPostApplicable(tg)) {
         auto pit = draw.post_matrices.find(tg.postmtx);
         if (pit != draw.post_matrices.end() &&
             pit->second.size() == 12) {
           const float* p = pit->second.data();
-          float sp = p[0] * s + p[1] * t + p[2] + p[3];
-          float tp = p[4] * s + p[5] * t + p[6] + p[7];
+          float qp = is3x4 ? q : 1.0f;
+          float sp = p[0] * s + p[1] * t + p[2] * qp + p[3];
+          float tp = p[4] * s + p[5] * t + p[6] * qp + p[7];
+          float qp_out =
+              p[8] * s + p[9] * t + p[10] * qp + p[11];
           s = sp;
           t = tp;
+          q = qp_out;
         }
+      }
+      if (is3x4 && q != 0.0f) {
+        s /= q;
+        t /= q;
       }
       *s_out = s;
       *t_out = t;

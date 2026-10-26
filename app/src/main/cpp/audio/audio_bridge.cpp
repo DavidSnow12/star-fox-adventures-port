@@ -20,6 +20,8 @@ constexpr uint32_t kAudioStreamStopCurrent = 0x8000D03Cu;
 constexpr uint32_t kSndFxStartEx = 0x80273218u;
 constexpr uint32_t kSndSeqPlayEx = 0x8027C34Cu;
 constexpr uint32_t kSndSeqStop = 0x80272F80u;
+// Tramo 8: sndSeqVolume (ver audio_bridge.h).
+constexpr uint32_t kSndSeqVolume = 0x80273090u;
 
 int16_t ClampS16(int32_t v) {
   if (v > 32767) return 32767;
@@ -132,24 +134,86 @@ int AudioBridge::OnSeqPlay(uint32_t group_id, uint32_t seq_id,
              group_id, seq_id);
     return 0;
   }
+  // Tramo 8 — params reales (SynthPlayParams, layout
+  // medido en RAM huesped en el Tramo 7, big-endian):
+  // +0 flags u32, +4 mute[2] u32, +12 speed u16, +14
+  // vol.time u16, +16 vol.target u8, +17 numVolDefs u8,
+  // +20 volDefs ptr, +24 numFaded u8, +28 faded ptr.
+  // flags: bit 0 = mutes, bit 1 = speed, bit 2 = volumen,
+  // bit 3 = seqVolumeDefinitions (0 en la llamada medida).
+  // Sin RAM huesped (o params fuera de rango): defaults
+  // v1 (speed 256, sin mutes, volumen 1,0) y se registra.
+  // El volumen de params es el punto de partida del fade,
+  // NO una ganancia estatica: la llamada real trae
+  // target 0 y luego sndSeqVolume sube a 60 en 500 ms; una
+  // ganancia estatica 0 silenciaria la cancion.
+  uint32_t speed = 256;
+  uint32_t params_flags = 0;
+  params_mute_[0] = 0xFFFFFFFFu;
+  params_mute_[1] = 0xFFFFFFFFu;
+  params_mute_active_ = false;
+  seq_vol_current_ = 1.0f;
+  seq_vol_from_ = 1.0f;
+  seq_vol_to_ = 1.0f;
+  seq_vol_t_ = 0.0;
+  seq_vol_dur_ = 0.0;
+  bool params_read = false;
+  if (guest_ram_ != nullptr && params_ptr >= 0x80000000u) {
+    uint32_t off = params_ptr - 0x80000000u;
+    if (off + 32 <= guest_ram_size_) {
+      const uint8_t* p = guest_ram_ + off;
+      auto rd32 = [&](int o) -> uint32_t {
+        return (static_cast<uint32_t>(p[o]) << 24) |
+               (static_cast<uint32_t>(p[o + 1]) << 16) |
+               (static_cast<uint32_t>(p[o + 2]) << 8) |
+               static_cast<uint32_t>(p[o + 3]);
+      };
+      auto rd16 = [&](int o) -> uint32_t {
+        return (static_cast<uint32_t>(p[o]) << 8) |
+               static_cast<uint32_t>(p[o + 1]);
+      };
+      params_flags = rd32(0);
+      params_mute_[0] = rd32(4);
+      params_mute_[1] = rd32(8);
+      uint32_t p_speed = rd16(12);
+      uint32_t p_vol_target = p[16];
+      params_mute_active_ = (params_flags & 1u) != 0;
+      if ((params_flags & 2u) != 0 && p_speed != 0) speed = p_speed;
+      if ((params_flags & 4u) != 0) {
+        float v = static_cast<float>(p_vol_target > 127 ? 127
+                                                        : p_vol_target) /
+                  127.0f;
+        seq_vol_current_ = v;
+        seq_vol_from_ = v;
+        seq_vol_to_ = v;
+      }
+      params_read = true;
+    }
+  }
   StopAllMusic();
   seq_.Stop();
   cc7_.fill(127);
   cc10_.fill(64);
-  seq_.Start(song, 256);
+  seq_.Start(song, speed);
   SeqStarted rec;
   rec.group_id = group_id;
   rec.seq_id = seq_id;
   rec.bpm = song->bpm;
   rec.notes = song->note_count;
   rec.params_ptr = params_ptr;
+  rec.speed = speed;
+  rec.params_flags = params_flags;
   seq_started_.push_back(rec);
   SFA_LOGI("bridge: sndSeqPlayEx grupo %u cancion %u -> tabla "
            "verificada (gid %u, BPM %u, %zu notas, %.1f ticks/s, "
-           "params huesped 0x%08X sin leer: speed 256, sin mutes)",
+           "params huesped 0x%08X %s: flags %u speed %u mutes %s "
+           "vol %.3f)",
            group_id, seq_id, song->group_id, song->bpm,
            song->note_count, MusyxTicksPerSecond(song->bpm),
-           params_ptr);
+           params_ptr, params_read ? "leidos" : "sin leer",
+           params_flags, speed,
+           params_mute_active_ ? "activos" : "no",
+           seq_vol_current_);
   if (song->group_id != group_id) {
     SFA_LOGI("bridge: aviso MusyX: group_id %u != gid de tabla %u "
              "(equivalencia sgid<->gid sin verificar; se arranca "
@@ -163,7 +227,53 @@ void AudioBridge::OnSeqStop() {
   if (!seq_.Active() && MusyxActiveNotes() == 0) return;
   StopAllMusic();
   seq_.Stop();
+  params_mute_active_ = false;
+  seq_vol_current_ = 1.0f;
+  seq_vol_from_ = 1.0f;
+  seq_vol_to_ = 1.0f;
+  seq_vol_t_ = 0.0;
+  seq_vol_dur_ = 0.0;
   SFA_LOGI("bridge: sndSeqStop (cancion host detenida)");
+}
+
+// Tramo 8 — fade de musica (sndSeqVolume, ver .h). El
+// handle solo se registra: el bridge es de una sola
+// cancion, asi que cualquier fade con cancion activa es
+// el de esa cancion (si el juego mezclara dos canciones,
+// este modelo seria insuficiente y habria que indexar el
+// fade por handle: limitacion v1, documentada).
+bool AudioBridge::OnSeqVolume(uint32_t volume, uint32_t time_ms,
+                              uint32_t seq_handle) {
+  if (!seq_.Active()) {
+    SFA_LOGI("bridge: sndSeqVolume vol %u tiempo %u handle %u "
+             "sin cancion activa (ignorado)",
+             volume, time_ms, seq_handle);
+    return false;
+  }
+  float target =
+      static_cast<float>(volume > 127 ? 127 : volume) / 127.0f;
+  seq_vol_from_ = seq_vol_current_;
+  seq_vol_to_ = target;
+  seq_vol_t_ = 0.0;
+  seq_vol_dur_ = static_cast<double>(time_ms) / 1000.0;
+  if (seq_vol_dur_ <= 0.0) seq_vol_current_ = target;
+  SFA_LOGI("bridge: sndSeqVolume vol %u -> %.3f en %u ms "
+           "(handle %u, desde %.3f)",
+           volume, target, time_ms, seq_handle, seq_vol_from_);
+  return true;
+}
+
+void AudioBridge::AdvanceSeqVolume(double dt_seconds) {
+  if (seq_vol_dur_ <= 0.0 || seq_vol_t_ >= seq_vol_dur_) {
+    seq_vol_current_ = seq_vol_to_;
+    return;
+  }
+  seq_vol_t_ += dt_seconds;
+  double f = seq_vol_t_ >= seq_vol_dur_
+                 ? 1.0
+                 : seq_vol_t_ / seq_vol_dur_;
+  seq_vol_current_ = static_cast<float>(
+      seq_vol_from_ + (seq_vol_to_ - seq_vol_from_) * f);
 }
 
 void AudioBridge::StopAllMusic() {
@@ -341,8 +451,28 @@ void AudioBridge::PumpSequencer(double dt_seconds) {
         if (e.cc->cc == 7) cc7_[e.cc->midi] = e.cc->value;
         if (e.cc->cc == 10) cc10_[e.cc->midi] = e.cc->value;
       }
+    } else if (e.kind == MusyxSequencer::Event::kLoop) {
+      // Tramo 8: al envolver, los CC vuelven al snapshot
+      // de inicio de bucle (sin esto, la segunda vuelta
+      // sonaria con la automatizacion final de la primera:
+      // en 74, CC7 de midi 1/2 seria 37/40 en vez de
+      // 101/75). Los CC de la ventana del bucle que vencen
+      // despues reescriben estos valores en orden.
+      for (int m = 0; m < 16; ++m) {
+        cc7_[m] = seq_.LoopCc7(static_cast<uint32_t>(m));
+        cc10_[m] = seq_.LoopCc10(static_cast<uint32_t>(m));
+      }
     } else if (e.kind == MusyxSequencer::Event::kNoteOn &&
                e.note != nullptr) {
+      // Tramo 8: mute de params (flags bit 0). Bit a 1 =
+      // pista activa; bit a 0 = nota silenciada (no se
+      // arranca voz ni se cuenta como nota iniciada; su
+      // NoteOff posterior no encuentra voz y no hace nada).
+      if (params_mute_active_ && e.note->midi < 64) {
+        uint32_t word = params_mute_[e.note->midi / 32];
+        uint32_t bit = (word >> (e.note->midi % 32)) & 1u;
+        if (bit == 0) continue;
+      }
       StartMusicNote(*e.note, e.note_index);
     } else if (e.kind == MusyxSequencer::Event::kNoteOff) {
       StopMusicNote(e.note_index);
@@ -945,6 +1075,12 @@ bool AudioBridge::OnAudioEntry(uint32_t pc, uint32_t r3,
     OnSeqStop();
     return true;
   }
+  if (pc == kSndSeqVolume) {
+    // sndSeqVolume (Tramo 8, layout verificado en codigo
+    // huesped): r3=volumen, r4=tiempo, r5=seqHandle.
+    // r6 se ignora (0 en la llamada medida).
+    return OnSeqVolume(r3, r4, r5);
+  }
   // Demas entradas de audio: solo conteo (layout de
   // argumentos sin verificar; ver cabecera).
   return false;
@@ -1025,6 +1161,8 @@ void AudioBridge::Tick() {
       std::vector<int16_t> silence(
           static_cast<size_t>(kFeedFrames) * 2, 0);
       audio_->SubmitBuffer(silence.data(), kFeedFrames);
+      AdvanceSeqVolume(static_cast<double>(kFeedFrames) /
+                       static_cast<double>(Audio::kOutputRate));
       PumpSequencer(static_cast<double>(kFeedFrames) /
                     static_cast<double>(Audio::kOutputRate));
       if (seq_.Finished() && MusyxActiveNotes() == 0) {
@@ -1119,11 +1257,17 @@ void AudioBridge::Tick() {
   // note-on). La rampa CC7 intra-nota queda asi a
   // resolucion de bloque (85 ms), no por muestra como en
   // el render offline Tramo 5.
+  // Tramo 8: el fade sndSeqVolume avanza con el bloque
+  // mezclado (antes de mezclar, para que el bloque ya lo
+  // refleje) y multiplica la ganancia de musica.
+  AdvanceSeqVolume(static_cast<double>(block) /
+                   static_cast<double>(Audio::kOutputRate));
   for (MusicVoice& v : music_voices_) {
     if (!v.active) continue;
     float g = v.base_gain *
               static_cast<float>(v.midi < 16 ? cc7_[v.midi] : 127) /
-              127.0f;
+              127.0f *
+              seq_vol_current_;
     for (size_t f = 0; f < block; ++f) {
       if (v.pos + f >= v.Total()) continue;
       size_t idx = v.pos + f;

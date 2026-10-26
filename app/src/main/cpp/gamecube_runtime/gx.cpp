@@ -263,6 +263,8 @@ GxParser::StreamResult GxParser::ParseStream(const uint8_t* data, size_t len,
         take(0x4A, &c.reg4a, &c.has4a);
         take(0x4B, &c.reg4b, &c.has4b);
         take(0x4D, &c.reg4d, &c.has4d);
+        take(0x53, &c.reg53, &c.has53);
+        take(0x54, &c.reg54, &c.has54);
         copies_.push_back(c);
       }
       pos += 5;

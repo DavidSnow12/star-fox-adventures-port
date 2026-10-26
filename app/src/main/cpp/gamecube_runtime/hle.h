@@ -293,6 +293,15 @@ class Hle {
   // giro sale solo o el siguiente atasco dira por que).
   static constexpr uint32_t kAudioAramWriteSyncWaitHead = 0x80008FDCu;
   static constexpr uint32_t kAudioAramWriteCompleteCb = 0x80009008u;
+  // ARQ de lectura (Tramo 8, entrega de Music): callback
+  // del servicio ARQ para lecturas ARAM->MRAM
+  // (AudioAramReadCompleteCallback) y PC sintetico del
+  // trampolin de entrega (vecino de los trampolines VI
+  // 0x80003000, de hilo 0x80003004 y DVD 0x80003008;
+  // nunca es codigo real: el DOL empieza en 0x80003100).
+  // Ver HandleHostCall en hle.cpp y TRAMO8 (diseno).
+  static constexpr uint32_t kArqReadCompleteCb = 0x80008EDCu;
+  static constexpr uint32_t kArqReadDeliveryTrampoline = 0x8000300Cu;
   static constexpr uint32_t kDcInvalidateRange = 0x802422F8u;
   static constexpr uint32_t kDcFlushRange = 0x80242328u;
   static constexpr uint32_t kDcStoreRange = 0x8024235Cu;
@@ -541,6 +550,16 @@ class Hle {
   uint64_t ArqDrainedUpload() const { return arq_drained_upload_; }
   uint64_t ArqDrainedSync() const { return arq_drained_sync_; }
   uint64_t ArqCallbacksDelivered() const { return arq_callbacks_; }
+  // Tramo 8 — entrega ARQ de lectura (ver hle.cpp):
+  // peticiones de lectura de audio encoladas, entregas
+  // redirigidas y retornos por el trampolin, y profundidad
+  // de la pila de marcos (0 en reposo; != 0 solo mientras
+  // un callback de lectura esta en vuelo).
+  uint64_t ArqReadQueued() const { return arq_read_queued_; }
+  uint64_t ArqReadDelivered() const { return arq_read_delivered_; }
+  uint64_t ArqReadTrampolines() const { return arq_read_trampolines_; }
+  size_t ArqReadPending() const { return arq_read_pending_.size(); }
+  size_t ArqReadFrameDepth() const { return arq_read_frames_.size(); }
   uint64_t DvdAsyncBytes() const { return dvd_async_bytes_; }
   uint64_t DvdFileInfoWriteFailures() const {
     return dvd_fileinfo_failures_;
@@ -829,6 +848,43 @@ class Hle {
   // contador de la cola del juego al aterrizar en el bucle
   // de espera de aramInit.
   uint32_t pending_arq_completions_ = 0;
+  // Tramo 8 — entrega ARQ de lectura (ver hle.cpp): cola
+  // FIFO de peticiones de lectura de audio (puntero guest
+  // de la entrada del juego, r3 en ARQPostRequest) y pila
+  // LIFO de marcos de entrega. El marco guarda TODOS los
+  // registros del huesped en el punto interceptado (mismo
+  // conjunto que ThreadContext: gpr/fpr/ps1, ctr, cr, xer,
+  // fpscr, msr, srr, dar, dsisr, ear, sr, gqr) mas el PC y
+  // el lr a restaurar; la RAM NO se restaura (los efectos
+  // del callback — status del canal, seqHandle — son la
+  // entrega). Tampoco se tocan timebase, downcount,
+  // exception ni host_call: el chassis sigue contando
+  // despachos con normalidad.
+  struct ArqReadFrame {
+    uint32_t gpr[32] = {};
+    double fpr[32] = {};
+    double ps1[32] = {};
+    uint32_t ctr = 0;
+    uint32_t cr = 0;
+    uint32_t xer = 0;
+    uint32_t fpscr = 0;
+    uint32_t msr = 0;
+    uint32_t srr0 = 0;
+    uint32_t srr1 = 0;
+    uint32_t dar = 0;
+    uint32_t dsisr = 0;
+    uint32_t ear = 0;
+    uint32_t sr[16] = {};
+    uint32_t gqr[8] = {};
+    uint32_t resume_pc = 0;
+    uint32_t resume_lr = 0;
+    uint32_t req = 0;
+  };
+  std::vector<uint32_t> arq_read_pending_;
+  std::vector<ArqReadFrame> arq_read_frames_;
+  uint64_t arq_read_queued_ = 0;
+  uint64_t arq_read_delivered_ = 0;
+  uint64_t arq_read_trampolines_ = 0;
   // Planificador cooperativo (Fase 9, ver hle.cpp).
   // current_thread_ = indice en threads_, o -1 = hilo
   // principal (que no tiene ThreadEntry: su struct OSThread

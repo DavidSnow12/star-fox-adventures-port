@@ -120,6 +120,18 @@ class AudioBridge {
     adp_index_.Clear();
     cache_cleaned_ = false;
   }
+  // Tramo 8 — RAM huesped para leer SynthPlayParams en
+  // OnSeqPlay (ver .cpp). Puntero NO poseido: lo fija el
+  // runtime (memory_.RamData(), estable tras Init) o el
+  // test host; sin fijar, OnSeqPlay usa los defaults v1
+  // (speed 256, sin mutes, volumen 1,0). El runtime debe
+  // llamarlo tras cargar el DOL (parche aparte, ver
+  // runtime-setguestram.patch): sin esa linea, los params
+  // se ignoran pero nada se rompe.
+  void SetGuestRam(const uint8_t* ram, uint32_t size) {
+    guest_ram_ = ram;
+    guest_ram_size_ = size;
+  }
   // Techo LRU de la cache PCM (por defecto 2.048 MiB).
   // Solo para tests host; en la APK no se toca.
   void SetCacheCapBytes(uint64_t cap) { cache_cap_ = cap; }
@@ -189,14 +201,19 @@ class AudioBridge {
   int OnFxStartDoubled(uint32_t fx_id, uint32_t volume, uint32_t pan,
                        uint32_t studio);
 
-  // Musica MusyX (Tramo 6, hook sndSeqPlayEx 0x8027C34C):
+  // Musica MusyX (Tramo 6, hook sndSeqPlayEx 0x8027C34C;
+  // Tramo 8: params reales + bucles + fades):
   // group_id = r3 (sgid), seq_id = r4 (sid = trigger->track),
   // params_ptr = r6 (puntero huesped a SynthPlayParams: se
-  // registra para traza pero NO se lee — el bridge no tiene
-  // acceso a la RAM huesped, asi que speed = 256 y sin mutes
-  // en v1). La busqueda es por seq_id; si el group_id no
-  // coincide con el gid de la tabla, arranca igualmente y lo
-  // deja en el log (equivalencia sgid<->gid sin verificar).
+  // LEE si el bridge tiene RAM huesped fijada con
+  // SetGuestRam — speed si flags bit 1, mutes si bit 0,
+  // volumen inicial si bit 2; sin RAM, defaults v1).
+  // La busqueda es por seq_id; si el group_id no coincide
+  // con el gid de la tabla, arranca igualmente y lo deja
+  // en el log (equivalencia sgid<->gid sin verificar salvo
+  // 99, confirmada en el Tramo 7). Canciones con tabla:
+  // 99, 74, 5, 22, 95 (Tramo 8); 99/74 con bucle, resto en
+  // primer pase.
   // Devuelve 1 si arranco, 0 si la cancion no tiene tabla
   // verificada (unresolved "musyx_cancion") o no hay audio.
   // Sustituye cualquier cancion host en curso (una sola
@@ -205,6 +222,23 @@ class AudioBridge {
                 uint32_t params_ptr);
   // Hook sndSeqStop 0x80272F80: detiene la cancion host.
   void OnSeqStop();
+  // Tramo 8 — hook sndSeqVolume 0x80273090 (layout
+  // verificado en codigo huesped, Music_ChannelLoaded-
+  // Callback 0x8000B4A0: r3=volumen 0..127, r4=tiempo,
+  // r5=seqHandle, r6=0): programa un fade lineal del
+  // volumen maestro de musica hacia volume/127 en
+  // time_ms (0 = inmediato). Sin cancion activa se
+  // ignora (log) y devuelve false. El tiempo se modela
+  // en ms (fade de entrada 500 del callback: con ticks
+  // a 60 Hz serian 8,3 s, implausible como fade-in).
+  // Solo afecta a la mezcla (no al PCM almacenado ni a
+  // los conteos de notas/frames).
+  bool OnSeqVolume(uint32_t volume, uint32_t time_ms,
+                   uint32_t seq_handle);
+  // Volumen maestro de musica vigente (0..1) y objetivo,
+  // para tests host.
+  float SeqVolume() const { return seq_vol_current_; }
+  float SeqVolumeTarget() const { return seq_vol_to_; }
 
   // Avance de reproduccion: mezcla un bloque de hasta
   // kFeedFrames de todas las voces activas y lo entrega al
@@ -245,6 +279,10 @@ class AudioBridge {
     uint32_t bpm = 0;
     size_t notes = 0;
     uint32_t params_ptr = 0;
+    // Tramo 8: params aplicados (defaults v1 si no hay RAM
+    // huesped o params fuera de rango: speed 256, flags 0).
+    uint32_t speed = 256;
+    uint32_t params_flags = 0;
   };
   const std::vector<SeqStarted>& SeqStartedEntries() const {
     return seq_started_;
@@ -285,10 +323,13 @@ class AudioBridge {
  private:
   static constexpr int kFeedFrames = 4096;
   static constexpr size_t kMaxSfxVoices = 8;
-  // Voces de musica (Tramo 6): 16 cubren los temas
-  // verificados (polifonia maxima 14 en track 5, 2 en 99,
-  // 3 en 74). Fuera de las 8 SFX y de la voz de stream.
-  static constexpr size_t kMaxMusicVoices = 16;
+  // Voces de musica (Tramo 6: 16; Tramo 8: 32): el primer
+  // pase de track 22 mide polifonia maxima 17, por encima
+  // de 16 (con 16 habria robos en 22). 5: 14, 99: 2, 74: 3,
+  // 95: 5. Solo cuesta memoria de las voces activas; sin
+  // cancion no cuesta nada. Fuera de las 8 SFX y de la voz
+  // de stream.
+  static constexpr size_t kMaxMusicVoices = 32;
 
   struct Voice {
     std::vector<int16_t> pcm;  // Estereo s16 a 48.000 Hz.
@@ -364,6 +405,26 @@ class AudioBridge {
                       bool is_stream);
 
   Audio* audio_ = nullptr;
+  // Tramo 8: RAM huesped (no poseida) para params, y
+  // estado de params/fade de la cancion en curso.
+  const uint8_t* guest_ram_ = nullptr;
+  uint32_t guest_ram_size_ = 0;
+  // Mutes de SynthPlayParams (flags bit 0): bit por pista
+  // MusyX (nota.midi); bit a 1 = pista activa (seq.c:1261,
+  // Tramo 7). Solo se aplica si flags & 1; en otro caso
+  // todo activo (el caso medido real, flags=6, ignora los
+  // mutes). El mapeo bit->midi es el supuesto documentado
+  // del Tramo 8 (verificado solo sinteticamente).
+  uint32_t params_mute_[2] = {0xFFFFFFFFu, 0xFFFFFFFFu};
+  bool params_mute_active_ = false;
+  // Volumen maestro de musica (fade sndSeqVolume): se
+  // aplica en Tick al mezclar, no al PCM almacenado.
+  float seq_vol_current_ = 1.0f;
+  float seq_vol_from_ = 1.0f;
+  float seq_vol_to_ = 1.0f;
+  double seq_vol_t_ = 0.0;
+  double seq_vol_dur_ = 0.0;
+  void AdvanceSeqVolume(double dt_seconds);
   std::string wav_root_;
   std::string cache_root_;
   std::string indexed_root_;

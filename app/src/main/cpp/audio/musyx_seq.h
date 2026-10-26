@@ -18,20 +18,21 @@
 // otra tasa, el factor cambiaria en proporcion.
 //
 // Limites v1 (honestos, no defectos ocultos):
-//   - Solo primer pase: sin bucles de cancion (loopPoint con flip
-//     de timeIndex). Al consumir el ultimo evento, la cancion
-//     termina (como la liberacion del slot de track 5 en el paso
-//     huesped 27.215) y el bridge la da por terminada.
+//   - Bucles: desde el Tramo 8, 99 y 74 repiten su segmento
+//     medido (notas 2..5 y 3..14) con snapshot CC; 5, 22 y 95
+//     siguen en primer pase (al consumir el ultimo evento,
+//     la cancion termina, como la liberacion del slot de
+//     track 5 en el paso huesped 27.215).
 //   - Sin pitch-bend/modulacion (pb/mod constantes en 99/74;
 //     en track 5 no se aplican: rango en semitonos sin
 //     determinar, ver TRAMO5.md §7).
 //   - Sin robo por prioridad del juego (64 voces): el bridge
 //     tiene 16 voces de musica; los 3 temas verificados usan
 //     como maximo 14 simultaneas, asi que no se roba en ellos.
-//   - speed/trackMute/volumen de SynthPlayParams (puntero r6
-//     del juego) NO se leen: el bridge no tiene acceso a la
-//     RAM huesped. speed = 256 (1,0x) y sin mutes en v1; el
-//     puntero queda registrado en el log de inicio para traza.
+//   - speed/trackMute/volumen de SynthPlayParams: desde el
+//     Tramo 8 el bridge SI los lee (SetGuestRam + OnSeqPlay)
+//     y sndSeqVolume modela los fades; sin RAM huesped,
+//     speed = 256 (1,0x) y sin mutes (defaults v1).
 //   - CC7 se automatiza por bloque de mezcla (85 ms a 48 kHz),
 //     no por muestra; CC10 (pan) se fija en el note-on.
 
@@ -68,6 +69,29 @@ struct MusyxSong {
   size_t note_count = 0;
   const MusyxCc* ccs = nullptr;
   size_t cc_count = 0;
+  // Tramo 8 — bucle de cancion (primer pase + repeticion).
+  // loop_start_note = indice de la primera nota del bucle
+  // (SIZE_MAX = sin bucle: la cancion termina como en v1).
+  // loop_cc_index = primer CC con tiempo >= tiempo de esa
+  // nota (los CC del intro no se repiten; los de la ventana
+  // del bucle si, con sus tiempos absolutos de tabla).
+  // loop_period_ticks = fin del primer pase (maximo
+  // time+length de las notas) menos tiempo de la nota de
+  // bucle: al envolver, tick_ retrocede ese periodo, asi
+  // que las notas del bucle vuelven a vencer en orden y
+  // los NoteOffs pendientes (vacio en el momento del
+  // envoltorio: se espera a que suenen) no se desplazan.
+  // Medido Tramo 8 desde seq_host.py + tablas Tramo 6:
+  // 99: notas 2..5, periodo 9212-1540=7672; 74: notas
+  // 3..14, periodo 32252-3073=29179; 5/22/95: sin bucle
+  // en este tramo (22 y 95 buclean por secciones, sin
+  // segmento unico medido: quedan en primer pase).
+  size_t loop_start_note = static_cast<size_t>(-1);
+  size_t loop_cc_index = 0;
+  uint32_t loop_period_ticks = 0;
+  bool HasLoop() const {
+    return loop_start_note < note_count && loop_period_ticks > 0;
+  }
 };
 
 // ticks/s = BPM x 6,4 (ver cabecera). BPM 60 -> 384; 120 -> 768.
@@ -78,7 +102,7 @@ inline double MusyxTicksPerSecond(uint32_t bpm) {
 class MusyxSequencer {
  public:
   struct Event {
-    enum Kind { kNoteOn, kNoteOff, kCc } kind = kNoteOn;
+    enum Kind { kNoteOn, kNoteOff, kCc, kLoop } kind = kNoteOn;
     size_t note_index = 0;  // Valido en NoteOn/NoteOff.
     const MusyxNote* note = nullptr;
     const MusyxCc* cc = nullptr;
@@ -89,13 +113,34 @@ class MusyxSequencer {
   // Avanza el reloj dt segundos y vuelca los eventos vencidos
   // en orden: CC, NoteOff, NoteOn ante el mismo tick (el CC
   // debe estar vigente cuando suena la nota; el NoteOff
-  // libera la voz antes de un NoteOn simultaneo).
+  // libera la voz antes de un NoteOn simultaneo). Con bucle,
+  // al consumir todos los eventos y vaciarse los NoteOffs
+  // pendientes se emite un evento kLoop (el bridge debe
+  // restaurar CC7/CC10 al snapshot de inicio de bucle, ver
+  // LoopCc7/LoopCc10) y la iteracion siguiente arranca en
+  // el mismo Advance: las notas del bucle vuelven a salir
+  // en orden, sin hueco ni nota cortada.
   void Advance(double dt_seconds, std::vector<Event>* out);
   bool Active() const { return active_; }
-  // Terminada: todos los eventos consumidos (notas y CC).
+  // Terminada: todos los eventos consumidos (notas y CC) y
+  // ningun NoteOff pendiente. Con bucle nunca es terminal:
+  // solo Stop() (o un nuevo Start) termina la cancion.
   bool Finished() const {
-    return song_ != nullptr && next_note_ >= song_->note_count &&
-           next_cc_ >= song_->cc_count;
+    return song_ != nullptr && !song_->HasLoop() &&
+           next_note_ >= song_->note_count &&
+           next_cc_ >= song_->cc_count && pending_offs_.empty();
+  }
+  // Vueltas de bucle completadas desde Start().
+  uint64_t Loops() const { return loops_; }
+  // Snapshot CC7/CC10 vigente en el tiempo de la nota de
+  // bucle (ultimo CC <= ese tiempo por canal, o preset
+  // 127/64 si no hay): el bridge lo restaura al ver kLoop.
+  // Sin bucle, el preset.
+  uint32_t LoopCc7(uint32_t midi) const {
+    return midi < 16 ? loop_cc7_[midi] : 127;
+  }
+  uint32_t LoopCc10(uint32_t midi) const {
+    return midi < 16 ? loop_cc10_[midi] : 64;
   }
   const MusyxSong* Song() const { return song_; }
   double CurrentTick() const { return tick_; }
@@ -108,6 +153,10 @@ class MusyxSequencer {
   double elapsed_ = 0.0;
   size_t next_note_ = 0;
   size_t next_cc_ = 0;
+  uint64_t loops_ = 0;
+  // Snapshot CC de inicio de bucle (ver LoopCc7/LoopCc10).
+  uint32_t loop_cc7_[16] = {};
+  uint32_t loop_cc10_[16] = {};
   // NoteOffs pendientes, ordenados por tick de fin.
   std::vector<std::pair<double, size_t>> pending_offs_;
   bool active_ = false;

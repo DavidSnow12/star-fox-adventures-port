@@ -26,6 +26,10 @@ bool GameCubeRuntime::Init() {
   audio_.Init();
   audio_.Start();
   audio_bridge_.SetAudio(&audio_);
+  // Tramo 8: RAM huésped para leer SynthPlayParams en OnSeqPlay
+  // (speed/mutes/volumen de sndSeqPlayEx). Sin esta línea,
+  // params = defaults v1 (sin rotura).
+  audio_bridge_.SetGuestRam(memory_.RamData(), memory_.RamSize());
   input_.Reset();
   // Fase 6b: el estado PAD que escribe Input (eventos Android)
   // es el que lee PADRead en el HLE. Sin este cable, Input y

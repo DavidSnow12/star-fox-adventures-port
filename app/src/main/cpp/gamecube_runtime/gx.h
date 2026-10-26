@@ -412,6 +412,15 @@ struct GxCopy {
   uint64_t fifo_offset = 0;
   uint32_t reg49 = 0, reg4a = 0, reg4b = 0, reg4d = 0, reg52 = 0;
   bool has49 = false, has4a = false, has4b = false, has4d = false;
+  // Tramo 8: filtro de copia BP 0x53/0x54 vigente en el
+  // disparo (GXSetCopyFilter 0x80259A64; YAGCD: 0x53/0x54
+  // = copy filter). Valores crudos, sin decodificar a
+  // coeficientes: el empaquetado de GXSetCopyFilter (7
+  // bytes vfilter -> 2 palabras, o defecto 0x595000 /
+  // 0x000015 si vfilter es nulo) no esta invertido del
+  // todo; el censo Tramo 8 los mide, no los interpreta.
+  uint32_t reg53 = 0, reg54 = 0;
+  bool has53 = false, has54 = false;
 };
 
 struct GxTexLoad {
@@ -451,11 +460,20 @@ struct GxTexLoad {
 //  - tex_dest_hint: HIPOTESIS por correlacion perfecta
 //    en trazas (195 run39 + 24922 run19): bit 16 a 1
 //    <=> destinos 0x0Bxxxx (texturas); a 0 <=> XFB
-//    (0x020000/0x0252A8). NO probado por desensamblado
-//    (GXCopyTex 0x80259E18 no alcanza su escritura
-//    0x52 en los 0x100 B desensamblados).
+//    (0x020000/0x0252A8). Tramo 8 refina el desensamblado:
+//    GXCopyDisp 0x80259CA8 y GXCopyTex 0x80259E18 (tamano
+//    completo, no 0x100 B) solo fuerzan bit 14 (ori
+//    0x4000) en la sombra 0x52; el bit 16 NO lo pone el
+//    codigo de copia: llega en la sombra 0x1ec/0x1fc
+//    (destino/formato, GXSetDispCopyDst/GXSetTexCopyDst)
+//    o en el arg desplazado, sin decodificar aun cual
+//    campo lo fija. La hipotesis sigue siendo solo
+//    correlacion, no hecho.
 //  - low52 (bits 0..13 salvo exec): SIN DECODIFICAR
-//    (formato/filtro/clear; pendiente GXSetCopyFilter).
+//    (formato/clear). El filtro NO va en low52: va en
+//    BP 0x53/0x54 (GXSetCopyFilter 0x80259A64, Tramo 8:
+//    defecto 0x595000/0x000015 si vfilter nulo; con
+//    vfilter, empaquetado de 7 bytes sin invertir).
 struct EfbCopyDecoded {
   bool execute = false;
   bool has_dest = false;
@@ -468,6 +486,9 @@ struct EfbCopyDecoded {
   int src_x = 0, src_y = 0;
   bool tex_dest_hint = false;
   uint32_t low52 = 0;
+  // Tramo 8: filtro vigente (crudo, ver GxCopy).
+  bool has_filter = false;
+  uint32_t filter53 = 0, filter54 = 0;
 };
 
 inline EfbCopyDecoded DecodeEfbCopy(const GxCopy& c) {
@@ -496,7 +517,75 @@ inline EfbCopyDecoded DecodeEfbCopy(const GxCopy& c) {
     d.src_x = static_cast<int>(c.reg49 & 0x3FFu);
     d.src_y = static_cast<int>((c.reg49 >> 10) & 0x3FFu);
   }
+  if (c.has53 && c.has54) {
+    d.has_filter = true;
+    d.filter53 = c.reg53;
+    d.filter54 = c.reg54;
+  }
   return d;
+}
+
+// --- Plan de copia EFB (Tramo 8, puro, sin formato) ---
+//
+// La copia de pixeles tiene dos partes separables:
+// (a) el trazado de filas (independiente del formato:
+//     origen fila a fila, destino con pitch = stride),
+//     implementado aqui y probado en host; (b) la
+//     conversion de formato + filtro (EFB -> YUY2/RGB565/
+//     textura + coeficientes 0x53/0x54), NO implementada:
+//     los bits de formato de low52 no estan decodificados
+//     y el filtro solo se guarda crudo (ver GxCopy).
+// PlanEfbCopy valida (a) para un bytes_per_pixel dado
+// por el llamador (el llamador, no esta funcion, decide
+// el formato: 2 para XFB RGB565/YUY2 640, etc.): sin
+// exec, sin destino/tamano/stride, destino fuera de
+// MEM1 (0x80000000-0x81800000), stride menor que la
+// fila, o copia que excede la RAM dada -> false.
+// CopyEfbRows copia filas con pitches distintos
+// (src_pitch, dst_pitch = stride): el nucleo de (a).
+struct EfbCopyPlan {
+  uint32_t dest_offset = 0;  // dest_guest - 0x80000000
+  int row_bytes = 0;
+  int total_bytes = 0;
+};
+
+inline bool PlanEfbCopy(const EfbCopyDecoded& d, uint32_t ram_size,
+                        int bytes_per_pixel, EfbCopyPlan* plan) {
+  if (plan == nullptr) return false;
+  if (!d.execute || !d.has_dest || !d.has_size || !d.has_stride)
+    return false;
+  if (d.dest_guest < 0x80000000u ||
+      d.dest_guest >= 0x81800000u)
+    return false;
+  if (d.width <= 0 || d.height <= 0 || bytes_per_pixel <= 0)
+    return false;
+  int row = d.width * bytes_per_pixel;
+  if (d.stride_bytes < row) return false;
+  uint32_t off = d.dest_guest - 0x80000000u;
+  uint64_t total =
+      static_cast<uint64_t>(d.stride_bytes) *
+      static_cast<uint64_t>(d.height - 1) +
+      static_cast<uint64_t>(row);
+  if (off + total > ram_size) return false;
+  plan->dest_offset = off;
+  plan->row_bytes = row;
+  plan->total_bytes = static_cast<int>(total);
+  return true;
+}
+
+inline bool CopyEfbRows(const uint8_t* src, int src_pitch,
+                        uint8_t* dst, int dst_pitch, int row_bytes,
+                        int height) {
+  if (src == nullptr || dst == nullptr) return false;
+  if (src_pitch < row_bytes || dst_pitch < row_bytes ||
+      row_bytes <= 0 || height <= 0)
+    return false;
+  for (int y = 0; y < height; ++y) {
+    for (int x = 0; x < row_bytes; ++x)
+      dst[static_cast<size_t>(y) * dst_pitch + x] =
+          src[static_cast<size_t>(y) * src_pitch + x];
+  }
+  return true;
 }
 
 struct GxStats {

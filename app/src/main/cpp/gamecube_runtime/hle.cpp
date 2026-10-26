@@ -96,6 +96,9 @@ constexpr HleEntry kHleTable[] = {
     {Hle::kCardGetStatus, "CARDGetStatus"},
     {Hle::kCardSetStatus, "CARDSetStatus"},
     {Hle::kCardGetSerialNo, "CARDGetSerialNo"},
+    // Tramo 8: al final para no mover los indices de
+    // log_count_ de las entradas anteriores.
+    {Hle::kArqReadDeliveryTrampoline, "ARQReadTrampoline"},
 };
 
 const char* FindHleName(uint32_t address) {
@@ -1287,6 +1290,128 @@ void Hle::WriteThreadGuestFields(CpuState* cpu, ThreadEntry* t) {
 
 
 bool Hle::HandleHostCall(CpuState* cpu, uint32_t address) {
+  // Entrega ARQ de lectura (Tramo 8, desbloqueo de Music).
+  // Problema medido (Tramo 7, G1/G2/G4): el juego alloca
+  // canales de musica (tracks 22 y 95) en status=4
+  // esperando el DMA ARAM, pero el HLE no entrega el
+  // callback ARQ de lectura, asi que
+  // Music_ChannelLoadedCallback nunca corre y sndSeqPlayEx
+  // del juego es 0. Cadena verificada en codigo huesped:
+  //   Music_LoadChannelForTrigger (0x8000B0F0) ->
+  //   AudioAramReadAllocAsync (0x80008DF4) -> ARQPostRequest
+  //   (0x802516D4, codigo huesped) con r3 = entrada del
+  //   juego (pool 0x803372A0, 16 x 0x30), r6 = dir (1 =
+  //   ARAM->MRAM, lectura; el propio ARQPostRequest hace
+  //   cmpwi r6,1 para elegir cola), r10 = callback del
+  //   servicio ARQ (0x80008EDC, AudioAramReadComplete-
+  //   Callback, que busca la entrada por puntero y llama
+  //   a su callback +32 con +36/+40/+44 como args).
+  // Mecanica (sin RunChassis anidado y sin perder el hook
+  // de audio del chassis, a diferencia del diseno
+  // HLE-ARQ-READ-DELIVERY del Tramo 7, que proponia
+  // snapshot/restore alrededor de un redespacho):
+  //   1. En la entrada a ARQPostRequest se encola la
+  //      peticion si dir==1 y callback==0x80008EDC (solo
+  //      lecturas de audio; las escrituras y otras
+  //      lecturas quedan como antes).
+  //   2. En el SIGUIENTE host_call (dolrecomp_call
+  //      consulta host_call en CADA despacho, asi que
+  //      esto ocurre en el despacho siguiente al post,
+  //      dentro o justo despues de ARQPostRequest), se
+  //      redirige: se guardan todos los registros en un
+  //      marco, pc = 0x80008EDC, r3 = peticion,
+  //      lr = trampolin 0x8000300C, y se devuelve true.
+  //      El chassis despacha entonces el callback como
+  //      codigo huesped normal (el hook de audio ve el
+  //      sndSeqPlayEx real que sigue, sin intervencion).
+  //   3. El blr del callback aterriza en el trampolin:
+  //      se restaura TODO el registro guardado, pc =
+  //      direccion interceptada, lr = lr original, y se
+  //      devuelve true: el punto interceptado se despacha
+  //      entonces con normalidad (HLE o chunk original).
+  // Por que es seguro interrumpir en cualquier punto:
+  // el callback solo toca estado de musica en RAM
+  // (status/seqHandle del canal), el bridge por el hook
+  // y scratch de pila (restaurado via r1 en el marco);
+  // NO toca la cola ARQ ni los registros que
+  // ARQPostRequest aun no ha terminado de usar, porque
+  // todos se restauran en el trampolin. La RAM no se
+  // restaura a proposito: los efectos del callback SON
+  // la entrega. Si el callback a su vez postea otra
+  // lectura, la pila LIFO la anida correctamente (el
+  // trampolin desapila en orden inverso); en la practica
+  // la cola nunca acumula mas de una peticion, porque
+  // cada post va seguido de un despacho que la entrega.
+  // Sin marco en el trampolin: error interno ruidoso
+  // (exception), igual que el trampolin DVD.
+  if (address == kArqReadDeliveryTrampoline) {
+    if (arq_read_frames_.empty()) {
+      SFA_LOGE("hle: ARQReadTrampoline sin marco: error "
+               "interno, exception");
+      cpu->exception = 1;
+      return true;
+    }
+    ArqReadFrame frame = arq_read_frames_.back();
+    arq_read_frames_.pop_back();
+    ++arq_read_trampolines_;
+    for (int i = 0; i < 32; ++i) {
+      cpu->gpr[i] = frame.gpr[i];
+      cpu->fpr[i] = frame.fpr[i];
+      cpu->ps1[i] = frame.ps1[i];
+    }
+    cpu->ctr = frame.ctr;
+    cpu->cr = frame.cr;
+    cpu->xer = frame.xer;
+    cpu->fpscr = frame.fpscr;
+    cpu->msr = frame.msr;
+    cpu->srr0 = frame.srr0;
+    cpu->srr1 = frame.srr1;
+    cpu->dar = frame.dar;
+    cpu->dsisr = frame.dsisr;
+    cpu->ear = frame.ear;
+    for (int i = 0; i < 16; ++i) cpu->sr[i] = frame.sr[i];
+    for (int i = 0; i < 8; ++i) cpu->gqr[i] = frame.gqr[i];
+    cpu->pc = frame.resume_pc;
+    cpu->lr = frame.resume_lr;
+    SFA_LOGI("hle: ARQ lectura retornada (peticion 0x%08X, "
+             "reanudada 0x%08X, marcos %zu)",
+             frame.req, frame.resume_pc, arq_read_frames_.size());
+    return true;
+  }
+  if (!arq_read_pending_.empty()) {
+    uint32_t req = arq_read_pending_.front();
+    arq_read_pending_.erase(arq_read_pending_.begin());
+    ArqReadFrame frame;
+    for (int i = 0; i < 32; ++i) {
+      frame.gpr[i] = cpu->gpr[i];
+      frame.fpr[i] = cpu->fpr[i];
+      frame.ps1[i] = cpu->ps1[i];
+    }
+    frame.ctr = cpu->ctr;
+    frame.cr = cpu->cr;
+    frame.xer = cpu->xer;
+    frame.fpscr = cpu->fpscr;
+    frame.msr = cpu->msr;
+    frame.srr0 = cpu->srr0;
+    frame.srr1 = cpu->srr1;
+    frame.dar = cpu->dar;
+    frame.dsisr = cpu->dsisr;
+    frame.ear = cpu->ear;
+    for (int i = 0; i < 16; ++i) frame.sr[i] = cpu->sr[i];
+    for (int i = 0; i < 8; ++i) frame.gqr[i] = cpu->gqr[i];
+    frame.resume_pc = address;
+    frame.resume_lr = cpu->lr;
+    frame.req = req;
+    arq_read_frames_.push_back(frame);
+    ++arq_read_delivered_;
+    cpu->gpr[3] = req;
+    cpu->lr = kArqReadDeliveryTrampoline;
+    cpu->pc = kArqReadCompleteCb;
+    SFA_LOGI("hle: ARQ lectura entregada (peticion 0x%08X, "
+             "interceptada 0x%08X, pendientes %zu)",
+             req, address, arq_read_pending_.size());
+    return true;
+  }
   // Evento DSP (Fase 5, desbloqueo salInitDsp): NO es una
   // sustitucion de funcion, sino la entrega del evento que el
   // DSP real produciria. Cadena verificada en el chunk_0160:
@@ -1356,6 +1481,31 @@ bool Hle::HandleHostCall(CpuState* cpu, uint32_t address) {
   // intra-chunk (sin despacho) no pasan por este gancho.
   if (address == kArqPostRequest) {
     ++pending_arq_completions_;
+    // Tramo 8: encolar lecturas de audio para la entrega
+    // por trampolin (ver bloque al inicio de esta
+    // funcion). r6 = dir (1 = ARAM->MRAM), r10 = callback
+    // del servicio ARQ, r3 = peticion del juego. El
+    // contador de la Fase 5 se mantiene igual que antes
+    // (tambien cuenta las lecturas): no se cambia su
+    // drenaje para no alterar aramInit/upload/sync.
+    if (cpu->gpr[6] == 1 && cpu->gpr[10] == kArqReadCompleteCb) {
+      uint32_t req = cpu->gpr[3];
+      bool dup = false;
+      for (uint32_t p : arq_read_pending_) {
+        if (p == req) dup = true;
+      }
+      if (!dup && arq_read_pending_.size() < 64) {
+        arq_read_pending_.push_back(req);
+        ++arq_read_queued_;
+        SFA_LOGI("hle: ARQ lectura encolada (peticion 0x%08X, "
+                 "pendientes %zu)",
+                 req, arq_read_pending_.size());
+      } else {
+        SFA_LOGI("hle: ARQ lectura NO encolada (peticion "
+                 "0x%08X, duplicada o cola llena)",
+                 req);
+      }
+    }
   } else if (address == kAramInitSpinHead && pending_arq_completions_ != 0) {
     DrainArqCompletions(cpu, cpu->gpr[30], "aramInit");
   } else if (address == kAramUploadWaitHead &&
