@@ -5025,13 +5025,16 @@ La cuestión 1367 sigue abierta.
 
 ## APK de prueba GX18 (Fase 18, PRUEBA — NO jugable)
 
-`android-port-base/app-debug-gx18-test.apk` (verificar tamaño y
-SHA tras el commit en el informe del coordinador):
+`android-port-base/app-debug-gx18-test.apk`, 12.608.032 B,
+SHA-256 `4ba9be852667bb2f71b74dba8542190f9da51c8ec517de58b9f1386bf696a70e`
+(commit `c06b795`, push verificado con `git ls-remote`):
 `com.starfox.port` v9 / `0.9.0-gx18-test`, apksigner Verifies
 (v2+v3, 1 firmante, alias test), zipalign OK, manifiesto
 minSdk 26 / targetSdk 34 / arm64-v8a / debuggable (build de
 prueba expresa, como GX16), `lib/arm64-v8a/libstarfox.so`
-interior idéntico al build NDK de este tramo (TEV + ADP +
+interior 27.687.048 B, SHA-256
+`df5ce0250a1161fd81eee278e5e1b19404348166f56064a1e1b96b1dc6fa0ef4`,
+idéntico al build NDK de este tramo (TEV + ADP +
 rumble fase A + hook FX). Sin datos del juego dentro.
 Etiqueta: PRUEBA — clear + quad + TEV multi-etapa por
 generador (con las limitaciones documentadas: order/ksel
