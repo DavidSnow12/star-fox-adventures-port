@@ -124,6 +124,16 @@ class Hle {
   static constexpr uint32_t kDvdClose = 0x80249610u;
   static constexpr uint32_t kDvdReadAsyncPrio = 0x80249858u;
   static constexpr uint32_t kDvdReadPrio = 0x80249948u;
+  // Fase 16: DVDPrepareStreamAsync (SDK de streams). AudioStream_Play
+  // NO usa DVDReadAsyncPrio: llama a DVDPrepareStreamAsync con
+  // r3 = fileInfo y r6 = AudioStream_PrepareCallback (0x8000D5FC),
+  // que el SDK guarda en fileInfo+56 y entregaria por interrupcion
+  // DI tras DVDLowAudioStream. Como el host no modela DI, esa
+  // entrega nunca llegaba y preparing quedaba en 340 para siempre.
+  // El HLE intercepta esta funcion y entrega el callback por el
+  // trampolin DVD existente (ver hle.cpp). Entrega sincrona
+  // inmediata, no interrupcion diferida: documentada como tal.
+  static constexpr uint32_t kDvdPrepareStreamAsync = 0x80249A84u;
   // Trampolin de callbacks DVD (Fase 15): PC sintetico, mismo
   // patron que el trampolin VI (0x80003000) y la salida de
   // hilo (0x80003004). NUNCA es codigo real (el DOL empieza
@@ -524,6 +534,8 @@ class Hle {
   // HLE y se marca como exception en el handler, no se
   // ignora en silencio.
   uint64_t DvdCallbackTrampolines() const { return dvd_trampolines_; }
+  // Entregas de PrepareCallback por DVDPrepareStreamAsync (Fase 16).
+  uint64_t DvdPrepareCallbacks() const { return dvd_prepare_callbacks_; }
   size_t DvdCallbackTrampolineDepth() const {
     return dvd_callback_stack_.size();
   }
@@ -731,6 +743,7 @@ class Hle {
   // Pila de trampolines DVD pendientes (Fase 15) + contador.
   std::vector<DvdCallbackFrame> dvd_callback_stack_;
   uint64_t dvd_trampolines_ = 0;
+  uint64_t dvd_prepare_callbacks_ = 0;
   void TryLoadFst();
   bool LookupFst(const std::string& name, uint32_t* disc_offset,
                  uint32_t* length) const;

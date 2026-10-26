@@ -249,7 +249,7 @@ ChassisResult RunChassis(CpuState* cpu, Hle* hle,
          pc == 0x80273218u ||  // sndFXStartEx
          pc == 0x8027C34Cu)) {  // sndSeqPlayEx
       audio_hook(pc, cpu->gpr[3], cpu->gpr[4], cpu->gpr[5],
-                 audio_hook_user);
+                 cpu->gpr[6], cpu->gpr[7], audio_hook_user);
     }
     if (cpu->downcount < 0) cpu->downcount = 0;
     // Timebase simulado (Fase 5, desbloqueo AI): +200 por

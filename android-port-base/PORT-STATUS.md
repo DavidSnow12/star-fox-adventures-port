@@ -161,6 +161,39 @@ el host aún no entrega, y 10 `audioUpdate` no lo
 mueven. APK de prueba GX15 en la rama. Ver
 «Fase 15».
 
+**Fase 16 (2026-10-26, este tramo): completitud
+async DVDLow CERRADA en test host + corrección
+SFX (variantes, no 4 sonidos) + hook de audio
+ampliado a r6/r7.** El parche HLE de
+`DVDPrepareStreamAsync` (0x80249A84) entrega
+`PrepareCallback` por el trampolín existente y
+`StartPrepared` deja el estado exacto del
+arranque: `currentId` = 340 (= índice 339+1 de
+1301, NO 1301), `playing` = 1, `preparing` /
+`prepared` / diferido / `IsPreparing` en 0, sin
+exception, con guarda anti-doble-entrega
+(segunda entrega no re-despacha y no borra el
+estado). Test host `test_fase16` TODO OK (ver
+«Fase 16»). Dos trampas del test aislado,
+documentadas porque son del harness, no del
+runtime: sin `AIInit` previo, las constantes
+SRC quedan a 0 y `__AI_SRC_INIT` cicla sin fin;
+sin bit FP en MSR, el `lfs` de `StartPrepared`
+da exception FP-unavailable (0x20, vector
+0x800) — en el arranque real AIInit corre en el
+boot y el juego habilita FP en su `__start`.
+Además: `OnSfxTrigger` ya no encola 4 muestras
+en serie; reproduce solo la primera variante no
+nula (los 4 campos de `Sfx.bin` son variantes
+alternativas por pesos, no sonidos simultáneos;
+trigger 13 → muestra 175 única, verificada) y
+el hook pasa r6/r7 al bridge (hoy registrados,
+pendiente resolver la tabla FX antes de cablear
+`sndFXStartEx` por ID FX). Mezcla de voces y
+bucles por metadato quedan para la Fase 17;
+payload de audio, TEV multi-etapa, rumble y APK
+jugable siguen pendientes. Ver «Fase 16».
+
 ## Qué funciona (verificado)
 
 - Base Android: NativeActivity, `android_main`, loop, ciclo de vida
@@ -4443,3 +4476,344 @@ se construyó con el JDK del sistema).
 6. TEV multi-etapa, rumble y APK 100% jugable
    (sin cambios en esta fase; ver «Fase 13»,
    punto 6).
+
+## Fase 16 (este tramo): completitud async DVDLow + SFX variante única + hook r6/r7
+
+Trabajo en `android-port-base` solo; `main` intacto en
+`18ac28e`. Test host fuera del repo
+(`work-port/fase2-tests/test_fase16.cpp`, compilado con el
+patrón de `build_phase15.sh`: C host con
+`compile-host-c.sh` + runtime C++ + bridge, enlazado con
+`obj-host/*.o`; se ejecuta desde la raíz del repo para que
+`assets/extraidos/audio` resuelva el WAV de la muestra 175).
+
+### 1. Parche DVDLow: `DVDPrepareStreamAsync` por el trampolín
+
+Ficheros: `app/src/main/cpp/gamecube_runtime/hle.{h,cpp}`
+(nueva constante `kDvdPrepareStreamAsync` = 0x80249A84,
+entrada en `kHleTable`, contador `dvd_prepare_callbacks_`
++ accessor `DvdPrepareCallbacks()`; nuevo caso en
+`HandleHostCall` antes de `kDvdCallbackTrampoline`).
+Lógica, verificada contra el código huésped de
+`DVDPrepareStreamAsync` en
+`codigo/generated/chunks/chunk_0145_text1_802466E0.c`
+(r6 guardado en r30, r3 = fileInfo en r27):
+
+- Callback == 0 → retorno 1 sin despacho (camino síncrono
+  sin cambios).
+- `IsPreparing (0x803DE209) == 0` y `preparing
+  (0x803DE230) == 0` → retorno 1 SIN re-entrega (guarda
+  anti-doble-entrega: una segunda entrega borraría B,
+  B = A = 0, y `StartPrepared` posterior ya no arrancaría
+  nunca).
+- En otro caso: escribe `fileInfo+56 = callback`, apila un
+  marco LIFO en la pila del trampolín existente
+  (`return_pc = lr`, `restore_r3 = 0`, fileInfo, callback),
+  incrementa el contador, pone r3 = 0, r4 = fileInfo,
+  pc = callback, lr = `kDvdCallbackTrampoline`.
+
+El parche NO escribe `gameState`, ni D, ni F en RAM: la
+precondición `gameState == 1` queda documentada en el
+comentario del caso, no forzada (si no lo es, es un
+segundo bloqueador aguas arriba, no un fallo de la
+entrega). Entrega síncrona inmediata, no interrupción
+diferida: la variante diferida fiel exigiría un trampolín
+sintético nuevo, diseño nuevo, no parche mínimo. El
+`restore_r3` = 0 es inocuo en entrega inmediata porque
+`Play` sobrescribe r3 en 0x8000D54C; en una entrega
+diferida futura deberá ser el r3 que el código
+interrumpido esperaba.
+
+### 2. Test host Fase 16: TODO OK (cifras)
+
+Estado presetado como lo dejaría `Play(1301)` real
+(r13 = 0x803E4B40, r1 = 0x80400000 en arena libre,
+r2 = 0x803E4B40, gameState = 1, A = 340, E = 1,
+B = C = D = F = 0, G = 0), más dos precondiciones de
+arranque que el test aislado debe poner explícito
+(ver punto 3):
+
+- `AIInit (0x80250458)` llega al centinela en 109
+  despachos, sin exception, `bound_32KHz` bajo != 0.
+- HLE intercepta `DVDPrepareStreamAsync`: pc = callback
+  0x8000D5FC, lr = trampolín DVD, `fileInfo+56` =
+  callback, contador Prepare = 1, pila trampolín = 1.
+- `PrepareCallback` llega al centinela en 4 despachos,
+  sin exception: A = 0, B = 340, E = 0, D = 0, F = 0,
+  pila trampolín vacía. Exactamente el estado
+  «preparado, no sonando» del informe DVDLow.
+- `StartPrepared (0x8000D158)` llega al centinela en 11
+  despachos, sin exception: D = 340, F = 1 (playing),
+  A = B = C = E = 0.
+- Observadores: `GetCurrentId (0x8000CFB8)` = 340 (NO
+  1301: 340 es índice 339+1, como predijo el informe),
+  `IsPreparing (0x8000CFC0)` = 0.
+- Guarda anti-doble-entrega: segunda intercepción
+  manejada, pc = centinela sin re-despachar, contador
+  sigue en 1, D = 340, F = 1 intactos.
+- SFX (bridge, sin juego): `OnSfxTrigger(13)` encola
+  exactamente 1 entrada,
+  `wav = "musyx/starfoxm/0175_SFXsc_gemrun1022.wav"`,
+  22050 Hz mono, 79068 frames a 48 kHz;
+  `OnSfxTrigger(45)` encola 0 y queda no resuelto.
+
+### 3. Dos trampas del test aislado (harness, no runtime)
+
+1. Sin `AIInit` previo, `bound_32KHz` / `bound_48KHz` /
+   `min_wait` / `max_wait` quedan a 0 y `__AI_SRC_INIT`
+   (0x8025072C, al que llama `AISetStreamPlayState`
+   desde `StartPrepared`) rechaza siempre la medición
+   del contador de muestras 0xCC006C08 y cicla sin fin
+   (primer intento del test: 100.000 despachos con
+   cap, PC final 0x802507A0, r3 = contador = 0x3DB6,
+   timebase 20.000.800). El comentario de
+   `InitCpuForBoot` ya lo advertía: AIInit lee el bus
+   162 MHz de 0x800000F8 y deriva las constantes SRC
+   antes de llamar a `__AI_SRC_INIT`. En el arranque
+   real AIInit corre en el boot, mucho antes del
+   audio; el test lo despacha explícito. NO es un
+   fallo del parche DVDLow.
+2. Sin bit FP en MSR, el `lfs` de `StartPrepared`
+   (0x8000D1C0, tras `AISetStreamPlayState`) da
+   exception FP-unavailable (0x20, vector 0x800, lr =
+   0x8000D1B8, F ya en 1, D aún en 0). `InitCpuForBoot`
+   deja msr = 0; en el arranque real el juego
+   habilita FP en su `__start`. El test pone
+   `cpu.msr = 0x2000u` (PPC_BIT(18)) explícito, con
+   comentario. Tampoco es un fallo del parche.
+
+### 4. Corrección SFX y hook ampliado
+
+- `app/src/main/cpp/audio/audio_bridge.cpp`:
+  `OnSfxTrigger` reproduce SOLO la primera variante no
+  nula y hace `break`, con comentario Fase 16
+  explicando que los 4 campos son variantes, no 4
+  sonidos, y TODO pendiente: pesos + volRand/pitchRand
+  en `audio_id_map.h` y selección ponderada real. Para
+  triggers de variante única (un solo campo no nulo)
+  la primera variante ES la única, sin ambigüedad.
+- Hook ampliado a r6/r7 (sin cableado de sonido nuevo
+  todavía): `gamecube_runtime/chassis.h` (typedef
+  `AudioEntryHook` ahora con r3–r7), `chassis.cpp`
+  (pasa `gpr[6]`, `gpr[7]`), `runtime.cpp`
+  (`AudioHookTrampoline` con r6/r7),
+  `audio/audio_bridge.h/.cpp` (`OnAudioEntry` con
+  r6/r7 por defecto 0, hoy ignorados salvo registro
+  en `CountedEntries`). Necesario porque
+  `sndFXStartEx` usa r6 como índice de tabla y
+  `sndSeqPlayEx` reenvía r7.
+- BLOQUEADOR antes de cablear el hook de
+  `sndFXStartEx` por ID FX: el bridge traduce hoy
+  trigger → campo → WAV buscando el campo como ID
+  de muestra, pero el código huésped muestra que
+  ese campo entra a `dataGetFX` y la muestra real
+  es el descriptor FX[2]; si la tabla FX no es la
+  identidad, el bridge sonará con el WAV equivocado
+  aunque el trigger sea correcto. Falta: volcado de
+  la tabla FX en RAM guest tras `sndInit` + traza
+  PCTRACE del primer SFX real (base aproximada
+  0x803CB7D8 según el cálculo de `dataGetFX`).
+  `sndSeqPlayEx` NO se cablea a WAV: es secuenciador
+  (`.pro`/`.poo` + `midi.wad`), no fichero de audio.
+
+### 5. Análisis GX/TEV y payload de audio (de este tramo, sin código todavía)
+
+- Addendum GX/TEV (trabajo de análisis, fuera del
+  repo): conteos estáticos en los 176 chunks
+  (`GXSetNumTevStages` 59, `GXSetTevOrder` 222,
+  `GXCopyDisp` 1, `GXCopyTex` 9,
+  `GXLoadTexObjPreLoaded` 36, `PADControlMotor` 5,
+  `GXSetBlendMode` 92, `GXSetAlphaCompare` 76,
+  `GXSetZMode` 60, `GXSetFog` 21, `GXSetTevIndirect`
+  47). Matiz que cambia el orden: la TEV multi-etapa
+  no es solo post-filtro; las etapas de mundo
+  (`addCastShadowTevStages` 0x80050300,
+  `addProjectedLightTevStage` 0x8005073C,
+  `addShadowFalloffTevStages` 0x8004D414,
+  `setupCausticBaseTevStages` 0x8004CFF0,
+  `setupHeatShimmerTevStages` 0x8004DC38, etc.)
+  son sombreado del mundo y deben ir antes que el
+  TEV indirecto de agua/distorsión, tras la cadena
+  PREV básica. «1-2 etapas bastan para la primera
+  jugable» se mantiene. Implementación futura: el
+  generador de shader debe leer los registros BP
+  ColorIn/AlphaIn/ColorOp/AlphaOp por etapa
+  (`GXSetTevColorIn` 241, `GXSetTevAlphaIn` 219,
+  `GXSetTevColorOp` 209, `GXSetTevAlphaOp` 206),
+  no apoyarse en `GXSetTevOp` (solo 3 sitios).
+- Payload de audio por tiers (propuesto, NO
+  construido ni subido): Pack B base 235 MiB + Tier
+  0 SFX solo (816 WAV MusyX, 25,4 MiB) ≈ 260 MiB;
+  Tier 1 primer tramo (Tier 0 + ADP de
+  `streams/TTH/`, 108 MiB) ≈ 368 MiB; Tier 1-WAV
+  ≈ 508 MiB; completo (ADP 521 MiB + `.sam` 14,6
+  MiB + `.sdi` 108 KiB) ≈ 771 MiB. Recomendación:
+  ADP en dispositivo con caché PCM (ahorro ~1,3
+  GiB frente a WAV), portando a C++ los dos
+  decodificadores hoy solo en Python
+  (`herramientas/audio/extract_audio.py`: ADP DTK
+  y DSP-ADPCM). Sin payload, la APK no suena
+  aunque el código esté cableado.
+
+### 6. Qué queda (tras Fase 16, en orden)
+
+1. Mezcla de voces 8 SFX + 1 stream en paralelo
+   (clamp int16, contador `dropped_`, descarte sin
+   robo en paso 1) y bucles por metadato del
+   inventario (321/1472 muestras MusyX; 0/958
+   streams), sin inferir flags FX `0xC000`.
+2. Resolver la tabla FX (volcado + traza PCTRACE)
+   y cablear el hook de `sndFXStartEx` por ID FX;
+   primer SFX real del juego por el bridge.
+3. Secuencias MusyX + DSP (música: NO sonará en
+   el paso SFX/streams; solo SFX + streams de
+   voz/ambiente).
+4. Payload de audio en Pack B (o decodificación
+   ADP en dispositivo) — punto 5.
+5. TEV multi-etapa (etapas de mundo primero),
+   rumble y resto de GX/HLE para un frame jugable
+   completo.
+6. La cuestión 1367 sigue abierta (id no en
+   tabla; no inventar qué es) y la APK jugable
+   candidata exige, además de lo anterior, input
+   efectivo y juego real con audio en Tab S8.
+
+## Fase 17 (este tramo): mezcla de voces 8 SFX + 1 stream + bucles por metadato
+
+Trabajo en `android-port-base` solo; `main` intacto en
+`18ac28e`. Test host fuera del repo
+(`work-port/fase2-tests/test_fase17.cpp`, mismo patrón de
+compilación que `test_fase16`; se ejecuta desde la raíz
+del repo para que `assets/extraidos/audio` resuelva los
+WAV). La Fase 16 ya está cerrada y en verde; esta fase
+cambia el bridge, no el parche DVDLow.
+
+### 1. Modelo de voces (sustituye la cola serial)
+
+Ficheros: `app/src/main/cpp/audio/audio_bridge.{h,cpp}`,
+`app/src/main/cpp/audio/audio_id_map.h` (regenerado, ver
+punto 2), `herramientas/audio/gen_audio_id_map.py`.
+
+- 8 voces SFX + 1 voz de stream, en PARALELO: `Tick()`
+  mezcla un bloque de hasta 4096 frames sumando en
+  int32 por frame (ganancia por voz) y con clamp duro
+  a int16 UNA vez al final (no clamp progresivo por
+  voz: 20000+20000−20000 debe dar 20000, no 12767).
+  Sin normalización por nº de voces, sin compresor
+  en este paso. El volumen maestro lo aplica
+  `Audio::SubmitBuffer` (ya lo hacía); el bridge solo
+  aplica vol/127 en SFX para no aplicarlo dos veces.
+- Voz de stream única: un nuevo `Play` la SUSTITUYE,
+  no se encola detrás (el juego tiene un solo stream
+  actual). `OnStreamStop()` detiene SOLO la voz de
+  stream: corrección frente a la cola serial anterior,
+  que vaciaba también los SFX en curso.
+- Voces SFX llenas (8 ocupadas): el nuevo SFX se
+  DESCARTA y se cuenta en `DroppedSfx()` (paso 1, sin
+  robo). El robo por antigüedad/volumen es el paso
+  siguiente, una vez medido qué voces conviven en
+  trazas reales.
+- Ganancia SFX: `vol_base/127` del trigger
+  (`SfxTriggerEntry.vol_base`; pitch se ignora en
+  este paso, como en Fase 16).
+
+### 2. Bucles por metadato (no por flags FX)
+
+El generador ahora emite en `MusyxSampleEntry` dos
+campos nuevos, `loop_start` y `loop_len`, en frames
+de la fuente, desde `analisis/audio.csv`
+(`loop_inicio`/`loop_longitud`; 0,0 = sin bucle).
+Regeneración verificada: 1472 muestras, 820 streams,
+1205 triggers, 0 muestras referenciadas sin WAV; el
+diff del header es solo la estructura + las 1472
+líneas de muestras (321 con bucle, como el
+inventario). El bridge reescala el bucle a 48 kHz al
+encolar (`loop_48k = loop_fuente × 48000 / rate`,
+recortado al total resampleado por redondeo).
+Semántica: al llegar a `loop_start + loop_len`, la
+posición vuelve a `loop_start` (se repite la región,
+NO se reinicia desde 0); la cola tras el fin del
+bucle nunca se alcanza en bucle (ej. muestra 175:
+bucle fuente [18273, 35556) en 36322 frames; a
+48 kHz [39777, 77399) en 79068 frames; cola de
+1669 frames no jugada en bucle). La voz en bucle
+solo para por stop/robo, nunca por EOF. Sin bucle,
+termina en EOF. NO se infieren flags FX (bits
+0xC000 de `synthStartSound`, probablemente tipo de
+muestra/bucle, sin verificar): el bucle es opt-in
+por metadato.
+
+### 3. Test host Fase 17: TODO OK (cifras)
+
+- Paralelo SFX: trigger 25 (44094 frames) + trigger
+  35 (14506 frames) a la vez → entregados = 44094
+  = max, NO 58600 = suma; entregados = drenados,
+  0 descartados en backend.
+- Stream + SFX: stream 1 (258048 frames) + trigger
+  25 → tras superar la longitud del SFX queda
+  exactamente 1 voz activa (el stream);
+  `OnStreamStop()` deja 0 voces; se entregó más que
+  el SFX solo.
+- Voces llenas: 8 triggers no en bucle
+  (25, 35, 1, 14, 19, 2, 3, 5) ocupan las 8 voces; el
+  9º (trigger 8) no encola, `DroppedSfx()` = 1, sin
+  entrada `Played` nueva por el descartado.
+- Bucle: trigger 13 → muestra 175, 79068 frames a
+  48 kHz; tras entregar 86016 frames (> longitud
+  total) la voz SIGUE activa y su posición es
+  48394, dentro de [39777, 77399); `OnSfxStop()`
+  la vacía. Regresión: `test_fase16` recompilado
+  contra el nuevo bridge (su layout cambió) sigue
+  TODO OK.
+- NO verificado por contenido: la ganancia
+  vol/127 y la forma de onda mezclada (el backend
+  host solo cuenta frames, no expone PCM); solo
+  está verificado por código + conteos de frames.
+  La escucha real exige payload + Tab S8.
+
+### 4. Qué queda (tras Fase 17, en orden)
+
+1. Resolver la tabla FX (volcado + traza PCTRACE)
+   y cablear el hook de `sndFXStartEx` por ID FX;
+   primer SFX real del juego por el bridge.
+2. Secuencias MusyX + DSP (música: NO sonará en
+   el paso SFX/streams; solo SFX + streams de
+   voz/ambiente).
+3. Payload de audio en Pack B (o decodificación
+   ADP en dispositivo) — sin eso la APK no suena
+   aunque el código esté cableado.
+4. TEV multi-etapa (etapas de mundo primero),
+   rumble y resto de GX/HLE para un frame jugable
+   completo.
+5. La cuestión 1367 sigue abierta (id no en
+   tabla; no inventar qué es) y la APK jugable
+   candidata exige, además de lo anterior, input
+   efectivo y juego real con audio en Tab S8.
+
+### 5. APK de prueba GX16 (Fase 16+17, PRUEBA — NO jugable)
+
+`android-port-base/app-debug-gx16-test.apk`
+(**12.595.878 B**, SHA-256
+`7c5ade4a5ed263e25c4e02af16bd8c2d9089b69bb322ff4e19b835e3498e5673`,
+`com.starfox.port` v8 / `0.8.0-gx16-test`):
+apksigner Verifies (v2+v3, 1 firmante), zipalign OK,
+manifiesto minSdk 26 / arm64-v8a / debuggable (build
+de prueba expresa, como GX15), `lib/arm64-v8a/
+libstarfox.so` interior 27.616.864 B, SHA-256
+`34cec2a7e518970fb766ab766afe157f6f153d4cd14182f7becd8df3ed8a73c5`
+(idéntico al build NDK Fase 16+17: AArch64,
+`android_main` en T, 0 símbolos
+`mem_`/`ppc_`/`func_`/`dolrecomp_` sin resolver, 191
+undefined solo de libs del sistema), más
+`libc++_shared.so` 9.236.352 B. Sin datos del juego
+dentro. Etiqueta: PRUEBA — clear + quad + SAF +
+táctil + CARD + bridge con mezcla de voces y bucles
+en host, pero inerte sin `sfa-data/audio`; nunca
+jugable sin juego completo. Nota de entorno: el JDK
+del sistema desapareció con el reemplazo de VM (apt
+del sistema con el bloqueo tomado); la APK se
+construyó con Temurin 21.0.13 descargado por curl a
+`~/tools/jdk-21.0.13+9` (persiste en `~/tools/`, a
+diferencia de /usr); el JDK parcial de
+`~/tools/jdk21` NO sirve (le falta `java.security`
+y `javac` falla en `SecurityProperties`).

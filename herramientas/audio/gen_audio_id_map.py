@@ -110,8 +110,13 @@ def main():
         key = (parts[2] + "/" + parts[3].rsplit(".", 1)[0]).lower()
         wav_by_key.setdefault(key, row["salida"])
 
-    # Inventario MusyX: muestra_id -> salida.
+    # Inventario MusyX: muestra_id -> salida, y bucle en
+    # frames de la fuente (loop_inicio/loop_longitud del
+    # inventario; 0,0 = sin bucle). Fase 17: el bridge usa
+    # estos metadatos para repetir la región del bucle, no
+    # flags FX (bits 0xC000 sin verificar, no inferir).
     sample_wav = {}
+    sample_loop = {}
     for row in rows:
         if not row["salida"].startswith("musyx/"):
             continue
@@ -120,6 +125,12 @@ def main():
         except (ValueError, TypeError):
             continue
         sample_wav[mid] = row["salida"]
+        try:
+            ls = int(row["loop_inicio"] or 0)
+            ll = int(row["loop_longitud"] or 0)
+        except ValueError:
+            ls, ll = 0, 0
+        sample_loop[mid] = (ls, ll) if ll > 0 else (0, 0)
 
     stream_map = []      # (id, wav)
     stream_unmatched = []  # (id, nombre, motivo)
@@ -178,10 +189,11 @@ def main():
             f.write("    {%d, %d, %d, {%d, %d, %d, %d}},\n"
                     % (tid, vol, pitch, ss[0], ss[1], ss[2], ss[3]))
         f.write("};\n\n")
-        f.write("struct MusyxSampleEntry {\n  uint16_t id;\n  const char* wav;\n};\n\n")
+        f.write("struct MusyxSampleEntry {\n  uint16_t id;\n  const char* wav;\n  uint32_t loop_start;  // Frames fuente (0,0 = sin bucle).\n  uint32_t loop_len;\n};\n\n")
         f.write("static const MusyxSampleEntry kMusyxSampleMap[] = {\n")
         for mid, wav in sample_map:
-            f.write('    {%d, "%s"},\n' % (mid, wav))
+            ls, ll = sample_loop.get(mid, (0, 0))
+            f.write('    {%d, "%s", %d, %d},\n' % (mid, wav, ls, ll))
         f.write("};\n\n}  // namespace sfa\n")
 
     with open(out_csv, "w", newline="", encoding="utf-8") as f:

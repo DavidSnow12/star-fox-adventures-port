@@ -29,6 +29,7 @@ constexpr HleEntry kHleTable[] = {
     {Hle::kDvdClose, "DVDClose"},
     {Hle::kDvdReadAsyncPrio, "DVDReadAsyncPrio"},
     {Hle::kDvdReadPrio, "DVDReadPrio"},
+    {Hle::kDvdPrepareStreamAsync, "DVDPrepareStreamAsync"},
     {Hle::kDvdCallbackTrampoline, "DVDTrampoline"},
     {Hle::kViInit, "VIInit"},
     {Hle::kViWaitForRetrace, "VIWaitForRetrace"},
@@ -1825,6 +1826,68 @@ bool Hle::HandleHostCall(CpuState* cpu, uint32_t address) {
                "nulo (sin despacho)",
                got);
       return Return(cpu, got >= 0 ? 1u : 0u);
+    }
+    case kDvdPrepareStreamAsync: {
+      // Fase 16: entrega de AudioStream_PrepareCallback.
+      // AudioStream_Play (0x8000D220) llama aqui con r3 = fileInfo
+      // y r6 = callback (0x8000D5FC, verificado en el codigo huesped:
+      // DVDPrepareStreamAsync guarda r6 en r30 y lo pasa a la cola
+      // SDK, que lo escribiria en fileInfo+56). El host no modela
+      // la cola SDK ni la interrupcion DI, asi que sin esta
+      // intercepcion el callback nunca corre y preparing queda
+      // atascado (A=340, E=1). Se entrega por el mismo trampolin
+      // DVD de la Fase 15: el callback vuelve aqui, se restaura
+      // r3 = 0 (exito; PrepareCallback ignora r3/r4) y se salta
+      // al retorno original de Play, que es la continuacion
+      // DVDStopStreamAtEndAsync. Esa continuacion sobrescribe r3
+      // antes de usarlo, asi que restore_r3 es inocuo aqui.
+      // Guarda contra doble entrega: si IsPreparing (byte
+      // 0x803DE209) ya es 0 y preparing (0x803DE230) ya es 0, no
+      // hay nada que mover; re-entregar borraria prepared
+      // (B = A = 0) y StartPrepared posterior ya no arrancaria.
+      // En ese caso se retorna 1 sin despachar, como el SDK.
+      // Precondicion NO escrita por el parche: gameState
+      // (0x803DE3FD) debe ser 1 para que PrepareCallback mueva
+      // A->B; si no lo es, PrepareCallback limpiara E dejando
+      // A=340, y eso es un bloqueador aguas arriba, no un fallo
+      // de esta entrega (ver PORT-STATUS Fase 16).
+      uint32_t fileinfo = cpu->gpr[3];
+      uint32_t callback = cpu->gpr[6];
+      if (callback == 0) {
+        SFA_LOGI("hle: DVDPrepareStreamAsync sin callback "
+                 "(fileInfo 0x%08X): retorno 1",
+                 fileinfo);
+        return Return(cpu, 1u);
+      }
+      uint32_t preparing = ::mem_read32(cpu, 0x803DE230u);
+      uint32_t is_preparing = ::mem_read8(cpu, 0x803DE209u);
+      if (cpu->exception != 0) cpu->exception = 0;
+      if (is_preparing == 0 && preparing == 0) {
+        SFA_LOGI("hle: DVDPrepareStreamAsync ya entregado "
+                 "(preparing=0, IsPreparing=0): sin re-entrega "
+                 "(fileInfo 0x%08X, callback 0x%08X)",
+                 fileinfo, callback);
+        return Return(cpu, 1u);
+      }
+      cpu->exception = 0;
+      ::mem_write32(cpu, fileinfo + 56u, callback);
+      if (cpu->exception != 0) cpu->exception = 0;
+      DvdCallbackFrame frame;
+      frame.return_pc = cpu->lr;
+      frame.restore_r3 = 0u;
+      frame.fileinfo = fileinfo;
+      frame.callback = callback;
+      dvd_callback_stack_.push_back(frame);
+      ++dvd_prepare_callbacks_;
+      SFA_LOGI("hle: DVDPrepareStreamAsync: callback 0x%08X "
+               "despachado via trampolin (fileInfo 0x%08X, "
+               "retorno 0x%08X)",
+               callback, fileinfo, frame.return_pc);
+      cpu->gpr[3] = 0u;
+      cpu->gpr[4] = fileinfo;
+      cpu->pc = callback;
+      cpu->lr = kDvdCallbackTrampoline;
+      return true;
     }
     case kDvdCallbackTrampoline: {
       // Fase 15, segundo tiempo de la entrega DVD: el blr

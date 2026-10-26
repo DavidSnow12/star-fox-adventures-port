@@ -92,8 +92,15 @@ void InitCpuForBoot(CpuState* cpu, uint8_t* ram, uint32_t ram_size,
 // ID -> WAV (audio_bridge.h); el test host, para el mismo
 // bridge. Sin hook, el juego corre exactamente igual que
 // antes (las fases 2-13 no lo pasaban).
+// Fase 16: el hook lleva r3-r7 (antes solo r3-r5). sndFXStartEx
+// necesita r6 (indice de tabla, ver audio_id_map / informe Fase 16)
+// y sndSeqPlayEx reenvia r7/r8; sin r6/r7 el hook nacia cojo.
+// Los llamadores antiguos que pasaban solo r3-r5 se actualizan
+// en chassis.cpp y runtime.cpp; el bridge ignora r6/r7 hasta que
+// la tabla FX este resuelta, pero ya no se pierden.
 using AudioEntryHook = void (*)(uint32_t pc, uint32_t r3,
                                 uint32_t r4, uint32_t r5,
+                                uint32_t r6, uint32_t r7,
                                 void* user);
 
 // Bucle principal. stop_pc=0 desactiva la parada por hito (el

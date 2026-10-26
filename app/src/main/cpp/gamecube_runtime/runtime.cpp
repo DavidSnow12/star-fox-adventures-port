@@ -12,9 +12,10 @@ namespace {
 // bridge del runtime. Sin WAV en el root, el bridge es
 // inerte (ver audio_bridge.h).
 void AudioHookTrampoline(uint32_t pc, uint32_t r3, uint32_t r4,
-                         uint32_t r5, void* user) {
+                         uint32_t r5, uint32_t r6, uint32_t r7,
+                         void* user) {
   auto* bridge = static_cast<AudioBridge*>(user);
-  if (bridge != nullptr) bridge->OnAudioEntry(pc, r3, r4, r5);
+  if (bridge != nullptr) bridge->OnAudioEntry(pc, r3, r4, r5, r6, r7);
 }
 
 }  // namespace

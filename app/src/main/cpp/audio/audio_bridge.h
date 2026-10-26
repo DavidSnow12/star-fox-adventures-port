@@ -1,8 +1,9 @@
 #pragma once
 
-// Bridge ID -> WAV (Fase 14): conecta las peticiones de sonido
-// del juego con el backend Audio ya definido (AAudio en Android,
-// nulo contable en host), sin tocar el loop del juego.
+// Bridge ID -> WAV (Fases 14, 16, 17): conecta las peticiones
+// de sonido del juego con el backend Audio ya definido
+// (AAudio en Android, nulo contable en host), sin tocar el
+// loop del juego.
 //
 // Como se cablea: el chassis avisa en la entrada de las
 // funciones de audio (hook opcional, ver chassis.h) y el
@@ -12,23 +13,48 @@
 // sonido sombra (el estado del juego no se toca), igual que
 // el backend AAudio no cambia la logica del juego.
 //
-// Que reproduce (verificado en esta fase):
+// Que reproduce (verificado):
 //   - AudioStream_Play (r3 = id de stream, verificado en el
 //     codigo huesped): WAV ADP extraido, 32.000 Hz estereo.
-//   - AudioStream_StopCurrent: detiene la reproduccion en
-//     curso (la del bridge, no la del juego).
+//   - AudioStream_StopCurrent: detiene SOLO la voz de
+//     stream (los SFX siguen; Fase 17 corrige el vaciado
+//     total de la cola serial anterior).
+//   - Triggers SFX por id de Sfx.bin: UNA variante por
+//     disparo (Fase 16: los 4 campos son variantes
+//     alternativas por pesos, no 4 sonidos), ganancia
+//     vol_base/127 (el volumen maestro lo aplica
+//     Audio::SubmitBuffer, no el bridge, para no
+//     aplicarlo dos veces).
 // Que SOLO cuenta (sin reproducir): sndFXStartEx,
 // sndSeqPlayEx, AudioStream_StartPrepared y cualquier otra
 // entrada, porque su layout de argumentos NO esta verificado
-// en esta fase; inventar un trigger seria sonar mal con
-// cara de correcto. Sus IDs quedan en CountedEntries() para
-// la traza, no en PlayedEntries().
-// Que NO hace: mezcla (una sola cola: los sonidos se sirven
-// en orden de llegada; un stream largo y un SFX a la vez
-// sonaran en serie, no mezclados), bucles (los WAV se
-// decodifican una sola pasada, como en la extraccion) ni
-// DSP/MusyX real (secuencias .pro/.poo y midi.wad: fuera,
-// ver PORT-STATUS Fase 14).
+// (sndFXStartEx) o no es un fichero de audio
+// (sndSeqPlayEx: secuenciador .pro/.poo + midi.wad).
+// Sus IDs quedan en CountedEntries() para la traza, no en
+// PlayedEntries().
+// Mezcla (Fase 17): 8 voces SFX + 1 voz de stream, en
+// PARALELO (no en serie): Tick() mezcla un bloque de
+// hasta kFeedFrames sumando en int32 por frame y con
+// clamp duro a int16 (sin wrap, sin normalización por
+// nº de voces, sin compresor). Si las 8 voces SFX están
+// ocupadas, el nuevo SFX se DESCARTA y se cuenta en
+// DroppedSfx() (el robo por antigüedad/volumen es el
+// paso siguiente, una vez medido qué voces conviven en
+// trazas reales). La voz de stream es única: un nuevo
+// Play la sustituye (el juego tiene un solo stream
+// actual), no se encola detrás.
+// Bucles (Fase 17): por metadato del inventario
+// (audio_id_map.h, loop_start/loop_len en frames de la
+// fuente, reescalados a 48 kHz al encolar; 321/1472
+// muestras MusyX, 0/958 streams). Al llegar a
+// loop_start + loop_len, la posición vuelve a
+// loop_start (se repite la región, NO se reinicia
+// desde 0); la cola tras el fin del bucle nunca se
+// alcanza en bucle. La voz en bucle solo para por
+// stop/robo, nunca por EOF. Sin bucle, termina en EOF.
+// NO se infieren flags FX (bits 0xC000 de
+// synthStartSound, probablemente tipo de muestra/bucle,
+// sin verificar).
 //
 // Sin WAV (APK sin payload de audio): las busquedas fallan
 // en la tabla o en LoadWavFile y quedan como no resueltas,
@@ -36,6 +62,7 @@
 // es <base>/sfa-data/audio (ver native-lib); en host, la
 // carpeta assets/extraidos/audio del repo.
 
+#include <array>
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -54,26 +81,33 @@ class AudioBridge {
     wav_root_ = root != nullptr ? root : "";
   }
 
-  // Entradas del hook del chassis (pc + r3/r4/r5 del juego).
-  // Devuelve true si la entrada produjo reproduccion.
+  // Entradas del hook del chassis (pc + r3/r4/r5/r6/r7 del
+  // juego). Devuelve true si la entrada produjo
+  // reproduccion. Fase 16: r6/r7 llegan desde el chassis
+  // (sndFXStartEx usa r6 como indice de tabla;
+  // sndSeqPlayEx reenvia r7). Hoy se registran en
+  // CountedEntries con r3; su uso para resolver FX queda
+  // pendiente de la tabla FX (ver PORT-STATUS).
   bool OnAudioEntry(uint32_t pc, uint32_t r3, uint32_t r4,
-                    uint32_t r5);
+                    uint32_t r5, uint32_t r6 = 0, uint32_t r7 = 0);
 
   // API directa (misma que usa el hook; el test host la usa
   // para verificar la cadena sin depender del juego).
   bool OnStreamPlay(uint32_t stream_id);
-  void OnStreamStop();
-  // Trigger SFX por id de Sfx.bin: encola los WAV de sus
-  // campos de muestra no nulos, en orden. Devuelve el numero
-  // de muestras encoladas (0 = trigger sin muestra directa
-  // o id desconocido; ver UnresolvedEntries()).
+  void OnStreamStop();  // Solo la voz de stream (Fase 17).
+  void OnSfxStop();     // Solo las voces SFX (futuros hooks).
+  // Trigger SFX por id de Sfx.bin: encola UNA variante
+  // (la primera no nula; ver comentario Fase 16 en el .cpp).
+  // Devuelve 1 si se encoló, 0 si no (sin muestra directa,
+  // id desconocido, WAV ilegible o voces llenas).
   int OnSfxTrigger(uint32_t trigger_id);
 
-  // Avance de reproduccion: alimenta hasta kFeedFrames por
-  // llamada desde la cola al backend. En host el test llama
-  // a Tick() + Audio::Pump() en bucle hasta vaciar; en la
-  // APK lo llama GameCubeRuntime::Frame() (el callback
-  // AAudio drena en paralelo).
+  // Avance de reproduccion: mezcla un bloque de hasta
+  // kFeedFrames de todas las voces activas y lo entrega al
+  // backend. En host el test llama a Tick() + Audio::Pump()
+  // en bucle hasta vaciar; en la APK lo llama
+  // GameCubeRuntime::Frame() (el callback AAudio drena en
+  // paralelo).
   void Tick();
 
   struct Played {
@@ -100,30 +134,53 @@ class AudioBridge {
   const std::vector<Unresolved>& UnresolvedEntries() const {
     return unresolved_;
   }
-  // Frames pendientes en la cola (0 = todo entregado al
-  // backend, sin contar lo que el backend aun no dreno).
-  uint64_t QueuedFrames() const { return queued_frames_; }
-  bool QueueEmpty() const { return queue_.empty(); }
+  // Frames pendientes: suma de lo que queda por entregar
+  // en voces no en bucle + (para voces en bucle) lo que
+  // queda hasta el fin de la iteración actual del bucle
+  // (la voz en bucle es infinita en realidad; este número
+  // solo sirve para tests, no como "queda X para terminar").
+  uint64_t QueuedFrames() const;
+  bool QueueEmpty() const { return ActiveVoiceCount() == 0; }
+  // Voces activas (SFX en orden de slot + stream al final
+  // si está activa) y sus posiciones en frames a 48 kHz.
+  // Solo para tests host (verificar mezcla y bucles).
+  size_t ActiveVoiceCount() const;
+  std::vector<uint64_t> ActiveVoicePositions() const;
+  uint64_t DroppedSfx() const { return dropped_sfx_; }
 
  private:
   static constexpr int kFeedFrames = 4096;
+  static constexpr size_t kMaxSfxVoices = 8;
 
-  struct Queued {
+  struct Voice {
     std::vector<int16_t> pcm;  // Estereo s16 a 48.000 Hz.
     size_t pos = 0;            // Frames ya entregados.
+    float gain = 1.0f;         // vol/127 (SFX) o 1.0 (stream).
+    size_t loop_start = 0;     // Frames a 48 kHz (0,0 = no bucle).
+    size_t loop_len = 0;
+    bool active = false;
+    bool HasLoop() const { return loop_len > 0; }
+    size_t Total() const { return pcm.size() / 2; }
+    size_t LoopEnd() const { return loop_start + loop_len; }
   };
 
   const char* LookupStreamWav(uint32_t id) const;
-  const char* LookupSampleWav(uint32_t id) const;
+  const struct MusyxSampleEntry* LookupSampleEntry(
+      uint32_t id) const;
   // Carga un WAV relativo a wav_root_, lo resamplea a
-  // estereo 48.000 Hz y lo encola. Registra Played o
-  // Unresolved segun el caso. Devuelve false si no se pudo.
-  bool EnqueueWav(const char* rel, uint32_t id, const char* kind);
+  // estereo 48.000 Hz y lo encola como voz (stream o SFX).
+  // Registra Played o Unresolved segun el caso. Devuelve
+  // false si no se pudo (incluidas voces SFX llenas, que
+  // además incrementan dropped_sfx_).
+  bool EnqueueWav(const char* rel, uint32_t id, const char* kind,
+                  float gain, size_t loop_start_48k,
+                  size_t loop_len_48k, bool is_stream);
 
   Audio* audio_ = nullptr;
   std::string wav_root_;
-  std::vector<Queued> queue_;
-  uint64_t queued_frames_ = 0;
+  std::array<Voice, kMaxSfxVoices> sfx_voices_;
+  Voice stream_voice_;
+  uint64_t dropped_sfx_ = 0;
   std::vector<Played> played_;
   std::vector<Counted> counted_;
   std::vector<Unresolved> unresolved_;
