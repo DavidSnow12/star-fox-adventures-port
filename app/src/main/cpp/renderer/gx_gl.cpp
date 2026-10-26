@@ -241,6 +241,18 @@ void GxGlRenderer::DrawCheckerQuad() {
   ++quads_drawn_;
 }
 
+void GxGlRenderer::DrawSolidQuad(float x0, float y_top, float x1,
+                                  float y_bot, uint8_t r, uint8_t g,
+                                  uint8_t b) {
+  if (program_ == 0) return;
+  GlQuad q;
+  q.x[0] = x0; q.y[0] = y_top; q.s[0] = 0; q.t[0] = 0;
+  q.x[1] = x1; q.y[1] = y_top; q.s[1] = 1; q.t[1] = 0;
+  q.x[2] = x1; q.y[2] = y_bot; q.s[2] = 1; q.t[2] = 1;
+  q.x[3] = x0; q.y[3] = y_bot; q.s[3] = 0; q.t[3] = 1;
+  DrawQuadVertices(q, 0, false, r, g, b);
+}
+
 void GxGlRenderer::DrawTexturedQuad(const uint8_t* rgba, int width,
                                     int height) {
   if (program_ == 0 || rgba == nullptr || width <= 0 || height <= 0) {

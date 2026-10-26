@@ -84,6 +84,7 @@ void GxParser::SetTexLoads(const std::vector<GxTexLoad>& loads) {
 
 bool GxParser::Parse(const uint8_t* fifo, size_t fifo_len) {
   draws_.clear();
+  copies_.clear();
   fed_draws_.clear();
   pending_.clear();
   stats_ = GxStats();
@@ -109,6 +110,7 @@ bool GxParser::Parse(const uint8_t* fifo, size_t fifo_len) {
 
 void GxParser::ResetFeed() {
   draws_.clear();
+  copies_.clear();
   fed_draws_.clear();
   pending_.clear();
   stats_ = GxStats();
@@ -241,6 +243,28 @@ GxParser::StreamResult GxParser::ParseStream(const uint8_t* data, size_t len,
       uint32_t v = ReadBe32(data + pos + 1);
       bp_[v >> 24] = v & 0xFFFFFF;
       ++stats_.n_bp;
+      // Tramo 6: disparo de copia EFB = escritura BP 0x52 en
+      // el propio FIFO (GXCopyDisp/GXCopyTex; correccion a la
+      // nota Tramo 5 que lo situaba en MMIO PE). Se registra
+      // el evento con los regs de copia vigentes; la copia en
+      // si sigue pendiente (sin buffer EFB en el renderer).
+      if ((v >> 24) == 0x52) {
+        GxCopy c;
+        c.fifo_offset = fifo_offset;
+        c.reg52 = v & 0xFFFFFF;
+        auto take = [&](uint32_t reg, uint32_t* out, bool* has) {
+          auto it = bp_.find(reg);
+          if (it != bp_.end()) {
+            *out = it->second;
+            *has = true;
+          }
+        };
+        take(0x49, &c.reg49, &c.has49);
+        take(0x4A, &c.reg4a, &c.has4a);
+        take(0x4B, &c.reg4b, &c.has4b);
+        take(0x4D, &c.reg4d, &c.has4d);
+        copies_.push_back(c);
+      }
       pos += 5;
       continue;
     }

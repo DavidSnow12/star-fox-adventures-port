@@ -5172,3 +5172,181 @@ MusyX audible en el juego (renders offline 99/74 sí suenan,
 cableado sndSeqPlayEx pendiente), sin juego real con input y
 audio verificado en Tab S8, sin datos dentro (inerte sin
 sfa-data/). La cuestión 1367 sigue abierta.
+
+## Tramo 6 (2026-10-26, coordinador): indirecto TEV real + primer SFX real + sndSeqPlayEx cableado + botón «añadir audio» + datos medidos
+
+Trabajo en 5 vías paralelas, integradas por el coordinador con
+verificación NDK (no se copió ninguna copia entera sobre otra en
+`audio_bridge`, tocado por FX/ADP de Tramo 5 y por MusyX/SFX de
+este tramo; fusión cambio a cambio).
+
+**TEV indirecto real + texgen-POS + Fog + EFB (vía 1, test nuevo
+71 checks 0 fallos; regresión Tramo 5 80 checks 0 fallos, run19
+602/602):** decodificado con evidencia `GXSetIndTexMtx`
+0x8025BBF4 (slots 1→0/2→1/3→2 + alias, BP 0x06+3k..0x08+3k,
+palabra [escala:23-22][fila1:21-11][fila0:10-0], S11 =
+int11/1024, campo escala = (scale_exp+17)&3; cáustica
+0x8004D964: id 2, scale_exp −3 → campo 2),
+`GXSetIndTexCoordScale` 0x8025BD54 (BP 0x25 etapas 0/1, 0x26
+etapas 2/3; cáustica 0x8004D1CC: (0,0,0) → ITS_1/ITS_1),
+`GXSetTevIndirect` 0x8025BB58 (orden de args corregido desde
+el cuerpo SDK; cáustica 0x8004D1FC → palabra 0x270),
+`GXSetTexCoordGen2` 0x80258880 (tabla de saltos guest
+0x8032FF60, XF palabra 1 [src:10-7][hasMatrix 2][forma 1:0],
+palabra 2 postmtx = (w&0xFF)+64, 125 = identidad; el id de
+matriz va en la sombra GX, no en XF; cáustica 0x8004CFF0
+coords 1/2/3 POS mtx 30/33/36, sombra 0x80050300 POS mtx 60
+post global, UI 0x8011E35C TEX0 passthrough) y `GXSetFog`
+0x8025CC44 (A = far/(far−near), B, C, normalización A a
+[0.5,1.0]; BP 0xEE/0xEF/0xF0/0xF1/0xF2; start/end solo con
+near/far conocidos). Implementado: indirecto real bajo gate
+de 12 condiciones (ITF_8, alfa OFF, wraps OFF, add 0, matriz
+presente, escalas ITS_1, mapas/coords válidos, etapa con
+textura; fuera del gate: no-op contado), texgen-POS solo
+GlTri (src POS, 2x4/3x4, postmtx 125, normalize 0; UV desde
+posición post-PNMTX, matriz TnMIDX del vértice o identidad),
+Fog decode + start/end con guarda + snippet GLSL lineal
+(vacío para EXP/EXP2/NONE). **Corrección al Tramo 5:** la nota
+«disparo EFB por MMIO PE, no FIFO» es FALSA — `GXCopyDisp`
+0x80259CA8 y `GXCopyTex` 0x80259E18 escriben solo en FIFO
+0xCC008000; el disparo es escritura BP 0x52 con bit 0x4000
+forzado en la sombra GX (+492), destino BP 0x4B = dest>>5;
+el parser sí observa el disparo como eventos `GxCopy`
+(regs 0x49/0x4A/0x4B/0x4D + offset FIFO). Copia de píxeles
+EFB completa sigue pendiente (sin buffer EFB en el
+renderer). Pendiente con causa: multiplicador del campo de
+escala ind (2 bits, sin determinar en este DOL, se guarda
+crudo), `vFogZ` en `gx_gl.cpp` (cambiaría el formato de
+vértice sin prueba en dispositivo), fog EXP/EXP2, texgen
+no-POS / postmtx ≠ identidad / normalize ≠ 0, indirecto
+fuera del gate, captura FIFO de mundo (sigue sin existir).
+Caveat: texgen-POS cáustica exacto solo si el vértice lleva
+TnMIDX, si no cae a identidad (documentado); sombra mtx 60
+= identidad, exacta.
+
+**Primer SFX real + doblaje (vía 2, test nuevo 41 ok 0 FAIL;
+regresiones Fase 16/17/18-FX 39/36/22, 0 fallos):** causa raíz
+del fallo de Tramo 5: la confirmación del menú exige fade en
+255 y una pulsación A/Start *nueva* después de ese máximo
+(un pulso que empieza con la película se consume en pararla
+y, mantenido, no genera flanco `JustPressed`); la navegación
+no usa D-pad, usa stick analógico, y el título está rotado
+(stick X mueve la selección vertical). Intento C (tarjeta
+fresca, 40M despachos, stick X/A/Start hasta lectura 700):
+**11 llamadas a `sndFXStartEx` 0x80273218, 8 reproducidas,
+y el juego SALIÓ del título (DLL 4 → 7, selección 1 →
+opciones)** — primer SFX: despacho 6.515.026, frame ~17, FX
+411 → muestra 866 (14.943 f), trigger 891
+`menu_fox_select`; luego 782 → 1360 (`pep_snorein`), 379 →
+853 (`crf_babyflute`, confirmación), 778 → 1362
+(`pep_wakeup`), 176 → 865 (`sc_lockedon22`), en DLL 7 791
+→ 1363 (`pep_yawn`) y 176 → 865; 3 descartados en DLL 7 no
+por sonidos ausentes: el harness nunca llama a
+`bridge.Tick()`, así que las 8 voces nunca se liberan
+(pendiente: harness que llame a `Tick()` por frame).
+Intento D (tarjeta Tramo 5 reutilizada, 20M): `CARDCreate =
+0`, 6/6 reproducidos, mismos frames 17 y 114, más `snoreout`
+(783 → 1361) y `slip_fingersnap` (792 → 1402, ×2).
+Doblaje 96/162/820: `fx_double.h` (675→676 muestra 1173,
+669→670 muestra 1172, 595→596 muestra 1147), padre por
+`OnFxStart` exacto + hija por `EnqueueSamplePitched`
+(53.878 Hz para −2 st, 64.072 Hz para −5 st); test anti-eco:
+2 voces, totales distintos (padre 171.723 f, hija 192.751
+f), no un eco. **Decisión de integración: el hook
+`sndFXStartEx` pasa a `OnFxStartDoubled`** (≥1 voz = éxito);
+`OnFxStart` intacto, `OnSfxTrigger` sigue 1 voz a propósito,
+pan de la hija registrado sin aplicar (sin ley de paneo
+validada). `sndSeqPlayEx` seguía en 0 en estos runs y el
+stream 1367 sigue sin resolver.
+
+**sndSeqPlayEx cableado en el port (vía 3, test bridge 50
+checks 0 fallos; NDK 6 TUs de audio limpias):** nuevo
+`audio/musyx_seq.h/.cpp` (ticks/s = BPM×6,4, agenda CC →
+NoteOff → NoteOn ante el mismo tick) y `musyx_notes.h`
+generado desde Tramo 5: 99 (gid 54, BPM 60, 6 notas S797),
+74 (gid 18, BPM 120, 15 notas S1173), 5 (gid 0, BPM 70, 281
+notas, 7 silenciosas huésped excluidas), polifonía máxima
+14 < 16 voces. Bridge: `OnSeqPlay` (hook 0x8027C34C,
+r3=sgid, r4=sid, r6=params registrado pero no leído — sin
+acceso a RAM huésped, speed=256, sin mutes en v1),
+`OnSeqStop` (hook 0x80272F80), 16 voces de música propias
+fuera de 8 SFX + 1 stream; pitch por resampleo, bucle por
+metadato, pan CC10 en note-on, ganancia por bloque de
+mezcla (85 ms) porque las primeras notas de 99/74 arrancan
+con CC7=0 y suben en rampa (fijar ganancia en note-on las
+dejaría mudas). Sintético por la misma vía del chassis:
+99 6/6, 1.153.548 f (23,99 s); 74 15/15, 2.016.326 f
+(41,99 s); 5 281/281, 0 robos, 1.318.912 f (27,43 s);
+canción 42 sin tabla → `unresolved musyx_cancion`.
+**En juego NO se afirma música:** runs 3M y 20M con cero
+`sndSeqPlayEx` reales (causa: el camino
+`Music.bin` → `Music_ChannelLoadedCallback` →
+`sndSeqPlayEx` solo se alcanza al salir de título/atractiva,
+y los runs host no salen de ahí). El cableado queda probado
+por vía sintética esperando esa llamada real. Pendiente:
+bucles de canción, resto de canciones, params reales,
+equivalencia sgid↔gid, pitch-bend/modulación/ADSR/robo/
+release/pan DSP/curvas/solape/portamento/reverb/DSP real.
+
+**Botón «añadir audio» visible (vía 4, test host 52 checks
+0 fallos; NDK 5/5 ficheros 0 warnings; javac API 34 OK):**
+vía nativa, no overlay Java ni Activity completa (un botón
+Java sobre NativeActivity exigiría z-order/foco exactos y
+perder el foco pausaría el juego al tocarlo; la Activity
+completa obligaría a reescribir el glue). Píldora
+centro-inferior x 0,44–0,56 / y 0,92–0,98 (307×96 px en Tab
+S8, 32 px del borde inferior), táctil y dibujo con las
+mismas constantes, dibujada tras los draws GX también sin
+juego. No roba táctil: se consulta antes que el damero,
+solo arma un dedo que baja dentro, soltar fuera cancela,
+multitáctil independiente; margen mínimo medido 0,0400 en
+aspect 1,6 (64 px) y 0,0445 en 16:9; franja superior
+rechazada (gesto de sistema robaría toques en y<0,08 sin
+immersive-sticky). Estados por color + boot.log: ámbar
+fijo = sin audio, ámbar parpadeante = verificando
+(anti-doble-pulso), verde = listo, rojo = error; derivados
+de marcadores, con nuevos `.saf-audio-error` y
+`.saf-audio-cancelled` (sin este último, cancelar dejaba
+la píldora parpadeando hasta reiniciar); pulsar en verde
+reabre el picker; sondeo cada 128 vueltas, nada bloquea el
+loop; `RequestSafAudioPicker` por fin tiene llamador.
+Pendiente honesto: etiqueta de texto en la píldora (GL sin
+fuente; exige overlay Java o fuente bitmap — mitigado con
+color + log + guías), prueba real en Tab S8 (la hará el
+usuario con las guías), rumble positivo (pendiente de un
+`PADControlMotor` real del juego; hoy ningún run lo ha
+llamado, así que el silencio es correcto, no un fallo).
+
+**Datos + pipeline (vía 5, medido hoy, no copiado):** Pack A
+785.986.556 B / 3.874 ficheros (corrección: 3.879 era
+`sys/` + `files/`); Pack B sin `streams/` 239.678.460 B /
+2.916 ficheros; `streams/` 546.308.096 B / 958 ADP; base
+SAF 243.309.656 B / 2.921 ficheros. Pack de test =
+base SAF + overlay Tier 1 (816 WAV MusyX + 231 ADP TTH):
+382.982.980 B (365,24 MiB) / 3.968 ficheros, confirmado por
+tres vías; ZIP Tier 1 medido por streaming 301.444.555 B
+— un solo fichero, sin split; libre recomendado en Tab S8
+≥1,5 GB. Aperturas reales hasta título: 117 ficheros
+distintos (71.705.100 B), todos en Pack B, cero en
+`streams/` — NO es lista mínima (los runs solo llegan a
+título), así que el pack de test sigue siendo Pack B +
+Tier 1. Hallazgo: 5 aperturas fallan por mayúsculas en
+subdirectorio (`gamefront/animcurv.*`, `voxmap.*`,
+`warlock/voxmap.bin`); el juego lo tolera, pendiente del
+runtime, no se arregla renombrando el pack. Pipeline APK
+en `work-port/tramo6-data/build-tramo6-apk.sh` (preflight,
+NDK, validación de símbolos, APK manual, re-validación;
+rechaza etiquetas jugable/playable/release/final; no
+commitea ni pushea). Corrección a la vía 5: el JDK NO
+estaba ausente en la integración (OpenJDK 21 presente en
+esta máquina en el momento del build; la ausencia era del
+entorno de la vía, tras un reemplazo de VM).
+
+**Build Tramo 6 (coordinador, NDK):** 0 errores, 0 símbolos
+mem_/ppc_/func_/dolrecomp_ sin resolver (214 undefined
+solo de sistema), `libstarfox.so` 27.865.152 B, SHA-256
+`04137fe3168dcc7ed6df7eb6cba904f6a202c7c182ff7f80ec90d47c4070683c`,
+ELF64 AArch64, `android_main` y `func_80003100` en T,
+`OnFxStartDoubled` y `OnSeqPlay` en T. APK GX20: ver
+sección siguiente (se añade tras el build en este mismo
+tramo).

@@ -1,6 +1,7 @@
 #include "renderer/gx_translate.h"
 
 #include "gamecube_runtime/gx_texture.h"
+#include "renderer/gx_tev.h"
 
 namespace sfa {
 
@@ -51,9 +52,15 @@ namespace {
 
 // Transformada por vertice (la misma de siempre): pos_matrix
 // 3x4, proyeccion orto o perspectiva, viewport y region EFB
-// (342,342); salida NDC (y arriba).
+// (342,342); salida NDC (y arriba). Si mx_out/my_out/mz_out
+// no son null, devuelven la posicion tras la matriz de
+// posicion (antes de proyeccion): es la entrada POS del
+// texgen (Tramo 6, pipeline GX: el texgen consume la
+// posicion post-PNMTX, no el atributo crudo).
 bool TransformVertex(const GxDraw& draw, const GxVertex& v, int canvas_w,
-                     int canvas_h, float* ndc_x, float* ndc_y) {
+                     int canvas_h, float* ndc_x, float* ndc_y,
+                     float* mx_out = nullptr, float* my_out = nullptr,
+                     float* mz_out = nullptr) {
   const float kEfbX0 = 342.0f;
   const float kEfbY0 = 342.0f;
   float mx = draw.pos_matrix[0] * v.x + draw.pos_matrix[1] * v.y +
@@ -62,6 +69,9 @@ bool TransformVertex(const GxDraw& draw, const GxVertex& v, int canvas_w,
              draw.pos_matrix[6] * v.z + draw.pos_matrix[7];
   float mz = draw.pos_matrix[8] * v.x + draw.pos_matrix[9] * v.y +
              draw.pos_matrix[10] * v.z + draw.pos_matrix[11];
+  if (mx_out != nullptr) *mx_out = mx;
+  if (my_out != nullptr) *my_out = my;
+  if (mz_out != nullptr) *mz_out = mz;
   float xc = 0.0f;
   float yc = 0.0f;
   if (draw.projection_type == 1) {
@@ -97,14 +107,65 @@ bool ApplyTexMatrix(const float m[12], float s, float t, float* s_out,
   return true;
 }
 
+bool ApplyTexMatrixPos(const float m[12], float x, float y, float z,
+                       float* s_out, float* t_out) {
+  if (m == nullptr || s_out == nullptr || t_out == nullptr) return false;
+  float sp = m[0] * x + m[1] * y + m[2] * z + m[3];
+  float tp = m[4] * x + m[5] * y + m[6] * z + m[7];
+  float wp = m[8] * x + m[9] * y + m[10] * z + m[11];
+  if ((m[8] != 0.0f || m[9] != 0.0f || m[10] != 0.0f || m[11] != 0.0f) &&
+      wp != 0.0f) {
+    sp /= wp;
+    tp /= wp;
+  }
+  *s_out = sp;
+  *t_out = tp;
+  return true;
+}
+
 namespace {
 
 // UV final de un vertice para un mapa: UV directa con la
 // matriz TnMIDX del vertice si el draw la trae (distinta de
 // identidad); sin matriz o sin UV en el vertice: UV cruda
 // (0,0 si el vertice no trae esa coord).
-void FinalUv(const GxDraw& draw, const GxVertex& v, int map, float* s_out,
-             float* t_out) {
+// Tramo 6 (texgen-POS): si el draw trae texgen XF para esta
+// coord y es aplicable (fuente POS, forma 2x4/3x4, postmtx
+// identidad, sin normalizar), la UV NO sale del atributo
+// TEX del vertice sino de la posicion post-PNMTX (mx,my,mz)
+// transformada por la matriz TnMIDX del vertice (60 o
+// matriz ausente = identidad). El resto de fuentes/tipos
+// (incluido TEX0 de la UI) conserva el camino anterior.
+// El id de matriz del texgen no esta en XF (shadow GX), asi
+// que la TnMIDX es la unica matriz visible en el stream;
+// si el vertice no trae TnMIDX, la identidad es exacta
+// para la sombra (mtx 60) y una aproximacion documentada
+// para la caustica (mtx 30/33/36) cuando el vertice no la
+// trae (ver informe Tramo 6).
+void FinalUv(const GxDraw& draw, const GxVertex& v, int map, float mx,
+             float my, float mz, float* s_out, float* t_out) {
+  if (map >= 0 && map < 8 && draw.has_texgen[map]) {
+    TexGen tg = DecodeTexGenWord1(draw.texgen_w1[map]);
+    DecodeTexGenWord2(draw.texgen_w2[map], &tg);
+    if (TexGenPosApplicable(tg)) {
+      // Identidad segun forma: 2x4 no divide (fila 3 a
+      // cero); 3x4 identidad divide por z (regla general).
+      float ident[12] = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0};
+      if (tg.type_form == 2) ident[10] = 1;
+      const float* m = ident;
+      int idx = v.tex_mtx_idx_arr[map];
+      if (idx != 60) {
+        auto it = draw.tex_matrices.find(idx);
+        if (it != draw.tex_matrices.end() && it->second.size() == 12)
+          m = it->second.data();
+      }
+      float s = 0.0f, t = 0.0f;
+      ApplyTexMatrixPos(m, mx, my, mz, &s, &t);
+      *s_out = s;
+      *t_out = t;
+      return;
+    }
+  }
   float s = v.has_uv[map] ? v.uv_s[map] : 0.0f;
   float t = v.has_uv[map] ? v.uv_t[map] : 0.0f;
   if (v.has_uv[map]) {
@@ -147,9 +208,12 @@ bool GxDrawToGlTris(const GxDraw& draw, int canvas_w, int canvas_h,
   // NDC por vertice, una sola vez.
   std::vector<float> nx(draw.verts.size());
   std::vector<float> ny(draw.verts.size());
+  std::vector<float> pmx(draw.verts.size());
+  std::vector<float> pmy(draw.verts.size());
+  std::vector<float> pmz(draw.verts.size());
   for (size_t i = 0; i < draw.verts.size(); ++i) {
     TransformVertex(draw, draw.verts[i], canvas_w, canvas_h, &nx[i],
-                    &ny[i]);
+                    &ny[i], &pmx[i], &pmy[i], &pmz[i]);
   }
   auto push_tri = [&](size_t a, size_t b, size_t c) {
     GlTri tri;
@@ -170,7 +234,8 @@ bool GxDrawToGlTris(const GxDraw& draw, int canvas_w, int canvas_h,
       tri.cb1[k] = v.b1 / 255.0f;
       tri.ca1[k] = v.has_color1 ? v.a1 / 255.0f : 1.0f;
       for (int m = 0; m < 8; ++m) {
-        FinalUv(draw, v, m, &tri.uv_s[k][m], &tri.uv_t[k][m]);
+        FinalUv(draw, v, m, pmx[idx[k]], pmy[idx[k]], pmz[idx[k]],
+                &tri.uv_s[k][m], &tri.uv_t[k][m]);
       }
     }
     tri.tex_obj = draw.tex_obj;

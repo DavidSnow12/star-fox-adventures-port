@@ -88,6 +88,27 @@ void Renderer::DrawTestQuad() {
   gx_gl_.DrawCheckerQuad();
 }
 
+void Renderer::DrawAudioButton(AudioState state) {
+  if (display_ == EGL_NO_DISPLAY || !gx_gl_ready_) return;
+  // Fracciones -> NDC (y hacia arriba en GL): el rectangulo
+  // tactil kAudioBtn* es el rectangulo dibujado, sin copias
+  // de constantes. Borde oscuro ligeramente mayor + interior
+  // de color segun estado (ver audio_button.h).
+  auto to_ndc_x = [](float fx) { return 2.0f * fx - 1.0f; };
+  auto to_ndc_y = [](float fy) { return 1.0f - 2.0f * fy; };
+  const float x0 = to_ndc_x(sfa::kAudioBtnX0);
+  const float x1 = to_ndc_x(sfa::kAudioBtnX1);
+  // y0 es el borde SUPERIOR en pantalla (y menor) -> NDC mayor.
+  const float y_top = to_ndc_y(sfa::kAudioBtnY0);
+  const float y_bot = to_ndc_y(sfa::kAudioBtnY1);
+  gx_gl_.DrawSolidQuad(x0 - 0.01f, y_top + 0.01f, x1 + 0.01f,
+                       y_bot - 0.01f, 20, 20, 30);
+  const bool blink_on = (audio_frame_ / 30) % 2 == 0;
+  ++audio_frame_;
+  const AudioButtonColor c = AudioButtonColorFor(state, blink_on);
+  gx_gl_.DrawSolidQuad(x0, y_top, x1, y_bot, c.r, c.g, c.b);
+}
+
 int Renderer::DrawGxFrame(const std::vector<GxDraw>& draws,
                           const uint8_t* ram, size_t ram_size) {
   if (display_ == EGL_NO_DISPLAY || !gx_gl_ready_) return 0;

@@ -197,10 +197,15 @@ struct TevStage {
   // asignar (no se usa en el generador).
   int ind_flag19 = 0;
   // Mapa/coord indirectos resueltos desde BP 0x27 (-1 si 0x27
-  // ausente). La perturbacion GLSL NO esta implementada
-  // (falta matriz/escala ind: GXSetIndTexMtx 0x8025BBF4 y
-  // GXSetIndTexCoordScale 0x8025BD54 sin decodificar);
-  // has_indirect solo cuenta el no-op, ver gx_tev.h.
+  // ausente). Tramo 6: la perturbacion GLSL esta implementada
+  // SOLO bajo el gate de IndPerturbGate (gx_tev.h: formato
+  // ITF_8, alfa OFF, wrap OFF, add 0, matriz ind presente en
+  // BP 0x06-0x0E y escalas de coord ITS_1); fuera del gate la
+  // etapa sigue en no-op contado (indirect_noop) y se suma a
+  // indirect_gated_out. El multiplicador del campo de escala
+  // de 2 bits de la matriz ind NO se aplica (sin determinar
+  // desde este DOL: el SDK mapea scale_exp s8 a 2 bits con
+  // (scale_exp+17)&3; ver informe Tramo 6).
   int ind_texmap = -1, ind_texcoord = -1;
 };
 struct TevState {
@@ -213,6 +218,21 @@ struct TevState {
   float konst[4][4] = {};
   float regcolor[4][4] = {};
   // Tablas swap por defecto = valores GXInit (ver cabecera).
+  // Tramo 6: matrices indirectas decodificadas de BP
+  // 0x06-0x0E (GXSetIndTexMtx 0x8025BBF4: 3 palabras por
+  // matriz, 2 valores S11/1024 por palabra, campo de escala
+  // de 2 bits en [23:22] de cada palabra; los 3 campos de
+  // una matriz deben coincidir o la matriz se marca
+  // ausente) y escalas de coord indirecta de BP 0x25/0x26
+  // (GXSetIndTexCoordScale 0x8025BD54: 4 bits por componente;
+  // etapa 0/1 en 0x25, 2/3 en 0x26). Layout por matriz k:
+  // [m00 m01 m02 m10 m11 m12] (fila 0 = m00,m01,m02).
+  float ind_mtx_vals[3][6] = {};
+  bool ind_mtx_present[3] = {false, false, false};
+  int ind_mtx_scale[3] = {0, 0, 0};  // campo crudo [23:22]
+  int ind_scale_s[4] = {0, 0, 0, 0};
+  int ind_scale_t[4] = {0, 0, 0, 0};
+  bool ind_scale_present[4] = {false, false, false, false};
   int swap_tables[4][4] = {{0, 1, 2, 3},
                            {0, 0, 0, 3},
                            {1, 1, 1, 3},
@@ -248,17 +268,26 @@ struct TevState {
 //   scissor 0x20/0x21 (GXSetScissor 0x8025DC94):
 //     0x20 = (x+342)<<12 | (y+342),
 //     0x21 = (x+w-1+342)<<12 | (y+h-1+342).
-//   fog 0xEE-0xF2: SOLO snapshot crudo + contador. GXSetFog
-//     (0x8025CC44) empaqueta A/B/C con normalizacion de
-//     exponente y start/end no son recuperables de las
-//     palabras sin invertir ese empaquetado (codigo de
-//     emision 0x8025CD58-0x8025CDCC sin decodificar): un fog
-//     adivinado seria peor que ninguno.
-//   copia 0x49/0x4D (+0x4A crudo): SOLO snapshot. El disparo
-//     de copia (GXCopyDisp 0x80259CA8 / GXCopyTex 0x80259E18)
-//     va por MMIO del PE, no por FIFO: el parser no puede
-//     emitir un evento GxCopy; haria falta instrumentacion
-//     HLE/dispatch en otro tramo (ver informe Tramo 5).
+//   fog 0xEE-0xF2: Tramo 6 decodificado (GXSetFog 0x8025CC44,
+//     ver renderer/gx_tev.h: DecodeFogWords + FogStartEnd):
+//     0xEE = campo C' (top 20 bits del float C/2^exp),
+//     0xEF = mantisa entera de A (A_norm * 8388638.0),
+//     0xF0 = exponente r30, 0xF1 = tipo[23:21] + campo B
+//     (top 20 bits), 0xF2 = color RGB. A = far/(far-near),
+//     B = start/(end-start),
+//     C = far*near/((far-near)*(end-start)); start/end se
+//     recuperan solo si se conocen near/far (típicamente los
+//     de la proyección) y A es consistente con ellos.
+//   copia 0x49/0x4A (+0x4B/0x4D en el evento): CORRECCION
+//     Tramo 6 a la nota Tramo 5: el disparo NO va por MMIO
+//     del PE, sino por el propio stream FIFO: GXCopyDisp
+//     0x80259CA8 y GXCopyTex 0x80259E18 escriben SOLO en
+//     0xCC008000 (FIFO) y la ultima palabra BP es el reg
+//     0x52 con el bit 0x4000 (ejecutar) forzado; el parser
+//     emite un GxCopy por cada escritura BP 0x52 (ver
+//     GxParser::Copies()). La copia EFB completa (leer EFB,
+//     filtrar, escribir XFB/textura) sigue pendiente: no hay
+//     buffer EFB en el renderer.
 struct GxBlendState {
   bool present = false;
   bool enable = false, logic = false, subtract = false;
@@ -333,11 +362,16 @@ struct GxDraw {
   // Texgen XF por coord (GXSetTexCoordGen2: palabra 1 en
   // XF 0x1040+coord, palabra 2 en 0x1050+coord). has_texgen
   // false = XF sin esa palabra (sin texgen para la coord).
-  // El id de matriz del texgen (palabra 2) NO esta decodificado
-  // todavia: la matriz aplicada en traduccion es la TnMIDX
-  // del vertice (ver gx_translate.h); si el vertice no trae
-  // TnMIDX, la UV va sin matriz (el fallback texgen queda
-  // pendiente, ver informe Tramo 5).
+  // Tramo 6: palabra 1 = [src:10-7][hasMatrix:2]
+  // [forma:1-0] (0 = MTX2x4, 2 = MTX3x4); palabra 2 =
+  // (postmtx-64)[7:0] + normalize[8]. El id de matriz del
+  // texgen (arg mtx de GXSetTexCoordGen2) va al shadow GX
+  // +128/+132, NO a palabras XF: el parser no lo ve; la
+  // matriz aplicada en traduccion es la TnMIDX del vertice
+  // (60 = identidad), ver gx_translate.h. Texgen-POS
+  // (src 0) con postmtx identidad y normalize 0 se aplica
+  // en el traductor (GlTri); resto de fuentes/tipos quedan
+  // como antes (UV directa).
   uint32_t texgen_w1[8] = {0, 0, 0, 0, 0, 0, 0, 0};
   uint32_t texgen_w2[8] = {0, 0, 0, 0, 0, 0, 0, 0};
   bool has_texgen[8] = {false, false, false, false,
@@ -356,6 +390,19 @@ struct GxDraw {
 };
 
 // Carga de textura externa (la que registra el HLE GXLoadTexObj).
+// Evento de copia EFB (Tramo 6): una escritura BP 0x52 en el
+// stream FIFO. Los regs 0x49/0x4A/0x4B/0x4D son los valores
+// BP vigentes en ese momento (0x4B bajo = destino >> 5, ver
+// GXCopyDisp: 0x4B = (dest>>5)&0xFFFFFF; 0x52 bit 0x4000 =
+// ejecutar). has_* = false si ese reg no se habia escrito
+// antes del disparo. La copia en si (leer EFB y escribir el
+// destino) NO esta implementada: este evento solo la marca.
+struct GxCopy {
+  uint64_t fifo_offset = 0;
+  uint32_t reg49 = 0, reg4a = 0, reg4b = 0, reg4d = 0, reg52 = 0;
+  bool has49 = false, has4a = false, has4b = false, has4d = false;
+};
+
 struct GxTexLoad {
   uint64_t fifo_offset = 0;
   uint32_t tex_obj = 0;
@@ -425,6 +472,8 @@ class GxParser {
   void AppendTexLoads(const std::vector<GxTexLoad>& loads);
 
   const std::vector<GxDraw>& Draws() const { return draws_; }
+  // Eventos de copia EFB del stream (Tramo 6, uno por BP 0x52).
+  const std::vector<GxCopy>& Copies() const { return copies_; }
   const GxStats& Stats() const { return stats_; }
   const std::map<uint32_t, uint32_t>& CpRegs() const { return cp_; }
   const std::map<uint32_t, uint32_t>& BpRegs() const { return bp_; }
@@ -486,6 +535,7 @@ class GxParser {
   RamReader ram_reader_;
   std::vector<GxTexLoad> tex_loads_;
   std::vector<GxDraw> draws_;
+  std::vector<GxCopy> copies_;
   GxStats stats_;
   std::map<uint32_t, uint32_t> cp_;
   std::map<uint32_t, uint32_t> bp_;

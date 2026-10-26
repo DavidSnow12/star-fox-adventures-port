@@ -93,6 +93,12 @@ class GxGlRenderer {
 
   // Quad de prueba procedural (damero). Solo diagnostico.
   void DrawCheckerQuad();
+  // Tramo 6: quad de color plano en NDC (x0,y_top,x1,y_bot,
+  // y hacia arriba). Reutiliza DrawQuadVertices con
+  // use_tex=false: sin textura nueva ni shader nuevo.
+  // No-op si el programa no esta listo.
+  void DrawSolidQuad(float x0, float y_top, float x1, float y_bot,
+                     uint8_t r, uint8_t g, uint8_t b);
   // Un quad a pantalla completa con una textura RGBA dada.
   void DrawTexturedQuad(const uint8_t* rgba, int width, int height);
   // Dibuja los draws GX traducibles de la lista. Devuelve el

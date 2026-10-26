@@ -22,6 +22,21 @@
 //   base = internalDataPath o externalDataPath (interna
 //   preferida, la misma que usa SetCardPath para memcard-a.raw).
 //   Sin datos: clear + quad de prueba, sin fallo. Con picker
+//   Boton "anadir audio" (Tramo 6, via nativa): la pildora
+//   inferior-centro (input/audio_button.h) la intercepta
+//   Input ANTES que el layout del juego; su disparo lo drena
+//   el bucle principal y llama a RequestSafAudioPicker (el
+//   mismo JNI/SAF ya probado del Tramo 5). El estado visible
+//   (sin audio / verificando / audio listo / error) NO se
+//   adivina: se deriva de marcadores — .saf-audio-done y el
+//   nuevo .saf-audio-error que Java escribe al fallar — mas
+//   un escaneo inicial de audio/ (un Pack B que ya trajera
+//   audio no tiene marcador y debe verse como listo). El
+//   sondeo corre TAMBIEN con el juego cargado (a diferencia
+//   de PollSafResult, que solo vigila sin juego): anadir
+//   audio a mitad de sesion es el caso de uso. Nada bloquea
+//   el loop: el picker es async (runOnUiThread + hilo de
+//   fondo Java) y el sondeo son dos fopen cada 128 vueltas.
 //   SAF (Fase 13): si no hay datos en el primer arranque, se
 //   pide la carpeta al usuario por JNI; cuando Java termina la
 //   copia y escribe .saf-copy-done, el bucle principal carga
@@ -33,11 +48,17 @@
 #include <jni.h>
 
 #include <cstdio>
+#include <cstring>
 #include <string>
+
+#include <dirent.h>
+#include <sys/stat.h>
 
 #include <android/native_window.h>
 
 #include "gamecube_runtime/rumble_jni.h"
+#include "input/audio_button.h"
+#include "input/audio_state_fs.h"
 #include "gamecube_runtime/runtime.h"
 #include "log.h"
 #include "platform/platform.h"
@@ -63,6 +84,14 @@ struct AppState {
   bool saf_done_seen = false;
   bool saf_error_seen = false;
   int poll_counter = 0;
+  // Tramo 6 — estado del boton de audio (ver audio_button.h).
+  // Verifying es volatil por ejecucion: nunca se persiste y
+  // se rederiva en INIT_WINDOW (InitAudioState). Los *_seen
+  // evitan re-loguear el mismo marcador en cada sondeo.
+  sfa::AudioState audio_state = sfa::AudioState::kNoAudio;
+  bool audio_done_seen = false;
+  bool audio_error_seen = false;
+  int audio_poll_counter = 0;
 };
 
 bool FileExists(const std::string& path) {
@@ -161,21 +190,21 @@ void RequestSafPicker(struct android_app* app) {
 // Pide el picker SAF de audio a MainActivity por JNI
 // ("anadir audio", Tramo 5): mismo patron que
 // RequestSafPicker, pero metodo requestAudioFolder().
-// [[maybe_unused]] deliberado: todavia no hay llamador.
-// No se auto-dispara en ningun punto del bucle (un picker
-// que se abriera solo en mitad de partida seria peor que
-// no tener boton): el llamador sera el overlay de
-// ajustes cuando exista; la via Java (picker -> copia
-// solo-audio -> verificacion -> .saf-audio-done) esta
-// completa y el juego ya cargado lee el audio nuevo en
-// vivo (el bridge reconstruye su indice ADP al primer
-// fallo de busqueda). No se ha robado ninguna zona
-// tactil del juego para este picker.
-[[maybe_unused]] void RequestSafAudioPicker(struct android_app* app) {
+// Tramo 6: YA TIENE llamador (la pildora nativa: el bucle
+// drena TakeAudioButtonTrigger() y llama aqui). Devuelve
+// true solo si el picker quedo solicitado; false pone al
+// boton en Error (sin activity/JVM, sin metodo, excepcion
+// JNI). No se auto-dispara nunca: solo responde al toque
+// del usuario en la pildora. La via Java (picker -> copia
+// solo-audio -> verificacion -> .saf-audio-done, y ahora
+// .saf-audio-error al fallar) esta completa y el juego ya
+// cargado lee el audio nuevo en vivo (el bridge reconstruye
+// su indice ADP al primer fallo de busqueda).
+bool RequestSafAudioPicker(struct android_app* app) {
   if (app->activity == nullptr || app->activity->vm == nullptr ||
       app->activity->clazz == nullptr) {
     SFA_LOGE("native: SAF audio no disponible (sin activity/JVM)");
-    return;
+    return false;
   }
   JavaVM* vm = app->activity->vm;
   JNIEnv* env = nullptr;
@@ -184,7 +213,7 @@ void RequestSafPicker(struct android_app* app) {
       JNI_OK) {
     if (vm->AttachCurrentThread(&env, nullptr) != JNI_OK || env == nullptr) {
       SFA_LOGE("native: SAF audio: no se pudo asociar el hilo a la JVM");
-      return;
+      return false;
     }
     attached = true;
   }
@@ -192,23 +221,117 @@ void RequestSafPicker(struct android_app* app) {
   if (cls == nullptr) {
     SFA_LOGE("native: SAF audio: sin clase de actividad");
     if (attached) vm->DetachCurrentThread();
-    return;
+    return false;
   }
   jmethodID mid = env->GetMethodID(cls, "requestAudioFolder", "()V");
   if (mid == nullptr) {
     SFA_LOGE("native: SAF audio: metodo requestAudioFolder no encontrado");
     if (attached) vm->DetachCurrentThread();
-    return;
+    return false;
   }
   env->CallVoidMethod(app->activity->clazz, mid);
+  bool ok = true;
   if (env->ExceptionCheck()) {
     env->ExceptionClear();
     SFA_LOGE("native: SAF audio: excepcion al pedir el picker");
+    ok = false;
   } else {
     SFA_LOGI("native: SAF audio: picker solicitado (anadir audio, "
              "sin reimportar sys/ ni files/)");
   }
   if (attached) vm->DetachCurrentThread();
+  return ok;
+}
+
+// --- Estado del boton de audio, Tramo 6 (sin bloquear) ---
+// IsAudioMediaFile / AudioDirHasMedia viven en
+// input/audio_state_fs.h (POSIX, sin Android): el mismo
+// codigo lo compila NDK y lo ejercita el test host.
+
+void SetAudioState(AppState* state, sfa::AudioState next) {
+  state->audio_state = next;
+  state->runtime.InputState()->SetAudioButtonState(next);
+  SFA_LOGI("native: audio-btn: estado %s", sfa::AudioStateName(next));
+}
+
+// Derivacion inicial (INIT_WINDOW, una sola vez): done ->
+// listo; si no, audio/ con medios (Pack B con audio, o una
+// copia anterior sin marcador) -> listo; si no, sin audio.
+// Nunca Verifying al arrancar: una copia interrumpida por
+// cierre no deja un estado atascado (ver audio_button.h).
+void InitAudioState(struct android_app* app, AppState* state) {
+  std::string internal = sfa::InternalDataPath();
+  const char* bases[2] = {nullptr, nullptr};
+  if (!internal.empty()) bases[0] = internal.c_str();
+  if (app->activity != nullptr &&
+      app->activity->externalDataPath != nullptr) {
+    bases[1] = app->activity->externalDataPath;
+  }
+  for (const char* base : bases) {
+    if (base == nullptr) continue;
+    std::string root = std::string(base) + "/sfa-data";
+    if (FileExists(root + "/.saf-audio-done")) {
+      state->audio_done_seen = true;
+      SetAudioState(state, sfa::AudioState::kReady);
+      return;
+    }
+    if (sfa::AudioDirHasMedia(root + "/audio")) {
+      SetAudioState(state, sfa::AudioState::kReady);
+      return;
+    }
+  }
+  SetAudioState(state, sfa::AudioState::kNoAudio);
+}
+
+// Sondeo de marcadores de audio (cada 128 vueltas del bucle,
+// CON juego cargado o sin el). done -> listo; error -> error.
+// Un marcador ya visto no re-loguea. No lee el contenido:
+// Java solo escribe .saf-audio-done tras verificar, y
+// .saf-audio-error solo al fallar (ver MainActivity).
+void PollAudioResult(struct android_app* app, AppState* state) {
+  std::string internal = sfa::InternalDataPath();
+  const char* bases[2] = {nullptr, nullptr};
+  if (!internal.empty()) bases[0] = internal.c_str();
+  if (app->activity != nullptr &&
+      app->activity->externalDataPath != nullptr) {
+    bases[1] = app->activity->externalDataPath;
+  }
+  for (const char* base : bases) {
+    if (base == nullptr) continue;
+    std::string root = std::string(base) + "/sfa-data";
+    // Tramo 6 — cancelacion: Java escribe .saf-audio-cancelled
+    // cuando el usuario cancela el picker (ver MainActivity).
+    // Se consume (borra) y se rederiva: sin el, cancelar
+    // dejaria la pildora en Verificando hasta reiniciar,
+    // porque "sin marcador" tambien significa "copia en
+    // curso" y el sondeo no puede distinguirlos. El orden
+    // importa: cancelado se comprueba ANTES que done, pero
+    // done solo lo escribe Java tras verificar, nunca tras
+    // cancelar, asi que no hay carrera entre ambos.
+    if (FileExists(root + "/.saf-audio-cancelled")) {
+      std::remove((root + "/.saf-audio-cancelled").c_str());
+      if (FileExists(root + "/.saf-audio-done")) {
+        state->audio_done_seen = true;
+        SetAudioState(state, sfa::AudioState::kReady);
+      } else if (sfa::AudioDirHasMedia(root + "/audio")) {
+        SetAudioState(state, sfa::AudioState::kReady);
+      } else {
+        SetAudioState(state, sfa::AudioState::kNoAudio);
+      }
+      return;
+    }
+    if (!state->audio_done_seen && FileExists(root + "/.saf-audio-done")) {
+      state->audio_done_seen = true;
+      SetAudioState(state, sfa::AudioState::kReady);
+      return;
+    }
+    if (!state->audio_error_seen &&
+        FileExists(root + "/.saf-audio-error")) {
+      state->audio_error_seen = true;
+      SetAudioState(state, sfa::AudioState::kError);
+      return;
+    }
+  }
 }
 
 // Si Java ya termino la copia SAF, carga el juego (una sola vez).
@@ -274,6 +397,11 @@ void HandleCmd(struct android_app* app, int32_t cmd) {
               RequestSafPicker(app);
             }
           }
+          // Tramo 6: estado inicial de la pildora de audio
+          // (tras runtime.Init, que resetea Input sin borrar
+          // el estado — ver audio_button.h — y tras la carga
+          // de datos, por si el Pack B ya trae audio/).
+          InitAudioState(app, state);
         } else {
           SFA_LOGE("native: renderer no listo, runtime sin arrancar");
         }
@@ -356,6 +484,54 @@ void android_main(struct android_app* app) {
         !state.runtime.IsGameLoaded() &&
         (++state.poll_counter % 128) == 0) {
       PollSafResult(app, &state);
+    }
+    // Tramo 6 — pildora "anadir audio": drenar el disparo en
+    // CADA vuelta (respuesta inmediata, sin esperar al %128)
+    // y sondear marcadores cada 128, CON juego cargado o sin
+    // el. Sin ventana/foco el disparo se descarta (el picker
+    // no debe abrirse con la app en pausa; el usuario puede
+    // volver a pulsar). Al pulsar: se borran los marcadores
+    // viejos ANTES de poner Verifying — si no, el sondeo
+    // podria ver el .saf-audio-done anterior antes de que el
+    // hilo Java lo borre y marcar Listo durante la copia
+    // nueva (Java tambien los borra al empezar a copiar:
+    // doble guarda). Mientras Verifying, Input ya traga los
+    // toques en la pildora sin re-disparar (ver
+    // audio_button.h); aqui el guarda es por si acaso.
+    if (state.runtime.InputState()->TakeAudioButtonTrigger()) {
+      if (!state.window_ready || !state.has_focus) {
+        SFA_LOGI("native: audio-btn: disparo descartado (sin "
+                 "ventana/foco; volver a pulsar con la app "
+                 "en primer plano)");
+      } else if (state.audio_state == sfa::AudioState::kVerifying) {
+        SFA_LOGI("native: audio-btn: disparo ignorado (copia "
+                 "de audio ya en marcha)");
+      } else {
+        std::string internal = sfa::InternalDataPath();
+        const char* bases[2] = {nullptr, nullptr};
+        if (!internal.empty()) bases[0] = internal.c_str();
+        if (app->activity != nullptr &&
+            app->activity->externalDataPath != nullptr) {
+          bases[1] = app->activity->externalDataPath;
+        }
+        for (const char* base : bases) {
+          if (base == nullptr) continue;
+          std::string root = std::string(base) + "/sfa-data";
+          std::remove((root + "/.saf-audio-done").c_str());
+          std::remove((root + "/.saf-audio-error").c_str());
+          std::remove((root + "/.saf-audio-cancelled").c_str());
+        }
+        state.audio_done_seen = false;
+        state.audio_error_seen = false;
+        SetAudioState(&state, sfa::AudioState::kVerifying);
+        if (!RequestSafAudioPicker(app)) {
+          SetAudioState(&state, sfa::AudioState::kError);
+        }
+      }
+    }
+    if (state.window_ready && state.has_focus &&
+        (++state.audio_poll_counter % 128) == 0) {
+      PollAudioResult(app, &state);
     }
     if (state.window_ready && state.has_focus &&
         state.runtime.IsRunning()) {

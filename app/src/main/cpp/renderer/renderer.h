@@ -14,6 +14,7 @@
 #include <vector>
 
 #include "gamecube_runtime/gx.h"
+#include "input/audio_button.h"
 #include "renderer/gx_gl.h"
 
 namespace sfa {
@@ -30,6 +31,14 @@ class Renderer {
   // Fase 10: quad de prueba con textura procedural (damero,
   // GxGlRenderer::DrawCheckerQuad). No es arte del juego.
   void DrawTestQuad();
+  // Tramo 6: pildora "anadir audio" (color segun AudioState,
+  // parpadeo en Verifying). Se dibuja DESPUES de los draws GX
+  // y del damero, ANTES del swap: queda por encima del juego
+  // a proposito (es UI, no arte). Sin contexto GX listo es
+  // no-op, igual que DrawTestQuad. Las fracciones tactiles
+  // y el rectangulo dibujado son las mismas constantes de
+  // audio_button.h: tactil y dibujo no se pueden desalinear.
+  void DrawAudioButton(AudioState state);
   // Fase 10: draws GX (parser host) con texturas decodificadas
   // desde la RAM huesped dada. Sin draws, no dibuja nada.
   int DrawGxFrame(const std::vector<GxDraw>& draws, const uint8_t* ram,
@@ -54,6 +63,7 @@ class Renderer {
   int height_ = 0;
   GxGlRenderer gx_gl_;
   bool gx_gl_ready_ = false;
+  int audio_frame_ = 0;  // Tramo 6: parpadeo Verifying (30 f on/off)
 };
 
 }  // namespace sfa

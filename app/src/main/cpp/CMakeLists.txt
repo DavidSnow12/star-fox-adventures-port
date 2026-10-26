@@ -59,6 +59,7 @@ add_library(starfox SHARED
     renderer/gx_translate.cpp
     audio/audio.cpp
     audio/audio_bridge.cpp
+    audio/musyx_seq.cpp
     audio/adp_decode.cpp
     audio/adp_stream.cpp
     audio/adp_cache.cpp

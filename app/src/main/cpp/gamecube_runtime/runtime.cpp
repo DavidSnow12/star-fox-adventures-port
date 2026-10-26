@@ -228,6 +228,11 @@ void GameCubeRuntime::Frame(Renderer* renderer) {
     // la alimentacion GX exista.
     renderer->DrawTestQuad();
   }
+  // Tramo 6: pildora "anadir audio" SIEMPRE por encima (UI,
+  // no arte): tambien sin juego, que es cuando mas falta
+  // (importar audio antes de jugar). Estado desde Input,
+  // que native-lib mantiene por sondeo de marcadores.
+  renderer->DrawAudioButton(input_.AudioButtonState());
   renderer->RenderFrame();
 }
 

@@ -85,7 +85,8 @@ void InitCpuForBoot(CpuState* cpu, uint8_t* ram, uint32_t ram_size,
 // nulo, se llama ANTES de despachar cada entrada de funcion
 // de audio conocida (AudioStream_Play, AudioStream_
 // StopCurrent, AudioStream_StartPrepared, sndFXStartEx,
-// sndSeqPlayEx), con pc y r3/r4/r5 del juego. El hook NO
+// sndSeqPlayEx, sndSeqStop desde Tramo 6), con pc y r3/r4/r5
+// del juego. El hook NO
 // sustituye al codigo huesped: el despacho sigue despues,
 // intacto. Con hook nulo el coste es cero (una comparacion
 // de puntero por despacho). El runtime lo usa para el bridge

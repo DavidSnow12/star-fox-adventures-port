@@ -36,6 +36,7 @@
 #include <android/input.h>
 #include <cstdint>
 
+#include "input/audio_button.h"
 #include "input/pad_state.h"
 #include "input/touch_layout.h"
 
@@ -51,6 +52,15 @@ class Input {
   bool HandleEvent(AInputEvent* event);
   const PadState& State() const { return state_; }
   PadState* StatePtr() { return &state_; }
+  // Boton "anadir audio" Tramo 6: Input lo posee, native-lib
+  // escribe su estado (sondeo) y el renderer lo lee para
+  // dibujar la pildora. TakeAudioButtonTrigger() lo consume
+  // una sola vez (el bucle nativo lanza entonces el picker).
+  bool TakeAudioButtonTrigger() { return audio_button_.TakeTrigger(); }
+  AudioState AudioButtonState() const { return audio_button_.State(); }
+  void SetAudioButtonState(AudioState state) {
+    audio_button_.SetState(state);
+  }
 
  private:
   bool HandleKey(AInputEvent* event);
@@ -60,6 +70,7 @@ class Input {
 
   PadState state_;
   TouchLayout touch_;
+  AudioButton audio_button_;
   int viewport_w_ = 0;
   int viewport_h_ = 0;
   bool logged_touch_ = false;

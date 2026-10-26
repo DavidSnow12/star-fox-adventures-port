@@ -7,6 +7,7 @@
 
 #include "audio/audio_id_map.h"
 #include "audio/fx_table.h"
+#include "audio/musyx_notes.h"
 #include "log.h"
 
 namespace sfa {
@@ -17,6 +18,8 @@ namespace {
 constexpr uint32_t kAudioStreamPlay = 0x8000D220u;
 constexpr uint32_t kAudioStreamStopCurrent = 0x8000D03Cu;
 constexpr uint32_t kSndFxStartEx = 0x80273218u;
+constexpr uint32_t kSndSeqPlayEx = 0x8027C34Cu;
+constexpr uint32_t kSndSeqStop = 0x80272F80u;
 
 int16_t ClampS16(int32_t v) {
   if (v > 32767) return 32767;
@@ -100,6 +103,252 @@ class AdpCachedReader : public NativeReader {
 };
 
 }  // namespace
+
+AudioBridge::AudioBridge() {
+  // Preset huesped (Tramo 5, seq_host.py): CC7=127, CC10=64.
+  cc7_.fill(127);
+  cc10_.fill(64);
+}
+
+// ---- Musica MusyX (Tramo 6) ----
+
+int AudioBridge::OnSeqPlay(uint32_t group_id, uint32_t seq_id,
+                           uint32_t params_ptr) {
+  if (audio_ == nullptr) return 0;
+  const MusyxSong* song = nullptr;
+  for (const MusyxSong& s : kMusyxSongs) {
+    if (s.track_id == seq_id) {
+      song = &s;
+      break;
+    }
+  }
+  if (song == nullptr) {
+    Unresolved u;
+    u.id = seq_id;
+    u.kind = "musyx_cancion";
+    unresolved_.push_back(u);
+    SFA_LOGI("bridge: sndSeqPlayEx grupo %u cancion %u sin tabla "
+             "verificada (no se inventa sonido)",
+             group_id, seq_id);
+    return 0;
+  }
+  StopAllMusic();
+  seq_.Stop();
+  cc7_.fill(127);
+  cc10_.fill(64);
+  seq_.Start(song, 256);
+  SeqStarted rec;
+  rec.group_id = group_id;
+  rec.seq_id = seq_id;
+  rec.bpm = song->bpm;
+  rec.notes = song->note_count;
+  rec.params_ptr = params_ptr;
+  seq_started_.push_back(rec);
+  SFA_LOGI("bridge: sndSeqPlayEx grupo %u cancion %u -> tabla "
+           "verificada (gid %u, BPM %u, %zu notas, %.1f ticks/s, "
+           "params huesped 0x%08X sin leer: speed 256, sin mutes)",
+           group_id, seq_id, song->group_id, song->bpm,
+           song->note_count, MusyxTicksPerSecond(song->bpm),
+           params_ptr);
+  if (song->group_id != group_id) {
+    SFA_LOGI("bridge: aviso MusyX: group_id %u != gid de tabla %u "
+             "(equivalencia sgid<->gid sin verificar; se arranca "
+             "por seq_id)",
+             group_id, song->group_id);
+  }
+  return 1;
+}
+
+void AudioBridge::OnSeqStop() {
+  if (!seq_.Active() && MusyxActiveNotes() == 0) return;
+  StopAllMusic();
+  seq_.Stop();
+  SFA_LOGI("bridge: sndSeqStop (cancion host detenida)");
+}
+
+void AudioBridge::StopAllMusic() {
+  for (MusicVoice& v : music_voices_) {
+    v.active = false;
+    v.pcm.clear();
+    v.pos = 0;
+  }
+}
+
+bool AudioBridge::MusyxVoicePcmCopy(size_t note_index,
+                                    std::vector<int16_t>* out) const {
+  if (out == nullptr) return false;
+  for (const MusicVoice& v : music_voices_) {
+    if (v.active && v.note_index == note_index) {
+      *out = v.pcm;
+      return true;
+    }
+  }
+  return false;
+}
+
+size_t AudioBridge::MusyxActiveNotes() const {
+  size_t n = 0;
+  for (const MusicVoice& v : music_voices_) {
+    if (v.active) ++n;
+  }
+  return n;
+}
+
+bool AudioBridge::StartMusicNote(const MusyxNote& note,
+                                 size_t note_index) {
+  const MusyxSampleEntry* entry = LookupSampleEntry(note.sample_id);
+  if (entry == nullptr) {
+    Unresolved u;
+    u.id = note.sample_id;
+    u.kind = "musyx_muestra";
+    unresolved_.push_back(u);
+    return false;
+  }
+  std::string path = wav_root_;
+  if (!path.empty() && path.back() != '/') path += '/';
+  path += entry->wav;
+  Audio::WavData wav;
+  if (!Audio::LoadWavFile(path.c_str(), &wav) || wav.rate <= 0 ||
+      wav.channels <= 0 || wav.Frames() == 0) {
+    SFA_LOGI("bridge: MusyX WAV no legible '%s' (muestra %u)",
+             path.c_str(), note.sample_id);
+    return false;
+  }
+  // Pitch por resampleo lineal (Tramo 5, verificado 0,13 % en
+  // S797): ratio = 2^((mac_key - pitch_base)/12).
+  double ratio =
+      std::pow(2.0, static_cast<double>(note.mac_key - note.pitch_base) /
+                          12.0);
+  double step = ratio * static_cast<double>(wav.rate) /
+                static_cast<double>(Audio::kOutputRate);
+  if (!(step > 0.0)) return false;
+  // Duracion en frames a 48 kHz (key-off en time+length).
+  const MusyxSong* song = seq_.Song();
+  double tps = song != nullptr ? MusyxTicksPerSecond(song->bpm) : 384.0;
+  size_t dur_frames = static_cast<size_t>(
+      static_cast<double>(note.length_ticks) / tps *
+      static_cast<double>(Audio::kOutputRate));
+  if (dur_frames == 0) return false;
+  // Bucle de muestra por metadato (frames fuente; 0,0 = sin
+  // bucle). Sin bucle, la voz termina al agotar la muestra
+  // aunque la nota dure mas (igual que el render Tramo 5).
+  uint64_t src_frames = wav.Frames();
+  uint64_t loop_start = entry->loop_start;
+  uint64_t loop_len = entry->loop_len;
+  bool has_loop = loop_len > 0 && loop_start < src_frames &&
+                  loop_start + loop_len <= src_frames;
+  // Pan CC10 vigente en el note-on (formula del render
+  // Tramo 5, balance lineal, no ley DSP).
+  uint32_t pan = note.midi < 16 ? cc10_[note.midi] : 64;
+  double gl = 1.0, gr = 1.0;
+  if (pan <= 64) {
+    gl = 1.0;
+    gr = pan == 0 ? 0.0 : static_cast<double>(pan) / 64.0;
+  } else {
+    gl = static_cast<double>(127 - pan) / 63.0;
+    gr = 1.0;
+  }
+  std::vector<int16_t> pcm;
+  pcm.reserve(dur_frames * 2);
+  double pos = 0.0;
+  for (size_t f = 0; f < dur_frames; ++f) {
+    uint64_t p = static_cast<uint64_t>(pos);
+    if (p >= src_frames) break;
+    if (has_loop && p >= loop_start + loop_len) {
+      pos = static_cast<double>(loop_start) +
+            std::fmod(pos - static_cast<double>(loop_start + loop_len),
+                      static_cast<double>(loop_len));
+      p = static_cast<uint64_t>(pos);
+    }
+    double frac = pos - static_cast<double>(p);
+    auto sample_at = [&](uint64_t idx) -> double {
+      if (idx >= src_frames) return 0.0;
+      if (wav.channels == 1) {
+        return static_cast<double>(wav.samples[idx]);
+      }
+      // Estereo inesperado en MusyX: media de canales.
+      double a = static_cast<double>(wav.samples[idx * 2]);
+      double b = static_cast<double>(wav.samples[idx * 2 + 1]);
+      return (a + b) * 0.5;
+    };
+    double s = sample_at(p) + (sample_at(p + 1) - sample_at(p)) * frac;
+    pcm.push_back(static_cast<int16_t>(std::lround(s * gl)));
+    pcm.push_back(static_cast<int16_t>(std::lround(s * gr)));
+    pos += step;
+    if (has_loop && pos >= static_cast<double>(loop_start + loop_len)) {
+      pos = static_cast<double>(loop_start) +
+            std::fmod(pos - static_cast<double>(loop_start),
+                      static_cast<double>(loop_len));
+    }
+  }
+  if (pcm.empty()) return false;
+  MusicVoice* slot = nullptr;
+  for (MusicVoice& v : music_voices_) {
+    if (!v.active) {
+      slot = &v;
+      break;
+    }
+  }
+  if (slot == nullptr) {
+    // Robo: la voz activa mas antigua (primer slot activo).
+    for (MusicVoice& v : music_voices_) {
+      if (v.active) {
+        slot = &v;
+        break;
+      }
+    }
+    ++musyx_stolen_;
+    SFA_LOGI("bridge: MusyX voz robada (16 ocupadas, nota %zu)",
+             note_index);
+  }
+  Played p;
+  p.id = note.sample_id;
+  p.kind = "musyx_nota";
+  p.wav = entry->wav;
+  p.src_rate = wav.rate;
+  p.src_channels = wav.channels;
+  p.frames_48k = pcm.size() / 2;
+  played_.push_back(p);
+  slot->pcm = std::move(pcm);
+  slot->pos = 0;
+  slot->base_gain = static_cast<float>(note.mac_vol) / 127.0f;
+  slot->midi = note.midi;
+  slot->note_index = note_index;
+  slot->active = true;
+  ++musyx_started_;
+  return true;
+}
+
+void AudioBridge::StopMusicNote(size_t note_index) {
+  for (MusicVoice& v : music_voices_) {
+    if (v.active && v.note_index == note_index) {
+      v.active = false;
+      v.pcm.clear();
+      v.pos = 0;
+      ++musyx_ended_;
+      return;
+    }
+  }
+}
+
+void AudioBridge::PumpSequencer(double dt_seconds) {
+  if (!seq_.Active()) return;
+  std::vector<MusyxSequencer::Event> events;
+  seq_.Advance(dt_seconds, &events);
+  for (const MusyxSequencer::Event& e : events) {
+    if (e.kind == MusyxSequencer::Event::kCc && e.cc != nullptr) {
+      if (e.cc->midi < 16) {
+        if (e.cc->cc == 7) cc7_[e.cc->midi] = e.cc->value;
+        if (e.cc->cc == 10) cc10_[e.cc->midi] = e.cc->value;
+      }
+    } else if (e.kind == MusyxSequencer::Event::kNoteOn &&
+               e.note != nullptr) {
+      StartMusicNote(*e.note, e.note_index);
+    } else if (e.kind == MusyxSequencer::Event::kNoteOff) {
+      StopMusicNote(e.note_index);
+    }
+  }
+}
 
 const char* AudioBridge::LookupStreamWav(uint32_t id) const {
   for (const StreamIdEntry& e : kStreamIdMap) {
@@ -554,9 +803,113 @@ int AudioBridge::OnFxStart(uint32_t fx_id, uint32_t volume,
   return 1;
 }
 
+// Tramo 6 — voz hija con pitch (copia deliberada de
+// EnqueueSample, ver fx_double.h): tasa efectiva 48000/ratio.
+bool AudioBridge::EnqueueSamplePitched(uint32_t sample_id, float gain,
+                                       double pitch_ratio) {
+  if (pitch_ratio <= 0.0) return false;
+  int eff_rate = static_cast<int>(
+      std::lround(static_cast<double>(Audio::kOutputRate) / pitch_ratio));
+  if (eff_rate <= 0) return false;
+  const MusyxSampleEntry* entry = LookupSampleEntry(sample_id);
+  if (entry == nullptr) return false;
+  Voice* slot = nullptr;
+  for (Voice& v : sfx_voices_) {
+    if (!v.active) {
+      slot = &v;
+      break;
+    }
+  }
+  if (slot == nullptr) {
+    ++dropped_sfx_;
+    SFA_LOGI("bridge: SFX hija muestra %u descartada (8 voces ocupadas)",
+             sample_id);
+    return false;
+  }
+  std::string path = wav_root_;
+  if (!path.empty() && path.back() != '/') path += '/';
+  path += entry->wav;
+  Audio::WavData wav;
+  if (!Audio::LoadWavFile(path.c_str(), &wav)) {
+    SFA_LOGI("bridge: WAV hija no legible '%s' (muestra %u)", path.c_str(),
+             sample_id);
+    return false;
+  }
+  std::vector<int16_t> pcm = Audio::ResampleToStereo(wav, eff_rate);
+  if (pcm.empty()) return false;
+  size_t loop_start_eff = 0;
+  size_t loop_len_eff = 0;
+  if (entry->loop_len > 0 && wav.rate > 0) {
+    loop_start_eff = static_cast<size_t>(
+        (static_cast<uint64_t>(entry->loop_start) *
+         static_cast<uint64_t>(eff_rate)) /
+        static_cast<uint64_t>(wav.rate));
+    loop_len_eff = static_cast<size_t>(
+        (static_cast<uint64_t>(entry->loop_len) *
+         static_cast<uint64_t>(eff_rate)) /
+        static_cast<uint64_t>(wav.rate));
+    size_t total = pcm.size() / 2;
+    if (loop_start_eff + loop_len_eff > total) {
+      loop_len_eff =
+          total > loop_start_eff ? total - loop_start_eff : 0;
+    }
+  }
+  Played p;
+  p.id = sample_id;
+  p.kind = "sfx_muestra";
+  p.wav = entry->wav;
+  p.src_rate = wav.rate;
+  p.src_channels = wav.channels;
+  p.frames_48k = pcm.size() / 2;
+  played_.push_back(p);
+  slot->pcm = std::move(pcm);
+  slot->pos = 0;
+  slot->gain = gain;
+  slot->loop_start = loop_start_eff;
+  slot->loop_len = loop_len_eff;
+  slot->active = true;
+  SFA_LOGI("bridge: sfx_muestra hija id %u -> '%s' (%d Hz x%d, %llu "
+           "frames a 48 kHz efectivos, tasa %d, bucle [%llu, %llu), "
+           "ganancia %.3f)",
+           sample_id, entry->wav, wav.rate, wav.channels,
+           static_cast<unsigned long long>(p.frames_48k), eff_rate,
+           static_cast<unsigned long long>(loop_start_eff),
+           static_cast<unsigned long long>(loop_start_eff + loop_len_eff),
+           static_cast<double>(gain));
+  return true;
+}
+
+// Tramo 6 — doblaje: padre por OnFxStart + hija por pitch.
+int AudioBridge::OnFxStartDoubled(uint32_t fx_id, uint32_t volume,
+                                  uint32_t pan, uint32_t studio) {
+  if (OnFxStart(fx_id, volume, pan, studio) != 1) return 0;
+  const FxChildVoice* child = FindFxChildVoice(fx_id & 0xFFFFu);
+  if (child == nullptr) return 1;
+  if (child->sample_id != kFxSample[fx_id & 0xFFFFu]) {
+    SFA_LOGI("bridge: doblaje FX %u incoherente con fx_table "
+             "(hija %u != tabla %u): solo padre",
+             fx_id & 0xFFFFu, child->sample_id,
+             kFxSample[fx_id & 0xFFFFu]);
+    return 1;
+  }
+  uint32_t vol = (volume & 0xFFu) == 0xFFu ? 127u : (volume & 0xFFu);
+  float gain = static_cast<float>(vol) / 127.0f;
+  double ratio = std::pow(2.0, static_cast<double>(child->child_key -
+                                                  child->parent_key) /
+                                     12.0);
+  SFA_LOGI("bridge: doblaje FX %u -> hija muestra %u (tecla %d -> %d, "
+           "ratio %.6f, pan padre %d / hija %d registrado sin aplicar)",
+           fx_id & 0xFFFFu, child->sample_id, child->parent_key,
+           child->child_key, ratio, child->parent_pan, child->child_pan);
+  if (!EnqueueSamplePitched(child->sample_id, gain, ratio)) {
+    return 1;
+  }
+  return 2;
+}
+
 bool AudioBridge::OnAudioEntry(uint32_t pc, uint32_t r3,
                                uint32_t r4, uint32_t r5,
-                               uint32_t r6, uint32_t /*r7*/) {
+                               uint32_t r6, uint32_t r7) {
   Counted c;
   c.pc = pc;
   c.r3 = r3;
@@ -570,8 +923,27 @@ bool AudioBridge::OnAudioEntry(uint32_t pc, uint32_t r3,
     // sndFXStartEx (Fase 18, layout verificado en código
     // huésped): r3=fxId, r4=volume, r5=pan, r6=studio.
     // r7 se ignora (basura del llamador).
-    return OnFxStart(r3 & 0xFFFFu, r4 & 0xFFu, r5 & 0xFFu,
-                     r6 & 0xFFu) == 1;
+    // Tramo 6, decisión de integración: el hook pasa a
+    // OnFxStartDoubled (padre por OnFxStart + hija para
+    // 96/162/820); OnFxStart sigue intacto y OnSfxTrigger
+    // sigue siendo 1 voz a propósito.
+    return OnFxStartDoubled(r3 & 0xFFFFu, r4 & 0xFFu, r5 & 0xFFu,
+                            r6 & 0xFFu) >= 1;
+  }
+  if (pc == kSndSeqPlayEx) {
+    // sndSeqPlayEx (Tramo 6, layout verificado en codigo
+    // huesped y en TRAMO5.md §7): r3=sgid, r4=sid (track),
+    // r5=arrfile (puntero huesped, no se lee), r6=params
+    // (puntero huesped a SynthPlayParams: se registra, no
+    // se lee — sin acceso a RAM huesped), r7=studio (0 en
+    // el camino Music_ChannelLoadedCallback).
+    (void)r5;
+    (void)r7;
+    return OnSeqPlay(r3, r4, r6) == 1;
+  }
+  if (pc == kSndSeqStop) {
+    OnSeqStop();
+    return true;
   }
   // Demas entradas de audio: solo conteo (layout de
   // argumentos sin verificar; ver cabecera).
@@ -625,6 +997,12 @@ std::vector<uint64_t> AudioBridge::ActiveVoicePositions() const {
 
 void AudioBridge::Tick() {
   if (audio_ == nullptr) return;
+  // Tramo 6: eventos MusyX vencidos hasta el tick actual
+  // (el reloj avanza al final del Tick anterior; el primer
+  // Tick procesa tick 0). Los eventos que vencen con el
+  // avance de este Tick se procesan en el Tick siguiente:
+  // latencia de arranque <= 1 bloque (85 ms), documentada.
+  if (seq_.Active()) PumpSequencer(0.0);
   // Una fuente en streaming que llego a EOF en el Tick
   // anterior se cierra aqui (no en mitad de la mezcla).
   if (stream_source_ != nullptr && stream_source_->AtEof()) {
@@ -638,7 +1016,24 @@ void AudioBridge::Tick() {
   }
   if (stream_voice_.active) voices[nvoices++] = &stream_voice_;
   bool stream_on = StreamSourceActive();
-  if (nvoices == 0 && !stream_on) return;
+  size_t nmusic = MusyxActiveNotes();
+  if (nvoices == 0 && !stream_on && nmusic == 0) {
+    if (seq_.Active()) {
+      // Sin voces pero con cancion en curso: el reloj debe
+      // seguir hasta la proxima nota (huecos entre notas).
+      // Se entrega un bloque de silencio y se avanza.
+      std::vector<int16_t> silence(
+          static_cast<size_t>(kFeedFrames) * 2, 0);
+      audio_->SubmitBuffer(silence.data(), kFeedFrames);
+      PumpSequencer(static_cast<double>(kFeedFrames) /
+                    static_cast<double>(Audio::kOutputRate));
+      if (seq_.Finished() && MusyxActiveNotes() == 0) {
+        seq_.Stop();
+        SFA_LOGI("bridge: MusyX cancion terminada (slot liberado)");
+      }
+    }
+    return;
+  }
 
   // Tamaño del bloque: el mayor restante entre voces no
   // en bucle (una voz en bucle puede llenar el bloque
@@ -655,6 +1050,13 @@ void AudioBridge::Tick() {
                        ? static_cast<size_t>(kFeedFrames)
                        : (v->Total() > v->pos ? v->Total() - v->pos
                                               : 0);
+    if (avail > block) block = avail;
+  }
+  // Tramo 6: las voces de musica cuentan para el bloque
+  // (sin bucle: lo que queda hasta su key-off).
+  for (MusicVoice& v : music_voices_) {
+    if (!v.active) continue;
+    size_t avail = v.Total() > v.pos ? v.Total() - v.pos : 0;
     if (avail > block) block = avail;
   }
   if (stream_on && block < static_cast<size_t>(kFeedFrames)) {
@@ -711,6 +1113,26 @@ void AudioBridge::Tick() {
           static_cast<float>(v->pcm[idx * 2 + 1]) * v->gain));
     }
   }
+  // Tramo 6: voces de musica. Ganancia por bloque (no por
+  // muestra): base_gain (mac_vol/127) x CC7 vigente del
+  // canal / 127. El pan ya va horneado en el PCM (CC10 del
+  // note-on). La rampa CC7 intra-nota queda asi a
+  // resolucion de bloque (85 ms), no por muestra como en
+  // el render offline Tramo 5.
+  for (MusicVoice& v : music_voices_) {
+    if (!v.active) continue;
+    float g = v.base_gain *
+              static_cast<float>(v.midi < 16 ? cc7_[v.midi] : 127) /
+              127.0f;
+    for (size_t f = 0; f < block; ++f) {
+      if (v.pos + f >= v.Total()) continue;
+      size_t idx = v.pos + f;
+      acc[f * 2] += static_cast<int32_t>(
+          std::lround(static_cast<float>(v.pcm[idx * 2]) * g));
+      acc[f * 2 + 1] += static_cast<int32_t>(
+          std::lround(static_cast<float>(v.pcm[idx * 2 + 1]) * g));
+    }
+  }
   std::vector<int16_t> mixed(block * 2);
   for (size_t i = 0; i < block * 2; ++i) {
     mixed[i] = ClampS16(acc[i]);
@@ -744,6 +1166,27 @@ void AudioBridge::Tick() {
         v->pcm.clear();
         v->pos = 0;
       }
+    }
+  }
+  // Tramo 6: avance de voces de musica (sin bucle: el
+  // bucle de muestra ya se expandio al renderizar) y del
+  // reloj del secuenciador (el bloque mezclado es el
+  // tiempo de audio entregado).
+  for (MusicVoice& v : music_voices_) {
+    if (!v.active) continue;
+    v.pos += block;
+    if (v.pos >= v.Total()) {
+      v.active = false;
+      v.pcm.clear();
+      v.pos = 0;
+    }
+  }
+  if (seq_.Active()) {
+    PumpSequencer(static_cast<double>(block) /
+                  static_cast<double>(Audio::kOutputRate));
+    if (seq_.Finished() && MusyxActiveNotes() == 0) {
+      seq_.Stop();
+      SFA_LOGI("bridge: MusyX cancion terminada (slot liberado)");
     }
   }
 }

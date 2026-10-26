@@ -27,6 +27,10 @@ int8_t AxisToStick(float v) {
 void Input::Reset() {
   state_ = PadState();
   touch_.Reset();
+  // AudioButton::Reset() solo limpia armado/disparo, no el
+  // estado (lo reescribe native-lib tras Init, ver
+  // audio_button.h): aqui no se pierde un Ready previo.
+  audio_button_.Reset();
   logged_touch_ = false;
   logged_no_viewport_ = false;
 }
@@ -144,10 +148,19 @@ bool Input::HandleTouch(AInputEvent* event) {
             static_cast<float>(viewport_h_);
     out.id = AMotionEvent_getPointerId(event, i);
   };
+  // Tramo 6 — BOTON AUDIO ANTES QUE EL JUEGO: un dedo armado
+  // por la pildora se consume aqui y nunca llega a TouchLayout
+  // (ni como boton ni como stick); un dedo de juego que se
+  // deslice hasta la pildora NO la arma (HandleDown exige
+  // bajar dentro). Sin esto, la pildora seria solo dibujo.
   if (action_code == AMOTION_EVENT_ACTION_MOVE) {
     for (size_t i = 0; i < count; ++i) {
       TouchLayout::TouchEvent ev{TouchLayout::EventType::kMove, 0, 0, 0};
       to_frac(i, ev);
+      if (audio_button_.HandleMove(ev.id, ev.x, ev.y)) {
+        changed = true;
+        continue;
+      }
       if (touch_.Handle(ev, state_)) changed = true;
     }
     return changed;
@@ -161,10 +174,13 @@ bool Input::HandleTouch(AInputEvent* event) {
   if (action_code == AMOTION_EVENT_ACTION_DOWN ||
       action_code == AMOTION_EVENT_ACTION_POINTER_DOWN) {
     ev.type = TouchLayout::EventType::kDown;
+    // Pildora primero: si la consume, el juego no ve el toque.
+    if (audio_button_.HandleDown(ev.id, ev.x, ev.y)) return true;
   } else if (action_code == AMOTION_EVENT_ACTION_UP ||
              action_code == AMOTION_EVENT_ACTION_POINTER_UP ||
              action_code == AMOTION_EVENT_ACTION_CANCEL) {
     ev.type = TouchLayout::EventType::kUp;
+    if (audio_button_.HandleUp(ev.id, ev.x, ev.y)) return true;
   } else {
     return false;
   }

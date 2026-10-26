@@ -29,10 +29,26 @@
 //    (eleccion fijada aqui y cubierta por el test sombra;
 //    BGR24 vs RGB8 solo difieren en orden de canales y en la
 //    practica del juego el caso es R8_GT).
-//  - Indirecto: no-op CONTADO (texcoord sin perturbar, el
-//    combining de la etapa se genera igual). Input/op fuera
-//    de enum: passthrough de la etapa + contador, nunca crash
-//    ni magenta. Etapas > 16: truncadas a 16 con marca.
+//  - Indirecto: Tramo 5 lo dejaba en no-op CONTADO. Tramo 6
+//    decodifica la matriz/escala (GXSetIndTexMtx 0x8025BBF4,
+//    GXSetIndTexCoordScale 0x8025BD54) y aplica la
+//    perturbacion SOLO bajo el gate de IndPerturbGate
+//    (formato ITF_8, alfa OFF, wrap OFF, add 0, matriz
+//    presente, escalas ITS_1); fuera del gate, no-op contado
+//    + contador indirect_gated_out. El multiplicador del
+//    campo de escala de 2 bits de la matriz NO se aplica
+//    (sin determinar desde este DOL; ver informe Tramo 6).
+//  - Fog: Tramo 6 decodifica 0xEE-0xF2 (GXSetFog 0x8025CC44)
+//    y recupera start/end cuando se conocen near/far
+//    (DecodeFogWords + FogStartEnd); el snippet GLSL lineal
+//    queda como funcion pura (el cableado del varying de
+//    profundidad en gx_gl.cpp es un paso aparte).
+//  - Texgen: palabras XF 0x1040/0x1050 decodificadas
+//    (DecodeTexGenWord1/2); texgen-POS se aplica en el
+//    traductor (gx_translate.h), no aqui.
+//  - Input/op fuera de enum: passthrough de la etapa +
+//    contador, nunca crash ni magenta. Etapas > 16:
+//    truncadas a 16 con marca.
 //  - Etapa identidad (ADD, bias/scale neutros, c=ZERO, d=ZERO,
 //    a=PREV, out=PREV en color y alfa): no emite codigo, pero
 //    cuenta como procesada (no como "no soportada").
@@ -75,11 +91,13 @@
 //    exacta en float de valores k/255 (aproximacion
 //    documentada: el TEV puede dejar prev_a fuera de k/255
 //    exacto tras aritmetica).
-//  - Indirecto: sigue siendo no-op CONTADO (Tramo 5 ancla
-//    la palabra y el ind order, pero la matriz/escala ind
-//    no estan decodificadas: perturbar seria inventar).
+//  - Indirecto: Tramo 5 lo ancla (palabra + ind order).
+//    Tramo 6 anade matriz/escala y perturbacion bajo gate
+//    (ver IndPerturbGate); fuera del gate sigue el no-op
+//    contado, no una perturbacion inventada.
 
 #include <cstdint>
+#include <cstdio>
 #include <map>
 #include <string>
 #include <vector>
@@ -227,6 +245,260 @@ inline void DecodeIndirectWord(uint32_t w, TevStage* s) {
   s->ind_wrap_t = static_cast<int>((w >> 16) & 0x7);
   s->ind_flag19 = static_cast<int>((w >> 19) & 0x1);
   s->ind_add = static_cast<int>((w >> 20) & 0x3);
+}
+
+// --- Indirecto real (Tramo 6, GXSetIndTexMtx 0x8025BBF4) ---
+//
+// Una matriz ind k ocupa BP 0x06+3k, 0x07+3k, 0x08+3k (el
+// SDK calcula el slot desde el id con la tabla literal
+// 1->0, 2->1, 3->2 (y alias 5->0, 6->1, 7->2, 9->0, 10->1,
+// 11->2; 0/4/8/12+ -> 0); el juego solo usa ids 1/2/3.
+// Cada palabra: [escala:23-22][valor_fila1:21-11]
+// [valor_fila0:10-0], valores S11 (signo + 10 bits
+// fraccionarios): el SDK multiplica por 1024.0
+// (constante GXIndTexMtxScale en 0x803E90F0, r2+4656) y
+// convierte con fctiwz. Columna c: palabra c = (m0c,
+// m1c). La escala de 2 bits es (scale_exp+17)&3 segun el
+// SDK (r5+17 insertado en [23:22]); su multiplicador HW
+// NO esta determinado desde este DOL y NO se aplica: los
+// floats salen como int11/1024 y el campo queda crudo en
+// ind_mtx_scale (ver informe Tramo 6, pregunta abierta 1).
+// Devuelve false si los 3 campos de escala difieren.
+inline bool DecodeIndTexMtxWords(uint32_t w0, uint32_t w1, uint32_t w2,
+                                 float out[6], int* scale_out) {
+  int sc0 = static_cast<int>((w0 >> 22) & 0x3);
+  int sc1 = static_cast<int>((w1 >> 22) & 0x3);
+  int sc2 = static_cast<int>((w2 >> 22) & 0x3);
+  if (sc0 != sc1 || sc0 != sc2) return false;
+  auto s11 = [](uint32_t v) {
+    int s = static_cast<int>(v & 0x7FF);
+    if (s & 0x400) s -= 0x800;
+    return static_cast<float>(s) / 1024.0f;
+  };
+  out[0] = s11(w0);         // m00
+  out[1] = s11(w1);         // m01
+  out[2] = s11(w2);         // m02
+  out[3] = s11(w0 >> 11);   // m10
+  out[4] = s11(w1 >> 11);   // m11
+  out[5] = s11(w2 >> 11);   // m12
+  if (scale_out != nullptr) *scale_out = sc0;
+  return true;
+}
+
+// Escalas de coord indirecta (GXSetIndTexCoordScale
+// 0x8025BD54, ids 0-3; fuera de rango no escribe nada).
+// Cada palabra lleva dos etapas: la primera en [7:0]
+// (s[3:0], t[7:4]), la segunda en [15:8]. 0x25 = etapas
+// 0/1, 0x26 = etapas 2/3 (el llamador asigna los indices).
+// Valores = enum GXIndTexScale (0 = ITS_1, 1 = ITS_2, ...,
+// 8 = ITS_256).
+inline void DecodeIndCoordScaleWord(uint32_t w, int s_out[2],
+                                    int t_out[2]) {
+  s_out[0] = static_cast<int>(w & 0xF);
+  t_out[0] = static_cast<int>((w >> 4) & 0xF);
+  s_out[1] = static_cast<int>((w >> 8) & 0xF);
+  t_out[1] = static_cast<int>((w >> 12) & 0xF);
+}
+
+// Gate de perturbacion indirecta (Tramo 6). Solo se perturba
+// cuando TODAS estas condiciones se cumplen; en cualquier
+// otro caso la etapa queda en no-op contado:
+//  - formato ITF_8 (0): componentes completos de 8 bits.
+//  - alfa OFF (0): sin ruta de alfa indirecta (no decod.).
+//  - wrap OFF en S y T (0): sin modulo (no decodificado).
+//  - add 0: el offset se SUMA a la texcoord de la etapa.
+//  - matriz ind presente en BP (slot 0-2).
+//  - escalas de coord de la etapa ind = ITS_1 (0,0):
+//    neutras tanto si la escala divide como si multiplica.
+//  - mapa/coord indirectos y propios validos.
+// La resta de bias (128 -> 0.5 en float normalizado) sigue
+// la arquitectura GX (bias S/T/U por componente); el resto
+// de la tuberia (muestra -> bias -> matriz 2x3 -> suma) es
+// el pipeline GX documentado, no una invencion local.
+inline bool IndPerturbGate(const TevState& st, const TevStage& s) {
+  if (!s.has_indirect) return false;
+  if (s.ind_format != 0 || s.ind_alpha != 0) return false;
+  if (s.ind_wrap_s != 0 || s.ind_wrap_t != 0) return false;
+  if (s.ind_add != 0) return false;
+  if (s.ind_mtx < 0 || s.ind_mtx > 2) return false;
+  if (!st.ind_mtx_present[s.ind_mtx]) return false;
+  if (s.indstage < 0 || s.indstage > 3) return false;
+  if (!st.ind_scale_present[s.indstage]) return false;
+  if (st.ind_scale_s[s.indstage] != 0 ||
+      st.ind_scale_t[s.indstage] != 0)
+    return false;
+  if (s.ind_texmap < 0 || s.ind_texmap > 7) return false;
+  if (s.ind_texcoord < 0 || s.ind_texcoord > 7) return false;
+  if (s.texmap < 0 || s.texmap > 7) return false;
+  if (s.texcoord < 0 || s.texcoord > 7) return false;
+  return true;
+}
+
+// --- Texgen XF (Tramo 6, GXSetTexCoordGen2 0x80258880) ---
+//
+// Palabra 1 (XF 0x1040+coord): [src:10-7][hasMatrix:2]
+// [forma:1-0]; forma 0 = MTX2x4, 2 = MTX3x4 (el resto de
+// formas — dual tex, color, etc. — no se modelan aqui).
+// Src XF (tabla de salto del SDK, resuelta con el DOL):
+// 0=POS, 1=NRM, 2=COLOR, 3=BINRM, 4=TANGENT, 5-12=TEX0-7
+// (arg GX: POS=0, NRM=1, BINRM=2, TANGENT=3, TEX0=4...,
+// COLOR0/1=19/20 -> XF 2). Palabra 2 (XF 0x1050+coord):
+// postmtx = (w&0xFF)+64 (125 = identidad), normalize =
+// bit 8. El id de matriz del texgen NO esta en XF (va al
+// shadow GX +128/+132): el traductor usa la TnMIDX del
+// vertice (60 = identidad).
+struct TexGen {
+  bool present = false;
+  int type_form = 0;  // 0 = MTX2x4, 2 = MTX3x4, otro = resto
+  int src = 0;        // XF src (0 = POS)
+  int has_matrix = 0;
+  int postmtx = 125;  // 125 = identidad
+  int normalize = 0;
+};
+
+inline TexGen DecodeTexGenWord1(uint32_t w) {
+  TexGen tg;
+  tg.present = true;
+  tg.type_form = static_cast<int>(w & 0x3);
+  tg.src = static_cast<int>((w >> 7) & 0xF);
+  tg.has_matrix = static_cast<int>((w >> 2) & 0x1);
+  return tg;
+}
+
+inline void DecodeTexGenWord2(uint32_t w, TexGen* tg) {
+  tg->postmtx = static_cast<int>(w & 0xFF) + 64;
+  tg->normalize = static_cast<int>((w >> 8) & 0x1);
+}
+
+// Texgen-POS aplicable en el traductor: fuente POS, forma
+// 2x4 o 3x4, postmtx identidad y sin normalizar. Cualquier
+// otro caso conserva el comportamiento anterior (UV
+// directa) y queda documentado como pendiente, no se
+// aproxima con una matriz inventada.
+inline bool TexGenPosApplicable(const TexGen& tg) {
+  return tg.present && tg.src == 0 &&
+         (tg.type_form == 0 || tg.type_form == 2) &&
+         tg.postmtx == 125 && tg.normalize == 0;
+}
+
+// --- Fog BP 0xEE-0xF2 (Tramo 6, GXSetFog 0x8025CC44) ---
+//
+// El SDK calcula (args: tipo, start, end, near, far, color;
+// si near == far, usa A=0.5, B=0, C=0):
+//   A = far/(far-near), B = start/(end-start),
+//   C = far*near/((far-near)*(end-start)).
+// Luego normaliza A al rango [0.5, 1.0] (mientras A > 1:
+// A *= 0.5, exp++; mientras 0 < A < 0.5: A *= 2, exp--;
+// constantes DOL: 0.5 en r2+4668, 1.0 doble en r2+4672,
+// 2.0 en r2+4680, 0.5 doble en r2+4688) y emite:
+//   0xEE = top 20 bits del float C' = C/2^r30,
+//   0xEF = mantisa entera = (u32)(8388638.0 * A_norm)
+//     (8388638.0 en r2+4696),
+//   0xF0 = r30 = exp+1,
+//   0xF1 = tipo[23:21] + top 20 bits del float B,
+//   0xF2 = color RGB.
+// La inversion recupera A/B/C (B y C con mantisa de 11
+// bits: error relativo ~2^-12) y, con near/far conocidos,
+// start/end. Sin near/far conocidos el sistema tiene 3
+// ecuaciones y 4 incognitas: NO se devuelve start/end.
+struct GxFogParams {
+  bool present = false;  // las 5 palabras presentes
+  int type = 0;          // campo [23:21] de 0xF1 (enum GXFogType)
+  float a = 0.0f, b = 0.0f, c = 0.0f;
+  int exp_field = 0;     // r30
+  int r = 0, g = 0, bl = 0;
+};
+
+inline float FogField20ToFloat(uint32_t field20) {
+  uint32_t bits = (field20 & 0xFFFFFu) << 12;
+  float v = 0.0f;
+  __builtin_memcpy(&v, &bits, sizeof(v));
+  return v;
+}
+
+inline bool DecodeFogWords(const std::map<uint32_t, uint32_t>& bp,
+                           GxFogParams* out) {
+  auto get = [&](uint32_t reg, uint32_t* v) {
+    auto it = bp.find(reg);
+    if (it == bp.end()) return false;
+    *v = it->second;
+    return true;
+  };
+  uint32_t wEE = 0, wEF = 0, wF0 = 0, wF1 = 0, wF2 = 0;
+  if (!get(0xEE, &wEE) || !get(0xEF, &wEF) || !get(0xF0, &wF0) ||
+      !get(0xF1, &wF1) || !get(0xF2, &wF2))
+    return false;
+  out->present = true;
+  out->exp_field = static_cast<int>(wF0 & 0xFFFFFF);
+  float a_norm =
+      static_cast<float>(wEF & 0xFFFFFF) / 8388638.0f;
+  // A = A_norm * 2^(r30-1) (r3 = r30-1 en el SDK).
+  float a = a_norm;
+  int e = out->exp_field - 1;
+  if (e >= 0) {
+    for (int i = 0; i < e; ++i) a *= 2.0f;
+  } else {
+    for (int i = 0; i < -e; ++i) a *= 0.5f;
+  }
+  out->a = a;
+  float cp = FogField20ToFloat(wEE & 0xFFFFF);
+  float c = cp;
+  if (out->exp_field >= 0) {
+    for (int i = 0; i < out->exp_field; ++i) c *= 2.0f;
+  } else {
+    for (int i = 0; i < -out->exp_field; ++i) c *= 0.5f;
+  }
+  out->c = c;
+  out->b = FogField20ToFloat(wF1 & 0xFFFFF);
+  out->type = static_cast<int>((wF1 >> 21) & 0x7);
+  out->r = static_cast<int>((wF2 >> 16) & 0xFF);
+  out->g = static_cast<int>((wF2 >> 8) & 0xFF);
+  out->bl = static_cast<int>(wF2 & 0xFF);
+  return true;
+}
+
+// Recupera start/end desde A/B/C con near/far conocidos.
+// Devuelve false (sin inventar nada) si: A o C son cero
+// (caso degenerado near == far), far <= near, o A no es
+// consistente con far/(far-near) dentro del 2% (los
+// near/far pasados no son los del fog: entonces start/end
+// no son recuperables desde BP). D = end-start =
+// far*near/((far-near)*C); start = B*D; end = start+D.
+inline bool FogStartEnd(const GxFogParams& p, float near_z, float far_z,
+                        float* start_out, float* end_out) {
+  if (!p.present) return false;
+  if (p.a == 0.0f || p.c == 0.0f) return false;
+  if (!(far_z > near_z)) return false;
+  float a_expect = far_z / (far_z - near_z);
+  float rel = (p.a - a_expect) / a_expect;
+  if (rel < 0.0f) rel = -rel;
+  if (rel > 0.02f) return false;
+  float d = far_z * near_z / ((far_z - near_z) * p.c);
+  if (!(d > 0.0f)) return false;
+  float start = p.b * d;
+  *start_out = start;
+  *end_out = start + d;
+  return true;
+}
+
+// Factor de fog lineal en GLSL ES 1.00: 1 en start (sin
+// fog), 0 en end (color fog completo), clamp [0,1].
+// Solo familia lineal (tipos GXFogType 1 = LIN, 2 =
+// PERSP_LIN, 5 = ORTHO_LIN; el orden del enum es de libogc,
+// no re-derivado de este DOL). EXP/EXP2 y NONE devuelven
+// cadena vacia (forma exponencial no determinada aqui).
+// z_expr es la profundidad de vista (varying que debe
+// alimentar el vertex shader; el cableado en gx_gl.cpp es
+// un paso aparte, ver informe Tramo 6).
+inline std::string FogFactorGlsl(int type, float start, float end,
+                                 const std::string& z_expr) {
+  if (type != 1 && type != 2 && type != 5) return "";
+  if (!(end > start)) return "";
+  char buf[256];
+  std::snprintf(buf, sizeof(buf),
+                "clamp((%.9g - %s) / %.9g, 0.0, 1.0)", end,
+                z_expr.c_str(), end - start);
+  return std::string(buf);
 }
 
 // Konst/regcolor desde 0xE0+2*i / 0xE1+2*i (GXSetTevColor
@@ -480,6 +752,23 @@ inline uint32_t TevHash(const TevState& st) {
       __builtin_memcpy(&bits, &v, sizeof(bits));
       mix(bits);
     }
+  // Tramo 6: matrices/escalas ind tambien forman parte de
+  // la clave (un cambio de matriz debe recompilar).
+  for (int k = 0; k < 3; ++k) {
+    mix(static_cast<uint32_t>(st.ind_mtx_present[k] ? 1 : 0) |
+        (static_cast<uint32_t>(st.ind_mtx_scale[k]) << 4));
+    for (int c = 0; c < 6; ++c) {
+      uint32_t bits = 0;
+      float v = st.ind_mtx_vals[k][c];
+      __builtin_memcpy(&bits, &v, sizeof(bits));
+      mix(bits);
+    }
+  }
+  for (int k = 0; k < 4; ++k) {
+    mix(static_cast<uint32_t>(st.ind_scale_present[k] ? 1 : 0) |
+        (static_cast<uint32_t>(st.ind_scale_s[k]) << 4) |
+        (static_cast<uint32_t>(st.ind_scale_t[k]) << 8));
+  }
   return h;
 }
 
@@ -525,6 +814,44 @@ inline TevState SnapshotTevFromBp(
   // Ind order 0x27 (ausente => ind_texmap/coord -1).
   uint32_t ind_order = 0;
   bool has_ind_order = get(0x27, &ind_order);
+  // Tramo 6: matrices ind 0x06-0x0E y escalas 0x25/0x26.
+  for (int k = 0; k < 3; ++k) {
+    uint32_t w0 = 0, w1 = 0, w2 = 0;
+    bool p0 = get(0x06u + 3u * static_cast<uint32_t>(k), &w0);
+    bool p1 = get(0x07u + 3u * static_cast<uint32_t>(k), &w1);
+    bool p2 = get(0x08u + 3u * static_cast<uint32_t>(k), &w2);
+    if (p0 && p1 && p2) {
+      int sc = 0;
+      if (DecodeIndTexMtxWords(w0, w1, w2, st.ind_mtx_vals[k],
+                                &sc)) {
+        st.ind_mtx_present[k] = true;
+        st.ind_mtx_scale[k] = sc;
+      }
+    }
+  }
+  {
+    uint32_t w25 = 0, w26 = 0;
+    if (get(0x25, &w25)) {
+      int ss[2] = {0, 0}, tt[2] = {0, 0};
+      DecodeIndCoordScaleWord(w25, ss, tt);
+      st.ind_scale_s[0] = ss[0];
+      st.ind_scale_t[0] = tt[0];
+      st.ind_scale_s[1] = ss[1];
+      st.ind_scale_t[1] = tt[1];
+      st.ind_scale_present[0] = true;
+      st.ind_scale_present[1] = true;
+    }
+    if (get(0x26, &w26)) {
+      int ss[2] = {0, 0}, tt[2] = {0, 0};
+      DecodeIndCoordScaleWord(w26, ss, tt);
+      st.ind_scale_s[2] = ss[0];
+      st.ind_scale_t[2] = tt[0];
+      st.ind_scale_s[3] = ss[1];
+      st.ind_scale_t[3] = tt[1];
+      st.ind_scale_present[2] = true;
+      st.ind_scale_present[3] = true;
+    }
+  }
   // Konst/regcolor (ausente => 0).
   for (int i = 0; i < 4; ++i) {
     float* k = st.konst[i];
@@ -605,7 +932,11 @@ struct TevGenResult {
   bool needs_color1 = false;       // alguna etapa usa canal 1
   int stages_processed = 0;        // etapas dentro de num_stages
   int stages_emitted = 0;          // etapas que emitieron codigo
-  int indirect_noop = 0;           // etapas con indirecto (no-op)
+  int indirect_noop = 0;           // etapas con indirecto (todas)
+  int indirect_perturbed = 0;      // Tramo 6: etapas con
+                                   // perturbacion bajo gate
+  int indirect_gated_out = 0;      // Tramo 6: etapas con
+                                   // indirecto fuera del gate
   int unsupported = 0;             // etapas en passthrough
   bool truncated = false;          // num_stages > 16 (defensa)
   uint32_t hash = 0;
@@ -822,6 +1153,19 @@ inline TevGenResult GenerateTevFragment(
         s.alpha.c == tev::kCaRasA || s.alpha.d == tev::kCaRasA) {
       if (chan1) r.needs_color1 = true; else r.needs_color = true;
     }
+    // Tramo 6: la textura indirecta de una etapa bajo gate
+    // tambien necesita su sampler, pero solo si la etapa
+    // muestrea textura (en otro caso la perturbacion no se
+    // emite y el sampler sobraria).
+    bool uses_tex_first =
+        s.color.a == tev::kCcTexC || s.color.b == tev::kCcTexC ||
+        s.color.c == tev::kCcTexC || s.color.d == tev::kCcTexC ||
+        s.color.a == tev::kCcTexA || s.color.b == tev::kCcTexA ||
+        s.color.c == tev::kCcTexA || s.color.d == tev::kCcTexA ||
+        s.alpha.a == tev::kCaTexA || s.alpha.b == tev::kCaTexA ||
+        s.alpha.c == tev::kCaTexA || s.alpha.d == tev::kCaTexA;
+    if (uses_tex_first && IndPerturbGate(st, s))
+      sampler_used[s.ind_texmap] = true;
   }
   for (int m = 0; m < 8; ++m)
     if (sampler_used[m]) r.sampler_maps.push_back(m);
@@ -861,10 +1205,18 @@ inline TevGenResult GenerateTevFragment(
 
   for (int i = 0; i < n; ++i) {
     const TevStage& s = st.stages[i];
+    // Tramo 6: perturbacion bajo gate, o no-op contado.
+    // El conteo final (perturbed/gated_out) se hace en el
+    // punto de emision, cuando ya se sabe si la etapa
+    // muestrea textura (sin muestreo no hay nada que
+    // perturbar: gated_out, no perturbed).
+    bool perturb = false;
     if (s.has_indirect) {
-      // No-op documentado: la texcoord se usa sin perturbar.
-      // El combining de la etapa se genera igual debajo.
+      // No-op documentado (Tramo 5): la texcoord se usa sin
+      // perturbar cuando el gate no se cumple. El combining
+      // de la etapa se genera igual debajo.
       ++r.indirect_noop;
+      perturb = IndPerturbGate(st, s);
     }
     // Etapa fuera de enum: passthrough + contador (nunca
     // crash ni magenta). El chequeo estricto completo vive
@@ -934,14 +1286,60 @@ inline TevGenResult GenerateTevFragment(
     bool tex_swap = swap_active(tex_tab);
     std::string pfx = "  ";  // cuerpo de main
     std::string tex_c, tex_a;
+    // Tramo 6: UV de la etapa (perturbada solo bajo gate).
+    std::string uv_expr = tev_detail::UvExpr(s.texcoord);
+    if (perturb && !(uses_tex_c || uses_tex_a)) {
+      perturb = false;
+      ++r.indirect_gated_out;
+    } else if (perturb) {
+      ++r.indirect_perturbed;
+    } else if (s.has_indirect) {
+      ++r.indirect_gated_out;
+    }
+    if (perturb) {
+      // Muestra indirecta (texel normalizado 0..1), bias
+      // 0.5 en S si bias in {1,3,5,7}, en T si in {2,3,6,7}
+      // (U irrelevante con alfa OFF, exigido por el gate),
+      // matriz 2x3 (valores int11/1024, SIN el multiplicador
+      // del campo de escala: sin determinar, ver cabecera)
+      // y suma a la texcoord de la etapa.
+      bool bias_s = (s.ind_bias == 1 || s.ind_bias == 3 ||
+                     s.ind_bias == 5 || s.ind_bias == 7);
+      bool bias_t = (s.ind_bias == 2 || s.ind_bias == 3 ||
+                     s.ind_bias == 6 || s.ind_bias == 7);
+      const float* mm = st.ind_mtx_vals[s.ind_mtx];
+      auto fmt = [](float v) {
+        char buf[40];
+        std::snprintf(buf, sizeof(buf), "%.9g", v);
+        return std::string(buf);
+      };
+      std::string ind = "ind" + std::to_string(i);
+      src += pfx + "vec4 " + ind + " = texture2D(uTex" +
+             std::to_string(s.ind_texmap) + ", " +
+             tev_detail::UvExpr(s.ind_texcoord) + ");\n";
+      src += pfx + "vec2 " + ind + "Off = vec2(" + ind + ".r - " +
+             (bias_s ? "0.5" : "0.0") + ", " + ind + ".g - " +
+             (bias_t ? "0.5" : "0.0") + ");\n";
+      src += pfx + "vec2 " + ind + "Pert = vec2(" + fmt(mm[0]) +
+             " * " + ind + "Off.x + " + fmt(mm[1]) + " * " + ind +
+             "Off.y + " + fmt(mm[2]) + ", " + fmt(mm[3]) + " * " +
+             ind + "Off.x + " + fmt(mm[4]) + " * " + ind +
+             "Off.y + " + fmt(mm[5]) + ");\n";
+      src += pfx + "// escala ind (campo BP " +
+             std::to_string(st.ind_mtx_scale[s.ind_mtx]) +
+             ") sin aplicar: multiplicador sin determinar\n";
+      uv_expr = "(" + tev_detail::UvExpr(s.texcoord) + " + " + ind +
+                "Pert)";
+    }
     if (uses_tex_c || uses_tex_a) {
       if (s.texmap == 255) {
         tex_c = "vec3(0.0)";
         tex_a = "0.0";
       } else {
-        // Sampler = texmap, UV = texcoord (ver UvExpr).
+        // Sampler = texmap, UV = texcoord (ver UvExpr), o la
+        // UV perturbada bajo gate (uv_expr).
         std::string smp = "texture2D(uTex" + std::to_string(s.texmap) +
-                          ", " + tev_detail::UvExpr(s.texcoord) + ")";
+                          ", " + uv_expr + ")";
         if (tex_swap) {
           // Muestra completa: la permutacion de alfa puede
           // tomar R/G/B, no solo A.

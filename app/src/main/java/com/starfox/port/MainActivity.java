@@ -76,15 +76,17 @@ import java.security.NoSuchAlgorithmException;
  * Progreso y errores van a boot.log (el mismo fichero que
  * el log nativo, en la carpeta interna) y a logcat.
  *
- * Sin boton visible todavia: NativeActivity no tiene UI
- * Java y no hay un overlay de ajustes en el que colgar un
- * boton; requestAudioFolder() es el punto de entrada
- * completo (JNI, mismo patron que requestDataFolder()) y
- * el llamador nativo RequestSafAudioPicker() existe en
- * native-lib.cpp. El boton visible queda pendiente del
- * overlay de ajustes; no se ha robado ninguna zona tactil
- * del juego (ni la reservada del C-stick) para un picker
- * que podria abrirse por accidente en mitad de partida.
+ * Boton visible (Tramo 6, via NATIVA): la pildora
+ * inferior-centro la dibuja el renderer y la intercepta el
+ * Input nativo ANTES que el layout del juego (ver
+ * input/audio_button.h); su disparo drena el bucle nativo
+ * y llama a requestAudioFolder() (abajo) via
+ * RequestSafAudioPicker() en native-lib.cpp. No se robo
+ * ninguna zona tactil del juego (ni la reservada del
+ * C-stick): la pildora ocupa una zona disjunta probada en
+ * host. La etiqueta textual real queda pendiente del
+ * futuro overlay de ajustes; la pildora comunica el estado
+ * por color + boot.log (ver TRAMO6-INFORME.md).
  */
 public class MainActivity extends NativeActivity {
     private static final String TAG = "StarFoxPort";
@@ -247,6 +249,27 @@ public class MainActivity extends NativeActivity {
                 && requestCode != REQUEST_AUDIO_FOLDER) return;
         if (resultCode != RESULT_OK || data == null || data.getData() == null) {
             logSaf("saf: picker cancelado por el usuario");
+            // Tramo 6: sin esto, el lado nativo no distingue
+            // "copia en curso" de "usuario cancelo" (en ambos
+            // casos no hay marcador) y la pildora se quedaria
+            // en Verificando hasta reiniciar. El marcador de
+            // cancelacion lo consume el sondeo nativo, que
+            // rederiva el estado (audio/ con medios -> listo;
+            // si no, sin audio). Solo para audio: el flujo de
+            // datos base no tiene boton con estado que
+            // rescatar (su cancelacion ya deja clear + quad).
+            if (requestCode == REQUEST_AUDIO_FOLDER) {
+                try {
+                    File base = dataBase();
+                    if (base != null) {
+                        writeText(new File(new File(base, "sfa-data"),
+                                ".saf-audio-cancelled"),
+                                "saf: picker de audio cancelado\n");
+                    }
+                } catch (Exception ignored) {
+                    // El cancel ya esta en boot.log.
+                }
+            }
             return;
         }
         Uri treeUri = data.getData();
@@ -287,6 +310,16 @@ public class MainActivity extends NativeActivity {
             if (!audioDest.exists() && !audioDest.mkdirs()) {
                 throw new IOException("no se pudo crear " + audioDest);
             }
+            // Tramo 6: borrar marcadores viejos AL EMPEZAR a
+            // copiar (el lado nativo ya los borro al pulsar,
+            // antes de poner Verifying: doble guarda contra
+            // un .saf-audio-done anterior visto durante la
+            // copia nueva). Sin esto, el sondeo nativo
+            // podria marcar Listo antes de que termine esta
+            // copia. El marcador nuevo solo se escribe al
+            // final, tras verificar (abajo).
+            deleteQuietly(new File(dest, ".saf-audio-done"));
+            deleteQuietly(new File(dest, ".saf-audio-error"));
             String treeDocId = DocumentsContract.getTreeDocumentId(treeUri);
             Uri rootDoc = DocumentsContract.buildDocumentUriUsingTree(
                     treeUri, treeDocId);
@@ -315,6 +348,21 @@ public class MainActivity extends NativeActivity {
             writeText(new File(dest, ".saf-audio-done"), report.toString());
         } catch (Exception e) {
             logSaf("saf: copia de audio FALLO: " + e);
+            // Tramo 6: marcador de error para el boton (el
+            // lado nativo lo sondea y pone la pildora en
+            // rojo). Antes solo quedaba en boot.log y el
+            // boton se quedaba en Verifying para siempre
+            // en esa ejecucion.
+            try {
+                File base = dataBase();
+                if (base != null) {
+                    writeText(new File(new File(base, "sfa-data"),
+                            ".saf-audio-error"),
+                            "saf: copia de audio fallo: " + e + "\n");
+                }
+            } catch (Exception ignored) {
+                // El error ya esta en boot.log.
+            }
         } finally {
             audioRunning = false;
         }

@@ -74,11 +74,18 @@ struct GlTri {
 // si la fila 3 es no nula y w' != 0. SUPOSICION Tramo 5 (ver
 // gx.h): el vector de entrada es (s,t,1) y la traslacion son
 // m[2]/m[6]; una matriz 2x4 (8 palabras) deja la fila 3 a
-// cero y no divide. La convencion de entrada para coords
-// generadas (fuente POS/NRM) NO esta anclada: este camino
-// solo transforma UV directas de vertice con TnMIDX.
+// cero y no divide. Tramo 6: la misma regla con entrada
+// (x,y,z,1) es ApplyTexMatrixPos, usada por texgen-POS.
 bool ApplyTexMatrix(const float m[12], float s, float t, float* s_out,
                     float* t_out);
+
+// Igual que ApplyTexMatrix pero con entrada de posicion
+// (x,y,z,1) (texgen-POS, Tramo 6): sp = m0*x+m1*y+m2*z+m3,
+// tp = m4*x+m5*y+m6*z+m7, wp = m8*x+m9*y+m10*z+m11; si la
+// fila 3 es no nula y wp != 0, sp/wp y tp/wp. Una matriz
+// 2x4 (fila 3 a cero en el layout de 12) no divide.
+bool ApplyTexMatrixPos(const float m[12], float x, float y, float z,
+                       float* s_out, float* t_out);
 
 // 0 o 1 quad; false si no es QUADS de 4 vertices o no trae
 // viewport/proyeccion. canvas 640x480 del renderer host; el

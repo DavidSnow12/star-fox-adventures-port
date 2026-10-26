@@ -27,13 +27,21 @@
 //     WAV equivocado), ganancia vol_base/127 (el volumen
 //     maestro lo aplica Audio::SubmitBuffer, no el bridge,
 //     para no aplicarlo dos veces).
-// Que SOLO cuenta (sin reproducir): sndSeqPlayEx,
-// AudioStream_StartPrepared y cualquier otra entrada, porque
-// no es un fichero de audio (sndSeqPlayEx: secuenciador
-// .pro/.poo + midi.wad) o su layout no está verificado.
-// Sus IDs quedan en CountedEntries() para la traza, no en
-// PlayedEntries(). sndFXStartEx YA reproduce desde la
-// Fase 18 (OnFxStart, tabla FX verificada), no solo cuenta.
+// Que SOLO cuenta (sin reproducir): AudioStream_StartPrepared
+// y cualquier otra entrada, porque su layout no está
+// verificado. Sus IDs quedan en CountedEntries() para la
+// traza, no en PlayedEntries(). sndFXStartEx YA reproduce
+// desde la Fase 18 (OnFxStart, tabla FX verificada).
+// TRAMO 6: sndSeqPlayEx YA reproduce (OnSeqPlay): arranca el
+// secuenciador host MusyX con el primer pase verificado de
+// la cancion pedida (musyx_notes.h, generado desde Tramo 5)
+// y entrega sus notas por voces de musica propias (16, fuera
+// de las 8 SFX y de la voz de stream), con reloj BPMx6,4,
+// pitch por mac_key, pan CC10 en el note-on y CC7
+// automatizado por bloque de mezcla. Solo suenan las
+// canciones con tabla verificada (99, 74, 5); cualquier otra
+// queda como no resuelta ("musyx_cancion"), sin inventar
+// sonido. sndSeqStop detiene la cancion host en curso.
 // Mezcla (Fase 17): 8 voces SFX + 1 voz de stream, en
 // PARALELO (no en serie): Tick() mezcla un bloque de
 // hasta kFeedFrames sumando en int32 por frame y con
@@ -93,11 +101,14 @@
 #include "audio/adp_cache.h"
 #include "audio/adp_stream.h"
 #include "audio/audio.h"
+#include "audio/fx_double.h"
+#include "audio/musyx_seq.h"
 
 namespace sfa {
 
 class AudioBridge {
  public:
+  AudioBridge();  // CC7=127, CC10=64 iniciales (preset huesped).
   // Audio debe estar Init() + Start() antes de usar el bridge
   // (en el runtime lo hace GameCubeRuntime::Init; en el test
   // host lo hace el propio test). El bridge no posee Audio.
@@ -166,6 +177,35 @@ class AudioBridge {
   int OnFxStart(uint32_t fx_id, uint32_t volume, uint32_t pan,
                 uint32_t studio);
 
+  // Tramo 6 — SFX real CON doblaje (opt-in; OnFxStart NO cambia,
+  // sigue siendo 1 voz). Para FX sin voz hija (todos salvo
+  // 96/162/820) delega exactamente en OnFxStart. Para
+  // 96/162/820 encola padre por OnFxStart y luego la hija por
+  // EnqueueSamplePitched (misma muestra, pitch por tecla, misma
+  // ganancia; ver fx_double.h). Devuelve nº de voces encoladas:
+  // 2 (padre + hija), 1 (solo padre) o 0 (el padre falló).
+  // Decisión de integración Tramo 6: el hook sndFXStartEx pasa
+  // a esta variante (antes llamaba a OnFxStart).
+  int OnFxStartDoubled(uint32_t fx_id, uint32_t volume, uint32_t pan,
+                       uint32_t studio);
+
+  // Musica MusyX (Tramo 6, hook sndSeqPlayEx 0x8027C34C):
+  // group_id = r3 (sgid), seq_id = r4 (sid = trigger->track),
+  // params_ptr = r6 (puntero huesped a SynthPlayParams: se
+  // registra para traza pero NO se lee — el bridge no tiene
+  // acceso a la RAM huesped, asi que speed = 256 y sin mutes
+  // en v1). La busqueda es por seq_id; si el group_id no
+  // coincide con el gid de la tabla, arranca igualmente y lo
+  // deja en el log (equivalencia sgid<->gid sin verificar).
+  // Devuelve 1 si arranco, 0 si la cancion no tiene tabla
+  // verificada (unresolved "musyx_cancion") o no hay audio.
+  // Sustituye cualquier cancion host en curso (una sola
+  // cancion a la vez en v1, como la voz de stream unica).
+  int OnSeqPlay(uint32_t group_id, uint32_t seq_id,
+                uint32_t params_ptr);
+  // Hook sndSeqStop 0x80272F80: detiene la cancion host.
+  void OnSeqStop();
+
   // Avance de reproduccion: mezcla un bloque de hasta
   // kFeedFrames de todas las voces activas y lo entrega al
   // backend. En host el test llama a Tick() + Audio::Pump()
@@ -198,6 +238,36 @@ class AudioBridge {
   const std::vector<Unresolved>& UnresolvedEntries() const {
     return unresolved_;
   }
+  // Observacion MusyX para tests host (Tramo 6).
+  struct SeqStarted {
+    uint32_t group_id = 0;
+    uint32_t seq_id = 0;
+    uint32_t bpm = 0;
+    size_t notes = 0;
+    uint32_t params_ptr = 0;
+  };
+  const std::vector<SeqStarted>& SeqStartedEntries() const {
+    return seq_started_;
+  }
+  int CurrentSeqTrack() const {
+    return seq_.Active() && seq_.Song() != nullptr
+               ? static_cast<int>(seq_.Song()->track_id)
+               : -1;
+  }
+  bool SeqActive() const { return seq_.Active(); }
+  size_t MusyxActiveNotes() const;
+  uint64_t MusyxNotesStarted() const { return musyx_started_; }
+  uint64_t MusyxNotesEnded() const { return musyx_ended_; }
+  uint64_t MusyxStolen() const { return musyx_stolen_; }
+  // CC7 vigente por canal MIDI (tras los eventos del
+  // secuenciador; 127 antes del primer evento del canal).
+  uint32_t MusyxCc7(uint32_t midi) const {
+    return midi < 16 ? cc7_[midi] : 127;
+  }
+  // Solo tests host: copia del PCM (48 kHz, sin ganancia
+  // CC7) de la voz de musica de note_index, si esta activa.
+  bool MusyxVoicePcmCopy(size_t note_index,
+                         std::vector<int16_t>* out) const;
   // Frames pendientes: suma de lo que queda por entregar
   // en voces no en bucle + (para voces en bucle) lo que
   // queda hasta el fin de la iteración actual del bucle
@@ -215,6 +285,10 @@ class AudioBridge {
  private:
   static constexpr int kFeedFrames = 4096;
   static constexpr size_t kMaxSfxVoices = 8;
+  // Voces de musica (Tramo 6): 16 cubren los temas
+  // verificados (polifonia maxima 14 en track 5, 2 en 99,
+  // 3 en 74). Fuera de las 8 SFX y de la voz de stream.
+  static constexpr size_t kMaxMusicVoices = 16;
 
   struct Voice {
     std::vector<int16_t> pcm;  // Estereo s16 a 48.000 Hz.
@@ -231,6 +305,17 @@ class AudioBridge {
   const char* LookupStreamWav(uint32_t id) const;
   const struct MusyxSampleEntry* LookupSampleEntry(
       uint32_t id) const;
+  // Musica (Tramo 6): arranca una nota como voz de musica
+  // (resampleo con pitch por mac_key, bucle de muestra por
+  // metadato, pan CC10 del note-on; la ganancia CC7 se
+  // aplica en Tick por bloque, no aqui). Roba la voz mas
+  // antigua si las 16 estan ocupadas (cuenta musyx_stolen_).
+  bool StartMusicNote(const MusyxNote& note, size_t note_index);
+  void StopMusicNote(size_t note_index);
+  void StopAllMusic();
+  // Avanza el secuenciador dt segundos y procesa sus
+  // eventos (CC7/CC10, note-on/off). Llamado por Tick().
+  void PumpSequencer(double dt_seconds);
   // Resuelve el .adp de un WAV de stream por indice
   // insensible a caso (con reconstruccion del indice al
   // primer fallo, para audio anadido a mitad de sesion);
@@ -253,6 +338,13 @@ class AudioBridge {
   // y ganancia). Usado por OnFxStart y, desde el Tramo 5,
   // también por OnSfxTrigger (tras resolver FX -> muestra).
   bool EnqueueSample(uint32_t sample_id, float gain);
+  // Tramo 6 — voz hija con pitch: COPIA deliberada de
+  // EnqueueSample con tasa efectiva 48000/ratio, no una
+  // refactorización, para que el camino verificado quede
+  // intacto. Misma política de voces llenas, mismo bucle por
+  // metadato reescalado y misma ganancia. ratio <= 0 -> false.
+  bool EnqueueSamplePitched(uint32_t sample_id, float gain,
+                            double pitch_ratio);
   // Carga un WAV relativo a wav_root_, lo resamplea a
   // estereo 48.000 Hz y lo encola como voz (stream o SFX).
   // Registra Played o Unresolved segun el caso. Devuelve
@@ -280,6 +372,29 @@ class AudioBridge {
   uint64_t cache_cap_ = kAdpCacheCapBytes;
   std::string last_stream_via_;
   std::array<Voice, kMaxSfxVoices> sfx_voices_;
+  // Voz de musica (Tramo 6): PCM ya resampleado a 48 kHz
+  // con pitch y pan del note-on, SIN ganancia aplicada
+  // (Tick multiplica por base_gain x CC7 vigente / 127
+  // por bloque). Sin bucle en el campo: el bucle de
+  // muestra ya se expandio al renderizar la nota hasta
+  // su key-off (o hasta agotar la muestra sin bucle).
+  struct MusicVoice {
+    std::vector<int16_t> pcm;
+    size_t pos = 0;
+    float base_gain = 1.0f;  // mac_vol/127.
+    uint32_t midi = 0;
+    size_t note_index = 0;
+    bool active = false;
+    size_t Total() const { return pcm.size() / 2; }
+  };
+  std::array<MusicVoice, kMaxMusicVoices> music_voices_;
+  MusyxSequencer seq_;
+  std::array<uint32_t, 16> cc7_{};
+  std::array<uint32_t, 16> cc10_{};
+  std::vector<SeqStarted> seq_started_;
+  uint64_t musyx_started_ = 0;
+  uint64_t musyx_ended_ = 0;
+  uint64_t musyx_stolen_ = 0;
   Voice stream_voice_;  // Solo para el fallback WAV en memoria.
   // Voz de stream en streaming (cache o ADP). Excluyente
   // con stream_voice_: solo una de las dos esta activa.

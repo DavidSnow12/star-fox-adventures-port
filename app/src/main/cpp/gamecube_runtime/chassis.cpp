@@ -247,7 +247,8 @@ ChassisResult RunChassis(CpuState* cpu, Hle* hle,
          pc == 0x8000D03Cu ||  // AudioStream_StopCurrent
          pc == 0x8000D158u ||  // AudioStream_StartPrepared
          pc == 0x80273218u ||  // sndFXStartEx
-         pc == 0x8027C34Cu)) {  // sndSeqPlayEx
+         pc == 0x8027C34Cu ||  // sndSeqPlayEx
+         pc == 0x80272F80u)) {  // sndSeqStop (Tramo 6)
       audio_hook(pc, cpu->gpr[3], cpu->gpr[4], cpu->gpr[5],
                  cpu->gpr[6], cpu->gpr[7], audio_hook_user);
     }
