@@ -33,12 +33,18 @@ constexpr HleEntry kHleTable[] = {
     {Hle::kViWaitForRetrace, "VIWaitForRetrace"},
     {Hle::kViConfigure, "VIConfigure"},
     {Hle::kViFlush, "VIFlush"},
+    {Hle::kViSetPreRetraceCallback, "VISetPreRetraceCallback"},
+    {Hle::kViSetPostRetraceCallback, "VISetPostRetraceCallback"},
+    {Hle::kViCallbackTrampoline, "VITrampoline"},
     {Hle::kPadInit, "PADInit"},
     {Hle::kPadRead, "PADRead"},
     {Hle::kPadReset, "PADReset"},
     {Hle::kPadRecalibrate, "PADRecalibrate"},
     {Hle::kGxInit, "GXInit"},
     {Hle::kLcEnable, "LCEnable"},
+    {Hle::kLcLoadBlocks, "LCLoadBlocks"},
+    {Hle::kLcStoreBlocks, "LCStoreBlocks"},
+    {Hle::kLcQueueWait, "LCQueueWait"},
     {Hle::kDcInvalidateRange, "DCInvalidateRange"},
     {Hle::kDcFlushRange, "DCFlushRange"},
     {Hle::kDcStoreRange, "DCStoreRange"},
@@ -97,6 +103,42 @@ bool GuestRangeHostPtr(CpuState* cpu, uint32_t guest, uint32_t size,
     return false;
   }
   *out = cpu->ram + offset;
+  return true;
+}
+
+// Copia DMA de la caché bloqueada, sincrona (ver hle.h): un lado
+// es RAM (mem_addr) y el otro la ventana LC (lc_addr, en
+// [0xE0000000, 0xE0004000)). to_lc = RAM -> LC (Load); false =
+// LC -> RAM (Store). El lado RAM usa el puntero host directo
+// cuando cabe en RAM/alias; si no, el bucle mem_* (que cubre
+// cualquier region mapeada). Devuelve false si el lado LC esta
+// fuera de la ventana: el llamador lo registra, no se copia
+// parcial ni se recorta en silencio.
+bool LcDmaCopy(CpuState* cpu, uint32_t mem_addr, uint32_t lc_addr,
+               uint32_t bytes, bool to_lc) {
+  if (cpu == nullptr) return false;
+  if (lc_addr < GC_LC_BASE || bytes > GC_LC_SIZE ||
+      lc_addr - GC_LC_BASE > GC_LC_SIZE - bytes) {
+    return false;
+  }
+  uint8_t* lc = cpu->locked_cache + (lc_addr - GC_LC_BASE);
+  uint8_t* host = nullptr;
+  if (GuestRangeHostPtr(cpu, mem_addr, bytes, &host)) {
+    if (to_lc) {
+      std::memcpy(lc, host, bytes);
+    } else {
+      std::memcpy(host, lc, bytes);
+    }
+    return true;
+  }
+  for (uint32_t i = 0; i < bytes; ++i) {
+    if (to_lc) {
+      lc[i] = ::mem_read8(cpu, mem_addr + i);
+    } else {
+      ::mem_write8(cpu, mem_addr + i, lc[i]);
+    }
+    if (cpu->exception != 0) return false;
+  }
   return true;
 }
 
@@ -736,6 +778,30 @@ void Hle::DrainArqCompletions(CpuState* cpu, uint32_t count_addr,
            pending_arq_completions_);
 }
 
+bool Hle::DeliverViCallbacks(CpuState* cpu) {
+  if (cpu == nullptr || vi_chain_active_) return false;
+  uint32_t r13 = cpu->gpr[13];
+  uint32_t pre = ::mem_read32(cpu, r13 - 21016u);
+  uint32_t post = ::mem_read32(cpu, r13 - 21012u);
+  if (cpu->exception != 0) return false;
+  if (pre == 0 && post == 0) return false;
+  ++vi_chains_;
+  if (pre != 0) {
+    ++vi_pre_delivered_;
+    vi_chain_active_ = true;
+    vi_chain_post_ = post;
+    vi_chain_ret_ = cpu->lr;
+    cpu->gpr[3] = static_cast<uint32_t>(retrace_count_);
+    cpu->pc = pre;
+    cpu->lr = kViCallbackTrampoline;
+  } else {
+    ++vi_post_delivered_;
+    cpu->gpr[3] = static_cast<uint32_t>(retrace_count_);
+    cpu->pc = post;
+  }
+  return true;
+}
+
 bool Hle::HandleHostCall(CpuState* cpu, uint32_t address) {
   // Evento DSP (Fase 5, desbloqueo salInitDsp): NO es una
   // sustitucion de funcion, sino la entrega del evento que el
@@ -955,12 +1021,36 @@ bool Hle::HandleHostCall(CpuState* cpu, uint32_t address) {
       // esta fase; si el juego depende de una, el log de HLE
       // dira cual fue la primera (pendiente documentado).
       return Return(cpu, 0);
-    case kOsInitThreadQueue:
     case kOsDisableScheduler:
     case kOsEnableScheduler:
     case kOsInitContext:
-    case kOsInitMessageQueue:
       return Return(cpu, 0);
+    case kOsInitThreadQueue:
+      // Codigo huesped: [q+0]=[q+4]=0 (primero/ultimo hilo).
+      ::mem_write32(cpu, cpu->gpr[3] + 0u, 0u);
+      ::mem_write32(cpu, cpu->gpr[3] + 4u, 0u);
+      return Return(cpu, 0);
+    case kOsInitMessageQueue: {
+      // Implementacion real (antes era no-op, y ese era el
+      // atasco siguiente al bloqueador nº 1): el codigo
+      // huesped de OSInitMessageQueue escribe [q+16]=msgArray,
+      // [q+20]=msgCount, [q+24]=0 (firstIndex), [q+28]=0
+      // (usedCount), con las dos colas de hilos en +0 y +8 a
+      // cero (OSInitThreadQueue huesped: [q+0]=[q+4]=0). Sin
+      // esto, OSSendMessage (huesped, no HLEado) veia
+      // capacidad 0 y dormia para siempre en run29, porque
+      // used (0) >= capacidad (0).
+      uint32_t q = cpu->gpr[3];
+      ::mem_write32(cpu, q + 0u, 0u);
+      ::mem_write32(cpu, q + 4u, 0u);
+      ::mem_write32(cpu, q + 8u, 0u);
+      ::mem_write32(cpu, q + 12u, 0u);
+      ::mem_write32(cpu, q + 16u, cpu->gpr[4]);
+      ::mem_write32(cpu, q + 20u, cpu->gpr[5]);
+      ::mem_write32(cpu, q + 24u, 0u);
+      ::mem_write32(cpu, q + 28u, 0u);
+      return Return(cpu, 0);
+    }
     case kOsCreateThread: {
       ThreadEntry t;
       t.thread_guest = cpu->gpr[3];
@@ -1049,6 +1139,10 @@ bool Hle::HandleHostCall(CpuState* cpu, uint32_t address) {
     case kViInit:
       vi_init_done_ = true;
       retrace_count_ = 0;
+      // VIInit pone a cero el estado VI, incluidos los
+      // callbacks (el huesped los guarda en estos globales).
+      ::mem_write32(cpu, cpu->gpr[13] - 21016u, 0u);
+      ::mem_write32(cpu, cpu->gpr[13] - 21012u, 0u);
       return Return(cpu, 0);
     case kViConfigure:
       // VIConfigure(mode*): se registra; el modo real (NTSC/
@@ -1065,7 +1159,43 @@ bool Hle::HandleHostCall(CpuState* cpu, uint32_t address) {
       // llamada solo ocurre en tvInit (x2 en run20), asi que
       // ambos caminos no se duplican en el bucle.
       ++retrace_count_;
+      if (DeliverViCallbacks(cpu)) return true;
       return Return(cpu, 0);
+    }
+    case kViSetPreRetraceCallback: {
+      // Codigo huesped: old = [r13-21016]; [r13-21016] = cb;
+      // devuelve old. Se escribe tambien el global para que
+      // cualquier lector directo vea lo mismo que el HLE.
+      uint32_t global = cpu->gpr[13] - 21016u;
+      uint32_t old = ::mem_read32(cpu, global);
+      ::mem_write32(cpu, global, cpu->gpr[3]);
+      return Return(cpu, old);
+    }
+    case kViSetPostRetraceCallback: {
+      uint32_t global = cpu->gpr[13] - 21012u;
+      uint32_t old = ::mem_read32(cpu, global);
+      ::mem_write32(cpu, global, cpu->gpr[3]);
+      return Return(cpu, old);
+    }
+    case kViCallbackTrampoline: {
+      // Segundo tiempo de la cadena VI: pre ya volvio aqui
+      // (su blr aterrizo en este PC sintetico). Si hay post,
+      // se despacha con lr = retorno original; si no, se
+      // vuelve directamente a el.
+      uint32_t post = vi_chain_post_;
+      uint32_t ret = vi_chain_ret_;
+      vi_chain_post_ = 0;
+      vi_chain_ret_ = 0;
+      vi_chain_active_ = false;
+      if (post != 0) {
+        ++vi_post_delivered_;
+        cpu->gpr[3] = static_cast<uint32_t>(retrace_count_);
+        cpu->pc = post;
+        cpu->lr = ret;
+      } else {
+        cpu->pc = ret;
+      }
+      return true;
     }
     case kPadInit:
       pad_init_done_ = true;
@@ -1088,6 +1218,13 @@ bool Hle::HandleHostCall(CpuState* cpu, uint32_t address) {
           pad_state_ext_ != nullptr ? pad_state_ext_ : &pad_state_;
       PadState effective = *state;
       effective.SyncAnalogFromButtons();
+      ++pad_reads_;
+      // Pulsacion programada (Fase 8, solo con inyeccion de
+      // test): antes del PADRead n, botones 0.
+      if (pad_inject_ && pad_press_from_read_ != 0 &&
+          pad_reads_ < pad_press_from_read_) {
+        effective.buttons = 0;
+      }
       uint8_t status[48];
       std::memset(status, 0, sizeof(status));
       status[0] = static_cast<uint8_t>(effective.buttons >> 8);
@@ -1185,6 +1322,7 @@ bool Hle::HandleHostCall(CpuState* cpu, uint32_t address) {
       // antes de leerse y solo ensuciaba el diagnostico; la
       // via valida es PADRead (Fase 6b).
       ++retrace_count_;
+      if (DeliverViCallbacks(cpu)) return true;
       return Return(cpu, 0);
     case kGxInitFifoBase:
     case kGxInitFifoPtrs:
@@ -1202,7 +1340,43 @@ bool Hle::HandleHostCall(CpuState* cpu, uint32_t address) {
       // asi que no hay codigo huesped que ejecutar ahi.
       return Return(cpu, 0);
     case kLcEnable:
+      // _LCEnable huesped no corre (HLE): su bucle dcbz ponia
+      // la ventana LC a cero. El búfer ya esta a cero en el
+      // arranque; se vuelve a poner a cero aqui para que una
+      // segunda llamada tenga la misma semantica.
+      std::memset(cpu->locked_cache, 0, GC_LC_SIZE);
       return Return(cpu, 0);
+    case kLcLoadBlocks: {
+      // Load: RAM (r4) -> LC (r3). r5 = bloques de 32 B, 0 = 128
+      // (4096 B, como el bucle de LCStoreData). El huesped
+      // devuelve r3 intacto.
+      uint32_t lc = cpu->gpr[3];
+      uint32_t mem = cpu->gpr[4];
+      uint32_t blocks = cpu->gpr[5] == 0 ? 128u : cpu->gpr[5];
+      if (!LcDmaCopy(cpu, mem, lc, blocks * 32u, true)) {
+        SFA_LOGE("hle: LCLoadBlocks fuera de ventana LC r3=0x%08X "
+                 "r4=0x%08X bloques=%u (sin copia)",
+                 lc, mem, blocks);
+      }
+      return Return(cpu, lc);
+    }
+    case kLcStoreBlocks: {
+      // Store: LC (r4) -> RAM (r3). El huesped devuelve r3
+      // enmascarado a 28 bits (rlwinm 0, 4, 31 en la entrada).
+      uint32_t mem = cpu->gpr[3];
+      uint32_t lc = cpu->gpr[4];
+      uint32_t blocks = cpu->gpr[5] == 0 ? 128u : cpu->gpr[5];
+      if (!LcDmaCopy(cpu, mem, lc, blocks * 32u, false)) {
+        SFA_LOGE("hle: LCStoreBlocks fuera de ventana LC r3=0x%08X "
+                 "r4=0x%08X bloques=%u (sin copia)",
+                 mem, lc, blocks);
+      }
+      return Return(cpu, mem & 0x0FFFFFFFu);
+    }
+    case kLcQueueWait:
+      // DMA sincrono: la cola esta vacia siempre; el huesped
+      // devuelve r3+1 (addi en la entrada).
+      return Return(cpu, cpu->gpr[3] + 1u);
     case kDcInvalidateRange:
     case kDcFlushRange:
     case kDcStoreRange:
@@ -1259,20 +1433,24 @@ void Hle::HandleFallback(CpuState* cpu, uint32_t raw, uint32_t cia) {
   // Un desplazamiento ingenuo (raw>>11)&0x3FF da 501 para HID0
   // en vez de 1008 (error real corregido en este tramo).
   // CPUState no tiene hid0 ni l2cr, asi que el HLE los guarda.
-  // Solo se modelan HID0 (1008) y L2CR (1017): cualquier otro
-  // SPR es exception registrada, no un avance silencioso.
+  // Solo se modelan HID0 (1008), L2CR (1017) y WPAR (921):
+  // cualquier otro SPR es exception registrada, no un avance
+  // silencioso.
   if (primary == 0x7C000000u && (xo == 339u || xo == 467u)) {
     uint32_t spr =
         ((raw >> 16) & 0x1Fu) | (((raw >> 11) & 0x1Fu) << 5);
     uint32_t reg = (raw >> 21) & 0x1Fu;
-    if (spr == 1008u || spr == 1017u) {
+    if (spr == 1008u || spr == 1017u || spr == 921u) {
       if (xo == 339u) {
-        cpu->gpr[reg] = spr == 1008u ? hid0_ : l2cr_;
+        cpu->gpr[reg] =
+            spr == 1008u ? hid0_ : (spr == 1017u ? l2cr_ : wpar_);
       } else {
         if (spr == 1008u) {
           hid0_ = cpu->gpr[reg];
-        } else {
+        } else if (spr == 1017u) {
           l2cr_ = cpu->gpr[reg];
+        } else {
+          wpar_ = cpu->gpr[reg];
         }
       }
       // Los SPR son raros en la ruta: se registran siempre.

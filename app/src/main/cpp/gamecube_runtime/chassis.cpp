@@ -1,6 +1,8 @@
 #include "gamecube_runtime/chassis.h"
 
 #include <chrono>
+#include <cstdio>
+#include <cstdlib>
 #include <cstring>
 
 // generated.h es C puro (sin guardas extern "C" propias): desde
@@ -69,6 +71,48 @@ ChassisResult RunChassis(CpuState* cpu, Hle* hle,
     }
     uint32_t pc = cpu->pc;
     result.last_pc = pc;
+    // Traza de entradas a funciones clave (solo host, solo con
+    // SFA_PCTRACE en el entorno; apagada por defecto). Solo ve
+    // despachos entre chunks: una llamada dentro del mismo chunk
+    // es un goto y no aparece; las llamadas entre chunks si.
+    {
+      static int pctrace = -1;
+      if (pctrace < 0) pctrace = std::getenv("SFA_PCTRACE") != nullptr;
+      if (pctrace) {
+        static const uint32_t kTracePcs[] = {
+            0x80116AF4u,  // TitleMenu_run
+            0x80116650u,  // n_attractmode_prepareMovie
+            0x80116548u,  // n_attractmode_releaseMovieBuffers
+            0x8006CB00u,  // newshadows_beginFrame
+            0x8006A09Cu,  // updateHeavyFogTexture
+            0x8006D7CCu,  // allocLotsOfTextures
+            0x80118E10u,  // THPPlayerPlay
+            0x80118D2Cu,  // THPPlayerStop
+            0x8011634Cu,  // n_rareware_render
+            0x801169E8u,  // TitleMenu_render
+            0x80117480u,  // TitleMenu_initialise
+            0x80116298u,  // TitleScreenInit_render
+            0x80242548u,  // LCEnable (HLE)
+            0x802425A8u,  // LCLoadBlocks (HLE)
+            0x802425CCu,  // LCStoreBlocks (HLE)
+            0x8024269Cu,  // LCQueueWait (HLE)
+            0x80244940u,  // OSInitMessageQueue
+            0x802449A0u,  // OSSendMessage
+            0x80244A68u,  // OSReceiveMessage
+            0x801190C8u,  // InitAllMessageQueue
+            0x801383C0u,  // hilo creado en run26 (OSCreateThread)
+        };
+        for (uint32_t t : kTracePcs) {
+          if (pc == t) {
+            std::fprintf(stderr,
+                         "PCTRACE desp=%llu pc=0x%08X lr=0x%08X\n",
+                         static_cast<unsigned long long>(result.dispatches),
+                         pc, cpu->lr);
+            break;
+          }
+        }
+      }
+    }
     if (pc == kBootMainAddress && !result.reached_main) {
       result.reached_main = true;
       SFA_LOGI("chassis: hito main 0x%08X (despachos %llu)", pc,

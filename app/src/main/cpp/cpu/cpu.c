@@ -421,6 +421,16 @@ static u8 *resolve_addr(CPUState *cpu, u32 addr, u32 *avail) {
             return cpu->mem2 + offset;
         }
     }
+    /* Caché bloqueada: 0xE0000000-0xE0004000 (16 KiB, ver
+     * GC_LC_BASE/GC_LC_SIZE). En hardware real esta ventana la
+     * abre _LCEnable con DBAT3; aqui el HLE de LCEnable no
+     * ejecuta el codigo huesped, asi que la ventana esta
+     * siempre mapeada a este búfer (a cero en arranque). */
+    if (addr >= GC_LC_BASE && addr < GC_LC_BASE + GC_LC_SIZE) {
+        u32 offset = addr - GC_LC_BASE;
+        *avail = GC_LC_SIZE - offset;
+        return cpu->locked_cache + offset;
+    }
     /* Forma fisica: offset directo en RAM (la que generated.h aliasa
      * a GC_RAM_BASE para el PC). */
     if (addr < cpu->ram_size) {
@@ -568,7 +578,28 @@ u64 mem_read64(CPUState *cpu, u32 addr) {
     return read_be64(p);
 }
 
+/* Watchpoint de depuracion (solo host, solo con SFA_WATCH_CACHE en
+ * el entorno; apagado por defecto, sin efecto en la APK): registra
+ * cada escritura a la estructura de la cache de texturas del
+ * attract-mode ([r13-23424] estado 0x803DEFC0, [r13-23404] puntero
+ * 0x803DEFD4 y campos vecinos hasta 0x803DF060) con el PC huesped
+ * exacto de la instruccion que escribe y su LR. Anadido para
+ * diagnosticar el bloqueador nº 1 (ver PORT-STATUS, Fases 8). */
+static void sfa_cache_watch(CPUState *cpu, u32 addr, u32 value,
+                            unsigned size) {
+    static int enabled = -1;
+    if (enabled < 0) enabled = getenv("SFA_WATCH_CACHE") != NULL;
+    if (!enabled) return;
+    if (addr >= 0x803DEFC0u && addr < 0x803DF060u) {
+        fprintf(stderr,
+                "WATCH w%u addr=0x%08X val=0x%X pc=0x%08X lr=0x%08X\n",
+                size, addr, value, cpu != NULL ? cpu->pc : 0u,
+                cpu != NULL ? cpu->lr : 0u);
+    }
+}
+
 void mem_write8(CPUState *cpu, u32 addr, u8 value) {
+    sfa_cache_watch(cpu, addr, value, 8);
     bool hw = false;
     u8 *p = write_ptr(cpu, addr, 1, &hw);
     if (hw) {
@@ -591,6 +622,7 @@ void mem_write8(CPUState *cpu, u32 addr, u8 value) {
 }
 
 void mem_write16(CPUState *cpu, u32 addr, u16 value) {
+    sfa_cache_watch(cpu, addr, value, 16);
     bool hw = false;
     u8 *p = write_ptr(cpu, addr, 2, &hw);
     if (hw) {
@@ -619,6 +651,7 @@ void mem_write16(CPUState *cpu, u32 addr, u16 value) {
 }
 
 void mem_write32(CPUState *cpu, u32 addr, u32 value) {
+    sfa_cache_watch(cpu, addr, value, 32);
     bool hw = false;
     u8 *p = write_ptr(cpu, addr, 4, &hw);
     if (hw) {

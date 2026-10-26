@@ -30,6 +30,24 @@ caché de texturas es NULL tras
 Sigue sin ser jugable, y la APK Fase 0 sigue siendo solo
 arranque.
 
+**Fase 8 (2026-10-26, este tramo): bloqueador nº 1 RESUELTO
+(no era un NULL).** La excepción de run26 no era una escritura
+en 0: `getCache` devuelve `0xE0000000` (base de la caché
+bloqueada de GameCube) cuando el estado es 0 o 4, y el HLE de
+`LCEnable` no hacía nada, así que `mem_*` no tenía mapeada esa
+dirección. Con la caché bloqueada mapeada (16 KiB) + DMA LC por
+HLE + `mfwpar` + inicialización real de colas de mensajes, el
+juego supera `updateHeavyFogTexture`, registra los callbacks VI,
+llega a `prepareAttractMode` y carga `starfox.thp` (48,9 MB) y el
+frontal completo (121 ficheros, 22,6 MB async, 56.389 B FIFO).
+**Nueva frontera, sin maquillar:** se detiene en
+`OSReceiveMessage` dentro de `prepareAttractMode` esperando
+mensajes de los hilos de decodificación THP, que el chassis
+monohilo registra pero no ejecuta (`OSCreateThread` solo
+registra). Ese es el siguiente bloqueador concreto, no un
+retroceso: los titulares de run30/31/32/33 son idénticos salvo
+los contadores VI. Ver «Fase 8» abajo.
+
 ## Qué funciona (verificado)
 
 - Base Android: NativeActivity, `android_main`, loop, ciclo de vida
@@ -98,21 +116,36 @@ arranque.
 
 ## Qué NO funciona todavía (bloqueadores, sin maquillar)
 
-1. **Bloqueador actual nº 1 (NUEVO, tras Fases 6–7): excepción
-   por caché de texturas NULL en la transición attract-mode.**
-   `updateHeavyFogTexture` (0x8006A0E0) escribe con `stbx` en
-   `getCache()` = 0x00000000: `n_attractmode_releaseMovieBuffers`
-   (0x80116548) liberó los búferes de la caché (estado 4,
-   puntero [r13-23404] = 0) y ni `newshadows_beginFrame` ni
-   `allocLotsOfTextures` la re-inicializan antes de usarla.
-   Hipótesis (sin evidencia aún para decidir): re-init en un
-   hilo que el chassis monohilo no ejecuta (`OSCreateThread`
-   solo registra), o en el callback de fin de película THP
-   (jugador THP pendiente). NO se parchea con un búfer falso:
-   escribir la niebla en un sitio inventado corrompería el
-   estado de render. Siguiente paso: identificar el re-init
-   (quién escribe [r13-23404] fuera del free) y su condición
-   de disparo. Ver «Fases 6–7», punto 5.
+1. **~~Bloqueador nº 1 (Fases 6–7): excepción por caché de
+   texturas NULL en la transición attract-mode.~~ RESUELTO en
+   Fase 8 (no era un NULL, ver abajo):** la causa raíz estaba
+   en el HLE, no en el juego: `getCache` (0x80022BB0)
+   devuelve `0xE0000000` (caché bloqueada) con estado 0 o 4, y
+   `LCEnable` HLE no hacía nada, así que `mem_*` no mapeaba
+   `0xE0000000` → exception 1 en el primer `stbx` de
+   `updateHeavyFogTexture`. El watchpoint demostró que en
+   run27 las únicas escrituras a la estructura de caché fueron
+   el borrado BSS de arranque: ni `releaseMovieBuffers` ni
+   `prepareMovie` llegaron a correr en ese run, así que la
+   historia «release liberó la caché, estado 4» queda
+   superada para este run (el estado era 0 por BSS, no 4 por
+   free). Solución: búfer LC de 16 KiB en `CPUState` +
+   `LCLoadBlocks`/`LCStoreBlocks`/`LCQueueWait` por HLE +
+   `mfwpar` + colas de mensajes reales. Ver «Fase 8».
+2. **Bloqueador actual nº 1 (NUEVO, tras Fase 8): el juego se
+   detiene en `OSReceiveMessage` (0x80244A68) dentro de
+   `prepareAttractMode` (0x80118E70),** esperando (con
+   `flags = 1`, bloqueante) un mensaje de los hilos de
+   decodificación THP (`CreateVideoDecodeThread` 0x8011A034,
+   `CreateAudioDecodeThread` 0x80117A80, `CreateReadThread`
+   0x80119BF4) que el chassis monohilo registra con
+   `OSCreateThread` pero no ejecuta. Sin hilos reales (o un
+   planificador que los haga avanzar) no hay pantalla de
+   título ni input de título que probar. Siguiente paso
+   concreto: ejecutar hilos registrados (planificador
+   cooperativo o entrega de mensajes simulada con la
+   semántica exacta de la cola), sin inventar contenido de
+   los mensajes. Ver «Fase 8», punto 4.
 2. **~~Dispatch real y HLE pendientes:~~ HECHO en Fases 2–6:**
    el juego ejecuta su arranque completo, toda la init de
    audio y la carga del frontal en host (ver «Fases 6–7»).
@@ -120,10 +153,15 @@ arranque.
    (máquina GX, conversiones verificadas y renderer host con
    frame real); falta el mismo camino en la APK (ver «Fase 5b»).
 3. **HLE completo pendiente:** GX (máquina de estado y
-   display lists) en APK, callbacks VI pre/post retrace, audio
-   DSP real, planificador de hilos real, CARD. El HLE actual
-   cubre arranque + eventos DSP/ARQ + callback DVD + PAD +
-   sueño instantáneo.
+   display lists) en APK, ~~callbacks VI pre/post retrace,~~
+   **HECHO en Fase 8** (setters por HLE + entrega encadenada
+   por trampolín sintético en cada retrace simulado;
+   `videoSwapFrameBuffers` pre y `gpuErrorHandler` post,
+   155.286 cadenas equilibradas en run31 sin regresión);
+   audio DSP real, planificador de hilos real, CARD. El HLE
+   actual cubre arranque + eventos DSP/ARQ + callback DVD +
+   PAD + sueño instantáneo + callbacks VI + DMA LC + colas
+   de mensajes.
 4. **GX real en APK pendiente:** la máquina de estado GX,
    display lists y texturas convertidas ya existen y están
    verificadas en host (Fase 5b); falta el mismo camino en
@@ -135,10 +173,16 @@ arranque.
    MusyX (`.pro`/`.poo`/`midi.wad`) y la emulación DSP.
 6. **Input pendiente (parcial):** mando/teclado/táctil-stick
    mapeados; faltan botones táctiles en pantalla (sin layout
-   definido, no inventado), rumble (`PADControlMotor` sin HLE)
-   y el flanco JustPressed con una pulsación real (el test
-   actual mantiene Start desde el arranque: Held = 0x1000,
-   Just = 0, correcto para un botón mantenido).
+   definido, no inventado) y rumble (`PADControlMotor` sin
+   HLE). **Flanco JustPressed: MEDIDO en Fase 8 a nivel
+   `padUpdate`** (la fórmula es `Just = Held & ~Prev`,
+   leída en 0x800151E4–0x80015210): con Start programado
+   desde el PADRead nº 3 (0 en los dos primeros), el run
+   termina con Held0 = Just0 = Prev0 = 0x1000, frente a
+   Held0 = Prev0 = 0x1000, Just0 = 0 con Start desde el
+   arranque. Falta la misma prueba a nivel de pantalla de
+   título, bloqueada por el pipeline de hilos THP (punto 2
+   arriba).
 7. **Datos sin empaquetar:** no hay paquete de datos para el test.
    La APK no meterá 2 GB; la vía (APK pequeña + datos aparte) está
    por decidir con tamaños reales y pasos de instalación.
@@ -1585,6 +1629,23 @@ directos), `baseline` (bucle sin inyección) y `start` (Start
 
 ### 5. Bloqueador siguiente: excepción por caché NULL (sin maquillar)
 
+**CORRECCIÓN (Fase 8, con evidencia de watchpoint): el texto
+de abajo invierte `getCache` y su historia de release queda
+superada.** Lo verificado en run27: `getCache` devuelve
+`0xE0000000` cuando el estado [r13-23424] es 4 o 0, y el
+puntero [r13-23404] en otro caso (no al revés); y en ese run
+las únicas escrituras a la estructura de caché (0x803DEFC0–
+0x803DF060) fueron el borrado BSS de arranque
+(0x80003434–0x80003454): ni `releaseMovieBuffers` ni
+`prepareMovie` corrieron, así que el estado era 0 por BSS y
+el puntero 0 por BSS, y la exception 1 no fue una escritura
+en 0 sino en `0xE0000000` sin mapear en `mem_*` (el HLE de
+`LCEnable` no hacía nada y el `_LCEnable` huésped, que
+programa DBAT3 y borra 16 KiB con `dcbz`, nunca corría).
+Se conserva el texto original debajo como registro del
+diagnóstico previo; la causa raíz real y la solución están
+en «Fase 8», punto 1.
+
 `updateHeavyFogTexture` (0x8006A09C) llama a `getCache`
 (0x80022BB0), que devuelve [r13-23404] cuando el estado
 [r13-23424] es 0 o 4, y 0xE0000000 en otro caso. En run26,
@@ -1647,4 +1708,357 @@ audio y símbolos de runtime C++ del código nuevo).
 5. Renderer GX en APK (GLES3) con el camino ya verificado
    en host; THP; CARD; hilos reales.
 6. Paquete de datos Pack B, APK jugable y test en Tab S8.
+   La APK Fase 0 sigue siendo solo arranque (ver abajo).
+
+## Fase 8 (2026-10-26, este tramo): bloqueador nº 1 resuelto, callbacks VI, flanco JustPressed
+
+### 1. Bloqueador nº 1: causa raíz real y solución (sin parche falso)
+
+Instrumentación añadida para el diagnóstico (con variables de
+entorno, apagada por defecto, segura para NDK/APK):
+`SFA_WATCH_CACHE` en `cpu/cpu.c` registra cada escritura en la
+región de la estructura de caché del attract-mode
+(0x803DEFC0–0x803DF060) con PC y LR huésped exactos, y
+`SFA_PCTRACE` en `chassis.cpp` registra la entrada a un conjunto
+de funciones trazadas (solo despachos cross-chunk; las llamadas
+intra-chunk son gotos y no se ven).
+
+Hallazgos decisivos (sustituyen el diagnóstico de «Fases 6–7»,
+punto 5):
+
+- `getCache` (0x80022BB0) NO devuelve 0 cuando la caché está
+  inactiva: lee el estado [r13-23424]; si es 4 o 0 devuelve
+  `0xE0000000` (`lis r3, -8192`); en otro caso devuelve el
+  puntero [r13-23404]. Con r13 = 0x803E4B40, estado en
+  0x803DEFC0 y puntero en 0x803DEFD4. `0xE0000000` es la base
+  de la caché bloqueada de GameCube: una dirección legítima
+  en hardware, no un puntero nulo.
+- run27 (reproducción de run26 con traza: mismos 1.849.789
+  despachos, misma exception): el watchpoint demostró que las
+  ÚNICAS escrituras a la estructura de caché en todo el run
+  fueron el borrado BSS de arranque (0x80003434–0x80003454,
+  LR 0x800033C0). `n_attractmode_releaseMovieBuffers`
+  (0x80116548) NUNCA corrió en ese run, y tampoco
+  `prepareMovie`. La caché nunca se inicializó (estado 0 y
+  puntero 0, ambos por BSS).
+- La cadena que llega al fallo es código en línea
+  incondicional: `allocLotsOfTextures` (0x8006D7CC, despacho
+  1.515.077, LR 0x80062F34, desde `initTextures` 0x80062E18)
+  llama a `updateHeavyFogTexture` (0x8006A09C, despacho
+  1.849.786, LR 0x8006E798, `bl` en 0x8006E794), y
+  `initTextures` la llama incondicionalmente el `init` del
+  juego (0x800211D0). En hardware real la caché TIENE que
+  ser válida en ese punto.
+- La re-inicialización real existe y es posterior (pantalla
+  de título), no algo que faltara antes de `initTextures`:
+  `n_attractmode_prepareMovie` (0x80116650) reserva 7
+  búferes con `mmAlloc` (0x80023E30), guarda un búfer de
+  16.384 B en [r13-23404] (0x8011678C) y, tras
+  `AttractMovie_AssignBuffers` (0x80119198),
+  `prepareAttractMode` (0x80118E70) y `THPPlayerPlay`
+  (0x80118E10), pone estado = 2 (0x80116990). Sus únicos
+  llamadores son `TitleMenu_run` (0x80116C74, con flag
+  [r13-23415]) y `TitleMenu_initialise` (0x80117770, con byte
+  [r13-23408] != 0 Y estado 0 o 4).
+- Causa raíz, en la capa SDK/HLE, no en el juego: el `init`
+  del juego llama a `LCEnable` (0x80242548) incondicionalmente
+  (0x80020FC4), antes de `initTextures`. El `_LCEnable`
+  huésped (0x8024247C) programa DBAT3 sobre `0xE0000000` y
+  borra 512 × 32 B = 16 KiB con `dcbz`. Pero el HLE de
+  `LCEnable` devolvía inmediatamente sin hacer nada, así que
+  el `_LCEnable` huésped nunca corría y `mem_*` no tenía
+  mapeo para `0xE0000000` → fuera de rango → exception 1 en
+  el primer `stbx` de `updateHeavyFogTexture` (bucle: r9
+  0..63, CTR 16 → 1.024 `stbx`; desplazamiento máximo
+  ≈ 3.903, dentro de los 16 KiB que `_LCEnable` borra; su
+  cola llama a `memcpyToCache` sobre una textura 64×64 de
+  4.096 B creada en `allocLotsOfTextures`). `memcpyToCache`
+  (0x80022AB0) y `copyToCache` (0x80022B60) confirman el
+  modelo: con estado 0/4 van por la vía DMA de caché
+  bloqueada (`LCStoreBlocks`/`LCLoadBlocks`), no por `memcpy`
+  (0x80003494). El único hilo creado en run26 fue
+  `errorThreadFunc` (0x801383C0), lo que refuta la hipótesis
+  «el re-init vive en el hilo no ejecutado» para ese run.
+
+Solución implementada (solo runtime/HLE; código del juego
+intacto, ningún búfer falso):
+
+- `cpu/cpu.h`: `GC_LC_BASE 0xE0000000`, `GC_LC_SIZE 16384` y
+  `u8 locked_cache[GC_LC_SIZE]` añadido AL FINAL de
+  `CPUState` (deliberado: insertarlo en medio desplazaría
+  offsets como `downcount` o `ram` que los 176 chunks
+  precompilados ya usan). El búfer es cero en arranque
+  (`InitCpuForBoot` pone a cero la estructura).
+- `cpu/cpu.c` `resolve_addr()`: mapea 0xE0000000–0xE0004000
+  a `cpu->locked_cache + offset`.
+- `hle.h`/`hle.cpp`: `LCLoadBlocks` (0x802425A8),
+  `LCStoreBlocks` (0x802425CC), `LCQueueWait` (0x8024269C) y
+  `LcDmaCopy()`. Semántica leída del código SDK huésped, no
+  adivinada: Load copia RAM (r4) → LC (r3); Store copia LC
+  (r4) → RAM (r3); r5 = bloques de 32 B, con 0 = 128 bloques
+  (4.096 B, igual que el bucle de `LCStoreData` 0x802425F0,
+  que avanza ambas direcciones 4.096 B por tramo de 128
+  bloques); DMAU guarda la dirección de RAM y DMAL la de LC
+  más control 0x12 (load) / 0x02 (store). Direcciones LC
+  fuera de ventana registran `SFA_LOGE` y omiten la copia
+  sin recortar en silencio. `LCQueueWait` devuelve r3+1 (el
+  código huésped hace `addi r3, r3, 1` a la entrada) porque
+  el DMA aquí es síncrono y la cola siempre está vacía.
+  `LCEnable` HLE ahora también pone a cero el búfer LC
+  (como el bucle `dcbz` de `_LCEnable`). `LCStoreData` NO se
+  HLEó: es código huésped ordinario que itera sobre los
+  `LCStoreBlocks` ya HLEados. Nota de diseño: DBAT3, como
+  está decodificado, mapea un bloque de 4 MiB en
+  `0xE0000000`, pero solo 16 KiB son líneas bloqueadas que
+  `_LCEnable` borra; el búfer se dimensiona a esos 16 KiB
+  reales, con registro ruidoso ante desbordamiento.
+- Corrección WPAR necesaria para pasar la siguiente
+  instrucción tras el arreglo LC: `PPCMfwpar` (0x80240CD4)
+  lee el SPR 921. `HandleFallback` modela WPAR como HID0
+  (1008) y L2CR (1017): nuevo miembro `wpar_` en `Hle`,
+  inicial 0 = tubo de recogida vacío, así que
+  `GXResetWriteGatherPipe` (0x80258C6C, que gira mientras
+  el bit 0 de `mfwpar` sea 1 y luego hace `mtwpar`) sale en
+  la primera iteración.
+
+run28 (tras el arreglo LC): supera `updateHeavyFogTexture`
+(despacho 1.849.786). `LCStoreBlocks` HLE se dispara en el
+despacho 1.850.045 con exactamente los argumentos predichos
+(r3 = 0x8165E400 textura RAM, r4 = 0xE0000000, r5 = 0 →
+128 bloques), lo que confirma la dirección Store. Segundo
+`LCEnable` en el despacho 1.856.864 (desde 0x80029980). Nueva
+exception en el despacho 1.884.514, PC 0x80240CD8 (SPR 921
+sin modelar) → corregida como arriba.
+
+### 2. Segunda corrección de la misma clase: colas de mensajes
+
+run29 (tras el arreglo WPAR): sin exception, `dispatch_cap`,
+5.000.000 despachos, 26,190 s, PC final 0x802449F8.
+Titulares frente a run26: DVDOpen ×121 (antes 98), async
+×119, 22.649.460 B async (antes 20.083.124), FIFO 56.389 B
+(antes 2.100), PADRead ×3, VIWaitForRetrace ×4, OSReport 22
+líneas / 17 cambios, OSSleepThread ×997.009.
+`TitleMenu_initialise` corrió en el despacho 2.049.170 (LR
+0x80013F48, `Resource_Acquire`) y `prepareMovie` en el
+2.049.221 (LR 0x80117774): el camino natural de re-init se
+alcanzó. Ficheros nuevos frente a run26: `gamefront/ANIM.BIN`,
+`MODELS.bin`, `TEX0.bin`, `TEX1.bin`, `gamefront.romlist.zlb`
+y `starfox.thp` (48.931.320 B, fileInfo 0x803A76C0); algunas
+búsquedas fallaron (`gamefront/animcurv.bin`, `animcurv.tab`,
+`voxmap.bin`, `warlock/voxmap.bin`, «no encontrado»).
+OSReport muestra `LOADED OBJECT SKYSun/SKYMoon/CommandMenu/
+communicato/WORLDcomm/commCube/commCubeFro/commQuitObj/
+commMemoryC/projball/LockIcon` y `finished init`. El run se
+detuvo en `OSSendMessage` (0x802449A0) durmiendo sin fin:
+su cola en 0x803A8C30 era todo ceros (capacidad [q+20] = 0,
+usados [q+28] = 0) porque `OSInitMessageQueue` estaba HLEado
+como no-op puro.
+
+El código huésped de `OSInitMessageQueue` (0x80244940)
+escribe [q+16] = msgArray, [q+20] = msgCount, [q+24] = 0
+(firstIndex), [q+28] = 0 (usedCount), con dos colas de hilos
+en +0 y +8 a cero (`OSInitThreadQueue` 0x80246724 huésped:
+[q+0] = [q+4] = 0). El caso HLE devolvía 0 sin escribir
+nada, así que el `OSSendMessage` huésped (no HLEado) veía
+capacidad 0 y dormía para siempre. Corrección en `hle.cpp`:
+`kOsInitMessageQueue` sale del grupo no-op y escribe esas
+8 palabras con `mem_write32`; también se implementa
+`kOsInitThreadQueue` independiente (2 escrituras a cero).
+`OSInitContext` y los casos del planificador siguen siendo
+no-ops (no hay contextos de hilo ni planificador en el
+chassis monohilo; `OSSleepThread` siempre retorna al
+instante).
+
+run30 (tras el arreglo de colas): mismos titulares que
+run29 (DVDOpen ×121, async ×119, FIFO 56.389 B,
+OSSleepThread ×997.005, `dispatch_cap` 5M, 25,464 s, PC
+final 0x80244AC0). La detención avanzó un paso, como se
+esperaba, al lado receptor (ver punto 4). Evidencia de que
+el arreglo funciona: `OSInitMessageQueue` ×8 (despacho
+2.049.225 desde `AttractMovieAudio_Init` 0x8011988C;
+también desde `CreateVideoDecodeThread` 0x8011A0FC,
+`CreateAudioDecodeThread` 0x80117B48 y `CreateReadThread`
+0x80119BF4); `OSSendMessage` ×16 (LRs 0x801199EC
+`PushFreeReadBuffer`, 0x80119C98 `PushFreeTextureSet`,
+0x80117880).
+
+### 3. Callbacks VI pre/post retrace (implementados)
+
+Evidencia de que el juego los espera: `VISetPreRetraceCallback`
+(0x8024CB14) se llama desde 0x80049F48 y `VISetPostRetraceCallback`
+(0x8024CB58) desde 0x80049F54, 0x80118D6C, 0x80119068 (dentro
+de `prepareAttractMode`, después de la recepción que hoy se
+detiene, así que ese registro no llega a ocurrir en run30) y
+0x80138418. Los cuerpos de los setters (código DolRecomp):
+Pre guarda r3 en [r13-21016], Post en [r13-21012], cada uno
+devuelve el valor anterior, envueltos en 0x802440BC/0x802440E4
+(deshabilitar/habilitar interrupciones). Nada los entregaba:
+`VIWaitForRetrace` (0x8024D29C) y `OSSleepThread`
+(0x8024740C) solo hacían `++retrace_count_` y retornaban.
+
+Implementación: los dos setters están HLEados (devuelven el
+anterior, y escriben TAMBIÉN los globales RAM, así que
+cualquier lector directo de [r13-21016]/[r13-21012] ve lo
+mismo que el HLE); la entrega se hace en cada retrace
+simulado (tanto `VIWaitForRetrace` como `OSSleepThread`,
+porque ambos están definidos en este código como «un
+retrace ocurrió» — el bucle del juego espera por sueño, y
+`VIWaitForRetrace` solo ocurrió ×4 en run30, todas en init
+tipo tvInit). La cadena es pre y luego post, encadenadas
+por un PC sintético `kViCallbackTrampoline` = 0x80003000
+(nunca código real: el DOL empieza en 0x80003100;
+`dolrecomp_call` consulta `host_call` antes que los chunks,
+así que el HLE lo intercepta siempre; sin HLE instalado, el
+chassis se detendría con `unknown_pc`, fallo ruidoso, no
+corrupción). El trampolín era necesario porque poner post
+como lr de pre entraría en bucle (post se devolvería a sí
+mismo). Los callbacks reciben el contador de retrace en r3
+(convención `VIRetraceCallback`). Guarda de reentrancia de
+un solo hueco: un retrace anidado dentro de un callback
+omite la entrega en vez de corromper la cadena (limitación
+documentada). `VIInit` pone a cero ambos globales, como el
+estado VI en hardware. Contadores de verificación:
+cadenas, pre entregados, post entregados.
+
+run31 (baseline 5M con entrega VI): setters ×1 cada uno
+(pre = `videoSwapFrameBuffers` 0x80049AAC, registrado desde
+`videoInit` 0x80049F48; post = `gpuErrorHandler` 0x80049768,
+desde 0x80049F54). Cadenas 155.286, pre 155.286, post
+155.286: equilibradas, ninguna cadena atascada, ninguna
+exception. Titulares idénticos a run30 (DVDOpen ×121, async
+×119, FIFO 56.389 B, OSReport 22, `dispatch_cap` 5M,
+26,293 s), salvo dos efectos explicados, no regresiones:
+(a) `OSSleepThread` ×155.282 (antes ×997.005) porque cada
+sueño ahora despacha 2 callbacks y el presupuesto de 5M se
+consume distinto; la detención final sigue siendo la misma
+(OSReceiveMessage, punto 4); (b) el byte `flag_pad`
+(0x803DE65D) termina en 1 (antes 0): `gpuErrorHandler`, el
+callback post, hace `li r0, 1; stb r0, -25827(r13)`
+(0x8004980C–0x80049810), así que ese byte — que `padUpdate`
+usa como flag de muestra nueva (lo lee en 0x80015134 y lo
+pone a cero en su epílogo 0x800154B4) — queda a 1 tras cada
+retrace en cuanto los callbacks corren, como en hardware;
+no cambia el comportamiento PAD (los globales PAD de
+run31 son idénticos a run30). Decisión mantenida: entrega
+en ambos puntos; si un run futuro regresa (nueva exception
+o detención anterior), el repliegue documentado es entrega
+solo en `VIWaitForRetrace`.
+
+### 4. Nueva frontera (sin maquillar): pipeline de hilos THP
+
+run30 se detiene en `OSReceiveMessage` (0x80244A68), una
+sola entrada en el despacho 2.049.566, LR 0x8011902C dentro
+de `prepareAttractMode` (0x80118E70). En 0x8011901C hace
+`OSReceiveMessage(cola = r31+1324, salida = sp+8, flags = 1
+bloqueante)` y gira en `OSSleepThread` mientras
+`usedCount ([q+28]) == 0`. Espera un mensaje de los hilos
+de decodificación/lectura THP creados justo antes
+(`CreateVideoDecodeThread` 0x8011A034,
+`CreateAudioDecodeThread`/`AudioDecodeThreadStart`
+0x80117A80, camino `CreateReadThread`), que nunca corren
+porque `OSCreateThread` solo registra hilos (`runnable =
+false`, sin ejecución) en el chassis monohilo. Es el
+bloqueador «hilos reales» ya listado, ahora localizado con
+precisión. NO se ha improvisado una solución: el siguiente
+paso concreto es ejecutar los hilos registrados
+(planificador cooperativo o entrega de mensajes con la
+semántica exacta de la cola), sin inventar el contenido de
+los mensajes. Esto es lo que hoy impide llegar a una
+pantalla de título que lea input.
+
+### 5. Flanco JustPressed (medido a nivel `padUpdate`)
+
+Fórmula leída en el código huésped de `padUpdate`
+(0x80014F6C), no supuesta: en 0x800151E4–0x80015210,
+`Just = Held & ~Prev` (xor + and), `Released = Prev &
+~Held` (0x800151F8–0x80015208), y Prev se actualiza a Held
+(0x8001520C). La puerta de muestra nueva: 0x80015134 lee
+el flag 0x803DE65D (puesto a 1 por el `PADRead` HLE y por
+el callback post VI, ver punto 3; puesto a 0 por el epílogo
+de `padUpdate` 0x800154B4); con flag 0, `padUpdate` copia
+la muestra anterior en vez de usar la fresca.
+
+Medición con pulsación posterior real (no Start mantenido):
+el HLE ganó `SetPadPressFromRead(n)` — solo con inyección
+de test activa; la ruta de la APK (`SetPadState`, con
+`pad_inject_` desactivado) no puede verse afectada — y el
+test ganó el modo `press` (variable
+`SFA_PAD_PRESS_FROM_READ`, defecto 3): las lecturas
+1..n-1 salen con botones 0 y desde la n con los botones
+inyectados.
+
+- run32 (`press` desde la lectura 3, 5M): PADRead #1
+  botones 0x0000, #2 0x0000, #3 0x1000 (Start, relectura
+  0x10000000). Globales finales: Held0 = Just0 = Prev0 =
+  0x1000. Flanco real: `padUpdate` #3 calculó Held =
+  0x1000 con Prev = 0 (de #1/#2 sin botones) → Just =
+  0x1000. Sin exception, titulares iguales a run31.
+- run33 (`start`, regresión sobre el build nuevo, 5M):
+  Held0 = Prev0 = 0x1000, Just0 = 0, idéntico a run26-start
+  (Start mantenido desde el arranque: sin flanco, Just 0
+  correcto). PADRead #1/#2/#3 con 0x1000. Sin regresión.
+- Advertencia honesta: esto mide el flanco en `padUpdate`,
+  las únicas llamadas `padUpdate` del run; la prueba a
+  nivel de pantalla de título sigue bloqueada por el punto
+  4 (el juego no llega a `TitleMenu_run`). El mecanismo
+  verificado es exactamente el que usará la pantalla de
+  título.
+
+### 6. Verificación host (runs 27–34, sin regresión enmascarada)
+
+- run27: reproducción de run26 con traza (watchpoint +
+  PCTRACE): mismos 1.849.789 despachos, misma exception en
+  0x8006A0E0; evidencia del punto 1.
+- run28: supera `updateHeavyFogTexture`; nueva exception
+  WPAR (0x80240CD8) diagnosticada por PC y corregida.
+- run29: sin exception, `dispatch_cap` 5M; detención en
+  `OSSendMessage` por colas sin inicializar (punto 2).
+- run30: `dispatch_cap` 5M; detención en `OSReceiveMessage`
+  (punto 4). Titulares: DVDOpen ×121, async ×119,
+  22.649.460 B async, FIFO 56.389 B, GXLoadTexObj ×2,
+  PADRead ×3, VIWaitForRetrace ×4, OSReport 22/17,
+  OSSleepThread ×997.005.
+- run31: como run30 + callbacks VI (punto 3); sin exception
+  ni cambio de titulares salvo los contadores VI y los dos
+  efectos explicados.
+- run32: flanco JustPressed (punto 5); sin exception.
+- run33: regresión `start` sin cambios (punto 5).
+- run34 (`unit`): TODO OK, 0 fallos (layout DVDFileInfo,
+  callback async, PADStatus + flag de muestra nueva, WAV
+  resampleo/entrega).
+
+### 7. Build NDK (verificación Fase 8)
+
+Build `ndk-build` (directorio nuevo bajo `work-port/`, fuera
+del repo; JOBS=2, 179 C + runtime C++ desde cero): PASS, **0
+errores**, exit 0 (las 5 menciones de «error» en el log son
+nombres de símbolos del sistema, `logic_error`/`length_error`/
+`strerror`, no errores de compilación).
+`libstarfox.so` **27.329.920 B**, ELF64 `DYN` AArch64, SHA-256
+`6105885b664b41ec8e19dc385f5e943a36a475074eb04f6b67177e360b19bf7e`
+(Fase 6–7: 27.326.912 B,
+`9d00fe0a94487f61655d34bfe6ea2f63f557b6516eccf9ffc6a1e904074a7410`),
+comprobación del script «OK: ningún símbolo
+mem_/ppc_/func_/dolrecomp_ sin resolver», 153 undefined
+totales (151 en Fase 6–7: delta +2, solo libs del sistema).
+`android_main` en `T`, `AAudioStreamBuilder_*` en `U`
+(sistema, esperado). Antes del build completo, compilación
+dirigida de los ficheros tocados (cpu.c, chassis.cpp,
+hle.cpp) con el toolchain NDK y los mismos flags: 0 errores.
+APK Fase 0 intacta: SHA-256
+`b07a6af555246d442808208563efa8b0d423c7bd916aa9fc8938b1484bbf07d1`
+(57.916 B, sin reconstruir en este tramo; sigue siendo solo
+arranque, NO jugable).
+
+### 8. Qué queda (tras Fase 8, en orden)
+
+1. Hilos reales / pipeline THP (punto 4): el bloqueador
+   actual nº 1. Sin esto no hay pantalla de título.
+2. Renderer GX en APK (GLES3) con el camino ya verificado
+   en host; THP; CARD.
+3. Mapeo ID de sonido del juego → WAV; secuencias MusyX;
+   DSP real.
+4. Botones táctiles en pantalla (layout por definir),
+   rumble.
+5. Paquete de datos Pack B, APK jugable y test en Tab S8.
    La APK Fase 0 sigue siendo solo arranque (ver abajo).

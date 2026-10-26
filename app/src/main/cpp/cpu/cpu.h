@@ -69,6 +69,15 @@ typedef double f64;
 #define GC_MAIN_RAM_SIZE (24 * 1024 * 1024)
 #define GC_RAM_BASE 0x80000000u
 #define GC_RAM_UNCACHED 0xC0000000u
+/* Caché bloqueada (locked cache) del SDK: _LCEnable (0x8024247C)
+ * programa DBAT3 sobre 0xE0000000 y pone a cero 512 lineas de
+ * 32 B = 16 KiB con dcbz. getCache() devuelve 0xE0000000 cuando
+ * la cache de pelicula esta inactiva (estado 0 o 4), y el juego
+ * escribe ahi directamente (p. ej. updateHeavyFogTexture) y por
+ * DMA LC (LCLoadBlocks/LCStoreBlocks). Sin esta region, mem_*
+ * marcaba exception en el primer stbx (bloqueador nº 1). */
+#define GC_LC_BASE 0xE0000000u
+#define GC_LC_SIZE 16384u
 #define WII_MEM2_SIZE (64 * 1024 * 1024)
 #define WII_MEM2_BASE 0x90000000u
 #define WII_MEM2_UNCACHED 0xD0000000u
@@ -186,6 +195,16 @@ struct CPUState {
     PPCSPRRead spr_read;
     PPCSPRWrite spr_write;
     PPCCacheControl cache_control;
+    /* Búfer de la caché bloqueada (ver GC_LC_BASE/GC_LC_SIZE).
+     * AL FINAL del struct a proposito: cualquier campo nuevo
+     * en medio desplazaria los offsets que los 176 chunks ya
+     * compilados usan (downcount, ram, ...). A cero en el
+     * arranque (InitCpuForBoot hace memset del struct);
+     * LCEnable HLEado lo vuelve a poner a cero, como el bucle
+     * dcbz de _LCEnable. Acceso via mem_* o directo; sin
+     * reserva en el heap para no anadir una vida util que
+     * gestionar en el runtime de la APK. */
+    u8 locked_cache[GC_LC_SIZE];
 };
 
 #ifdef __cplusplus

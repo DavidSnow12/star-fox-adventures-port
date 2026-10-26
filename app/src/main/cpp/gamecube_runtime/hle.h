@@ -127,12 +127,49 @@ class Hle {
   static constexpr uint32_t kViWaitForRetrace = 0x8024D29Cu;
   static constexpr uint32_t kViConfigure = 0x8024D764u;
   static constexpr uint32_t kViFlush = 0x8024DF00u;
+  // Callbacks VI (Fase 8): el juego los registra (tvInit y
+  // prepareAttractMode) y el SDK los guarda en [r13-21016]
+  // (pre) y [r13-21012] (post), con retorno del anterior.
+  // Como el chassis no tiene interrupciones, la entrega se
+  // hace en cada retrace simulado (VIWaitForRetrace y
+  // OSSleepThread, los mismos puntos que ya incrementan
+  // retrace_count_): pre y luego post, encadenados por un
+  // PC sintetico (abajo) porque el blr de pre debe aterrizar
+  // en post y el de post en el retorno original, y poner
+  // post como lr de pre entraria en bucle (post se
+  // devolveria a si mismo). Los callbacks reciben el
+  // contador de retrace en r3 (convencion VIRetraceCallback).
+  static constexpr uint32_t kViSetPreRetraceCallback = 0x8024CB14u;
+  static constexpr uint32_t kViSetPostRetraceCallback = 0x8024CB58u;
+  // PC sintetico del trampolin VI: NUNCA es codigo real (el
+  // DOL empieza en 0x80003100). dolrecomp_call consulta
+  // host_call antes que los chunks, asi que el HLE lo
+  // intercepta siempre; si el HLE no estuviera instalado, el
+  // chassis se detendria con unknown_pc (fallo ruidoso, no
+  // corrupcion silenciosa).
+  static constexpr uint32_t kViCallbackTrampoline = 0x80003000u;
   static constexpr uint32_t kPadInit = 0x8024EFC4u;
   static constexpr uint32_t kPadRead = 0x8024F1D4u;
   static constexpr uint32_t kPadReset = 0x8024EDC0u;
   static constexpr uint32_t kPadRecalibrate = 0x8024EEC0u;
   static constexpr uint32_t kGxInit = 0x802556DCu;
   static constexpr uint32_t kLcEnable = 0x80242548u;
+  // DMA de la caché bloqueada (Fase 8, bloqueador nº 1): el
+  // juego solo llama a estas dos funciones del SDK desde
+  // copyToCache (Load) y memcpyToCache / LCStoreData (Store).
+  // Su codigo huesped programa la DMA con mtdmau/mtdmal, que
+  // el HLE no modela (fallback = exception); como el DMA LC
+  // es sincrono en este modelo (igual que los drenajes ARQ),
+  // se HLEa la copia directa. Convencion verificada en el
+  // codigo huesped (ver HandleHostCall): Load copia de RAM
+  // (r4) a LC (r3); Store, de LC (r4) a RAM (r3); r5 = bloques
+  // de 32 B, con 0 = 128 bloques (4096 B, como el bucle de
+  // LCStoreData). LCQueueWait se HLEa como retorno inmediato
+  // (DMA sincrono => cola vacia), devolviendo r3+1 como el
+  // codigo huesped (addi r3, r3, 1 en la entrada).
+  static constexpr uint32_t kLcLoadBlocks = 0x802425A8u;
+  static constexpr uint32_t kLcStoreBlocks = 0x802425CCu;
+  static constexpr uint32_t kLcQueueWait = 0x8024269Cu;
   // DSP (Fase 5, evento de tarea): DSPAddTask NO esta en la
   // tabla HLE (su codigo huesped corre de verdad: lista de
   // tareas + handshake de arranque por buzones, ya modelado en
@@ -328,6 +365,16 @@ class Hle {
   void SetPadInject(bool enabled, uint16_t buttons, int8_t stick_x,
                     int8_t stick_y);
   bool PadInjectEnabled() const { return pad_inject_; }
+  // Programacion de pulsacion de test (Fase 8, solo host):
+  // si n > 0, la inyeccion de test solo entrega botones a
+  // partir del PADRead numero n (las lecturas 1..n-1 salen
+  // con botones 0), para medir el flanco JustPressed con
+  // una pulsacion posterior real y no mantenida desde el
+  // arranque. Por defecto 0 = sin programacion (comportamiento
+  // anterior). La APK nunca llama a esto: su ruta es
+  // SetPadState, con pad_inject_ desactivado, asi que el
+  // programador no puede afectar al juego real.
+  void SetPadPressFromRead(uint64_t n) { pad_press_from_read_ = n; }
   // Estado PAD vigente (Fase 6b): si se fija un estado externo
   // (Input, no propio), PADRead lo lee de ahi; si no, usa el
   // estado interno (inyeccion de test o cero). El puntero no
@@ -379,6 +426,9 @@ class Hle {
   const std::vector<HleCall>& Calls() const { return calls_; }
   uint64_t CallCountFor(const char* name) const;
   uint64_t RetraceCount() const { return retrace_count_; }
+  uint64_t ViChains() const { return vi_chains_; }
+  uint64_t ViPreDelivered() const { return vi_pre_delivered_; }
+  uint64_t ViPostDelivered() const { return vi_post_delivered_; }
   uint64_t FallbackCacheCount() const { return fallback_cache_; }
   uint64_t FallbackUnknownCount() const { return fallback_unknown_; }
   bool OsInitDone() const { return os_init_done_; }
@@ -403,6 +453,13 @@ class Hle {
 
   void LogCall(CpuState* cpu, const char* name, uint32_t address);
   bool Return(CpuState* cpu, uint32_t value);
+  // Entrega de callbacks VI en un retrace simulado (ver
+  // kViSetPreRetraceCallback): si hay pre y/o post
+  // registrados, redirige pc a pre (con lr = trampolin) o a
+  // post (con lr intacto) y devuelve true; si no hay ninguno
+  // o ya hay una cadena en curso (retrace anidado dentro de
+  // un callback), devuelve false y el llamador retorna normal.
+  bool DeliverViCallbacks(CpuState* cpu);
   DvdEntry* FindDvd(uint32_t fileinfo_guest);
   static bool ReadGuestString(CpuState* cpu, uint32_t guest,
                               std::string* out);
@@ -416,6 +473,8 @@ class Hle {
   uint16_t pad_inject_buttons_ = 0;
   int8_t pad_inject_stick_x_ = 0;
   int8_t pad_inject_stick_y_ = 0;
+  uint64_t pad_press_from_read_ = 0;
+  uint64_t pad_reads_ = 0;
   std::vector<std::string> osreport_lines_;
   std::vector<TexLoad> tex_loads_;
   // Formatea un OSReport huesped (formato en r3, args en
@@ -428,6 +487,13 @@ class Hle {
   std::vector<DvdEntry> dvd_;
   std::vector<ThreadEntry> threads_;
   uint64_t retrace_count_ = 0;
+  // Cadena de callbacks VI en curso (ver DeliverViCallbacks).
+  bool vi_chain_active_ = false;
+  uint32_t vi_chain_post_ = 0;
+  uint32_t vi_chain_ret_ = 0;
+  uint64_t vi_chains_ = 0;
+  uint64_t vi_pre_delivered_ = 0;
+  uint64_t vi_post_delivered_ = 0;
   // Fase 6a: retrace por interrupcion de frame. El chassis no
   // tiene interrupciones reales; el punto logico donde el
   // juego espera un retrace es OSSleepThread desde
@@ -493,6 +559,11 @@ class Hle {
   // OR de bits sobre lo leido, no comprueba bits previos).
   uint32_t hid0_ = 0;
   uint32_t l2cr_ = 0;
+  uint32_t wpar_ = 0;
+  // WPAR (921, tubo write-gather de GX): se guarda como HID0/
+  // L2CR. Valor inicial 0 = tubo vacio: GXResetWriteGatherPipe
+  // gira mientras el bit 0 de mfwpar sea 1, asi que con 0 sale
+  // en el primer intento (sin tubo que drenar en este modelo).
   // Tarea DSP pendiente de callback de init (Fase 5): se fija
   // en la entrada a DSPAddTask (codigo huesped, no HLEado) y
   // se consume al aterrizar en el bucle de espera de
