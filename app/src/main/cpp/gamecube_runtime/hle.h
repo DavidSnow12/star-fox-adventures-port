@@ -53,6 +53,7 @@
 #include <string>
 #include <vector>
 
+#include "gamecube_runtime/card.h"
 #include "gamecube_runtime/cpu_state.h"
 #include "input/pad_state.h"
 
@@ -340,6 +341,27 @@ class Hle {
   // DCFlushRange 0x80242354 y DCStoreRange 0x80242388) ya son
   // inalcanzables porque esas funciones estan HLEadas enteras.
   static constexpr uint32_t kPpcSync = 0x80240CBCu;
+  // CARD (Fase 12, HLE entero en Slot A, ver card.h): el juego
+  // solo usa Slot A y solo llama a las variantes sincronas
+  // (verificado por barrido de bl en el codigo generado); las
+  // variantes Async del SDK quedan como codigo huesped (sin
+  // EXI, inalcanzables desde el juego). Direcciones verificadas
+  // en codigo/generated/generated_symbols.h / symbols.map.
+  static constexpr uint32_t kCardInit = 0x8025F664u;
+  static constexpr uint32_t kCardProbeEx = 0x802624B8u;
+  static constexpr uint32_t kCardMount = 0x80262D1Cu;
+  static constexpr uint32_t kCardUnmount = 0x80262E00u;
+  static constexpr uint32_t kCardCheck = 0x80262398u;
+  static constexpr uint32_t kCardFormat = 0x80263648u;
+  static constexpr uint32_t kCardOpen = 0x8026391Cu;
+  static constexpr uint32_t kCardClose = 0x80263A94u;
+  static constexpr uint32_t kCardCreate = 0x80263E40u;
+  static constexpr uint32_t kCardRead = 0x802642B8u;
+  static constexpr uint32_t kCardWrite = 0x80264634u;
+  static constexpr uint32_t kCardDelete = 0x80264830u;
+  static constexpr uint32_t kCardGetStatus = 0x80264A70u;
+  static constexpr uint32_t kCardSetStatus = 0x80264D10u;
+  static constexpr uint32_t kCardGetSerialNo = 0x80264D58u;
   // __AI_SRC_INIT (0x8025072Cu) NO se HLEa aqui a proposito:
   // sus 3 llamadores (0x802501A4, 0x80250298, 0x80250388)
   // estan en el MISMO chunk que la funcion (chunk_0147), asi
@@ -390,6 +412,19 @@ class Hle {
   void SetPadInject(bool enabled, uint16_t buttons, int8_t stick_x,
                     int8_t stick_y);
   bool PadInjectEnabled() const { return pad_inject_; }
+  // Tarjeta virtual Slot A (Fase 12, ver card.h): la ruta se
+  // fija antes de arrancar el juego; sin ruta, la tarjeta vive
+  // en RAM. En la APK la fija native-lib a
+  // <internalDataPath>/memcard-a.raw (almacenamiento privado,
+  // persiste entre arranques); en host la fija el test.
+  void SetCardPath(const char* path);
+  const VirtualCard& Card() const { return card_; }
+  // Solo host (Fase 12): con false, Slot A se comporta como
+  // vacio (Probe/Mount/... devuelven NOCARD). Sirve para
+  // verificar en host la via "Play (but cannot save your
+  // progress)" sin tarjeta. La APK no lo usa (siempre true).
+  void SetCardEnabled(bool enabled) { card_enabled_ = enabled; }
+  bool CardEnabled() const { return card_enabled_; }
   // Programacion de pulsacion de test (Fase 8, solo host):
   // si n > 0, la inyeccion de test solo entrega botones a
   // partir del PADRead numero n (las lecturas 1..n-1 salen
@@ -400,6 +435,26 @@ class Hle {
   // SetPadState, con pad_inject_ desactivado, asi que el
   // programador no puede afectar al juego real.
   void SetPadPressFromRead(uint64_t n) { pad_press_from_read_ = n; }
+  // Secuencia PAD de test (Fase 12, solo host): tramos
+  // (desde PADRead n, botones, stick) aplicados en orden; el
+  // tramo vigente es el ultimo cuyo from_read <= lecturas.
+  // Sirve para guiones de varios pasos (p. ej. stick abajo y
+  // luego A en el aviso de Memory Card) que la inyeccion
+  // constante de SetPadInject no puede expresar. La APK nunca
+  // la usa: su ruta es SetPadState desde Input.
+  struct PadScriptStep {
+    uint64_t from_read = 0;
+    uint16_t buttons = 0;
+    int8_t stick_x = 0;
+    int8_t stick_y = 0;
+  };
+  void SetPadScript(const PadScriptStep* steps, size_t count) {
+    pad_script_.clear();
+    if (steps != nullptr) {
+      for (size_t i = 0; i < count; ++i) pad_script_.push_back(steps[i]);
+    }
+  }
+  uint64_t PadReads() const { return pad_reads_; }
   // Estado PAD vigente (Fase 6b): si se fija un estado externo
   // (Input, no propio), PADRead lo lee de ahi; si no, usa el
   // estado interno (inyeccion de test o cero). El puntero no
@@ -567,6 +622,15 @@ class Hle {
   int8_t pad_inject_stick_y_ = 0;
   uint64_t pad_press_from_read_ = 0;
   uint64_t pad_reads_ = 0;
+  std::vector<PadScriptStep> pad_script_;
+  // Tarjeta virtual Slot A (Fase 12) y ficheros CARD abiertos:
+  // la clave es la direccion guest del CARDFileInfo, el valor
+  // el fileNo (indice de directorio). Si un Read/Write llega
+  // sin registro (struct copiado por el huesped), se recurre
+  // a leer +4 del propio struct guest.
+  VirtualCard card_;
+  bool card_enabled_ = true;
+  std::vector<std::pair<uint32_t, int>> card_open_;
   std::vector<std::string> osreport_lines_;
   std::vector<TexLoad> tex_loads_;
   // Formatea un OSReport huesped (formato en r3, args en
@@ -574,8 +638,9 @@ class Hle {
   bool FormatOsReport(CpuState* cpu, std::string* out);
   // Contador por nombre para el tope de log (20 por nombre), sin
   // recorrer calls_ en cada llamada (seria O(n^2) en bucles).
-  // Indice = posicion en kHleTable de hle.cpp (maximo 64).
-  uint64_t log_count_[64] = {};
+  // Indice = posicion en kHleTable de hle.cpp (Fase 12: 128
+  // huecos, porque la tabla CARD la lleva por encima de 64).
+  uint64_t log_count_[128] = {};
   std::vector<DvdEntry> dvd_;
   std::vector<ThreadEntry> threads_;
   uint64_t retrace_count_ = 0;

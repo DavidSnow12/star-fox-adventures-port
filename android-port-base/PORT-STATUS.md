@@ -65,6 +65,25 @@ prueba `app-debug-gx-test.apk` (clear + damero, NO
 jugable, sin datos; ver «Fase 10», punto 4). La APK Fase 0
 sigue intacta.
 
+**Fase 12 (2026-10-26, este tramo):** el bloqueador
+visible de la Fase 11 (aviso «There is no Memory Card
+in Slot A») queda RESUELTO en host por dos vías: tarjeta
+virtual Slot A con formato GameCube real (59 bloques,
+checksums SDK verificados, serie estable, persiste en
+`<base>/memcard-a.raw` junto a los datos) — primer
+arranque crea la partida (Create 24576 B + Write ×2 +
+SetStatus), segundo arranque la abre y la lee (Open 0 +
+Read ×2) — y, sin tarjeta, el menú del aviso recorrido
+con stick Y + A hasta «Play (but cannot save your
+progress)». En ambas vías el juego llega al bucle de
+título (`TitleMenu_run`/`TitleMenu_render` por frame,
+película attract parada). APK de prueba GX12 en la rama
+(`app-debug-gx12-test.apk`, 12.538.534 B, SHA-256
+`7587eb34…`, con la tarjeta virtual cableada). Sigue
+sin ser jugable y sin probar en dispositivo: quedan
+picker SAF, botones táctiles, sonido y la prueba real
+con datos (ver «Fase 12»).
+
 ## Qué funciona (verificado)
 
 - Base Android: NativeActivity, `android_main`, loop, ciclo de vida
@@ -175,10 +194,11 @@ sigue intacta.
    por trampolín sintético en cada retrace simulado;
    `videoSwapFrameBuffers` pre y `gpuErrorHandler` post,
    155.286 cadenas equilibradas en run31 sin regresión);
-   audio DSP real, planificador de hilos real, CARD. El HLE
-   actual cubre arranque + eventos DSP/ARQ + callback DVD +
-   PAD + sueño instantáneo + callbacks VI + DMA LC + colas
-   de mensajes.
+   audio DSP real, planificador de hilos real, ~~CARD~~
+   **HECHO en Fase 12** (tarjeta virtual Slot A, ver
+   «Fase 12»). El HLE actual cubre arranque + eventos
+   DSP/ARQ + callback DVD + PAD + sueño instantáneo +
+   callbacks VI + DMA LC + colas de mensajes + CARD.
 4. **GX en APK (Fase 11, ya no parcial en parser/alimentacion):**
    el renderer GLES3 ya dibuja frames del bucle real por
    triangulos (QUADS/TRIANGLES/STRIP/FAN + texturas) y el
@@ -210,7 +230,11 @@ sigue intacta.
    rompe el bucle attract/title; ver «Fase 10», punto 1),
    pero la pantalla nueva no queda identificada como menú
    (identificada en Fase 11: pantalla de carga + aviso de
-   falta de Memory Card, ver «Fase 11»).
+   falta de Memory Card, ver «Fase 11»). **Menú del aviso:
+   MEDIDO en Fase 12** (ver «Fase 12», punto 1): NO se
+   mueve con D-pad; se mueve con stick Y / C-stick Y
+   (`padGetStickY`/`padGetCY`, con flanco) y se confirma
+   con A (bit `0x100` de `getButtonsJustPressed`).
 7. **Datos (Fase 10, vía definida, SAF pendiente):** Pack B
    (240 MB, sin `streams/`) aparte, nunca en APK ni en Git;
    la APK ya acepta `<base>/sfa-data/sys/main.dol` +
@@ -2962,13 +2986,13 @@ lee el FIFO capturado, no afecta a la ejecucion).
 
 ### 8. Que queda (tras Fase 11, en orden)
 
-1. **CARD (guardado): AHORA ES EL BLOQUEADOR VISIBLE:**
-   sin tarjeta, el juego se queda en el aviso "There is
-   no Memory Card in Slot A" (Retry / Play sin guardar).
-   Para avanzar mas alla hacen falta: emulacion CARD
-   (al menos una tarjeta virtual en Slot A con formato
-   valido) o input que elija "Play (but cannot save
-   your progress)" + el HLE que ese camino pida.
+1. **~~CARD (guardado): AHORA ES EL BLOQUEADOR VISIBLE:~~
+   RESUELTO en Fase 12 (ver «Fase 12»):** sin tarjeta, el
+   juego se quedaba en el aviso "There is no Memory Card
+   in Slot A" (Retry / Play sin guardar). Resuelto por
+   dos vías: tarjeta virtual en Slot A con formato válido
+   y input (stick Y + A) que elige "Play (but cannot
+   save your progress)".
 2. Picker SAF + copia de Pack B a `sfa-data/` y prueba
    real en Tab S8 de la APK GX11 (boot.log + frames
    reales con datos; sin eso, la APK GX11 sigue sin
@@ -2987,3 +3011,338 @@ lee el FIFO capturado, no afecta a la ejecucion).
    CARD/input + audio esten probados en dispositivo. La
    APK de este tramo sigue siendo solo renderer real
    (ver punto 6).
+
+## Fase 12 (2026-10-26, este tramo): CARD Slot A — tarjeta virtual + ruta «Play sin guardar», aviso superado
+
+El bloqueador visible nº 1 de la Fase 11 queda RESUELTO en
+host por DOS vías independientes, ambas verificadas con
+evidencia (no con la predicción del código). El juego ya no
+se queda en el aviso «There is no Memory Card in Slot A»:
+con tarjeta virtual crea y lee su partida, y sin tarjeta
+el menú del aviso se puede recorrer y confirmar hasta
+«Play (but cannot save your progress)», llegando en ambos
+casos al bucle de título (`TitleMenu_run`/`TitleMenu_render`
+por frame, película attract parada, FIFO creciendo).
+
+### 1. API CARD que llama el juego (desde código huésped, no supuesta)
+
+Funciones SDK en el DOL (`codigo/generated/generated_symbols.h`,
+`codigo/symbols.map`); el juego solo llama las variantes
+síncronas (verificado por `bl` en `codigo/generated/chunks/*.c`;
+las Async solo las llaman los wrappers síncronos del propio
+SDK, así que quedan como código huésped sin ejecutar):
+
+- `CARDInit 0x8025F664`, `CARDProbeEx 0x802624B8`,
+  `CARDMount 0x80262D1C`, `CARDCheck 0x80262398`,
+  `CARDOpen 0x8026391C`, `CARDClose 0x80263A94`,
+  `CARDCreate 0x80263E40`, `CARDRead 0x802642B8`,
+  `CARDWrite 0x80264634`, `CARDDelete 0x80264830`,
+  `CARDGetStatus 0x80264A70`, `CARDSetStatus 0x80264D10`,
+  `CARDGetSerialNo 0x80264D58`, `CARDUnmount 0x80262E00`,
+  `CARDFormat 0x80263648` (además `CARDMountAsync`,
+  `CARDCheckExAsync`, `CARDCreateAsync`, `CARDReadAsync`,
+  `CARDWriteAsync`, `CARDDeleteAsync`, `CARDSetStatusAsync`).
+- Wrappers del juego: `cardProbe 0x8007E08C`,
+  `showMemCardError 0x8007E42C`, `cardGetMessage 0x8007E190`,
+  `saveGame 0x8007FBA8`, `loadSaveGame 0x8007DEDC`,
+  `maybeTryLoadSave 0x8007DE40`, `cardCreateSaveFile 0x8007DF84`,
+  `cardFormatMemoryCard 0x8007D910`,
+  `cardWriteOptions 0x8007DD08`, `cardShowLoadingMsg 0x8007E8A4`,
+  `saveGame_prepareAndWrite 0x8007EEE4`,
+  `cardDeleteSaveFile 0x8007DB80`,
+  `_initCardAndDsp 0x8007E170` (llama a `CARDInit`),
+  `loadMemCardImages 0x8007F698`,
+  `cardSetStatusNoCard2 0x80080164` (callback de montaje:
+  guarda 3 en el global de estado de tarjeta).
+- Códigos CARD (valores SDK, confirmados en el código del
+  juego): READY 0, BUSY -1, WRONGDEVICE -2, NOCARD -3,
+  NOFILE -4, IOERROR -5, BROKEN -6, EXIST -7, NOENT -8,
+  INSSPACE -9, NOPERM -10, LIMIT -11, NAMETOOLONG -12,
+  ENCODING -13, CANCELED -14, FATAL -128. -85 es interno
+  del juego (serie distinta), no un código CARD.
+- `cardProbe(chan)`: `CARDProbeEx` en bucle mientras -1;
+  0 + sector 8192 → estado 13, devuelve 1 (tarjeta útil);
+  0 + sector != 8192 → estado 7; -3 → estado 2;
+  -2 → estado 1; otro → estado 0. Solo si chan != 0 llama
+  a `showMemCardError(0)`; si el byte de reintento está a 1
+  y chan != 0, vuelve a probar.
+- `saveGame` tras `cardProbe(0) == 1`: `CARDMount` (montaje
+  -6 o -13 → `CARDCheck`; 0 → `CARDCheck`; otro → sale con
+  ese resultado), `CARDGetSerialNo` (distinto de la serie
+  guardada con el chequeo de identidad activo → estado 11,
+  -85), `CARDOpen` (fichero «Star Fox Adventures»):
+  -4 con arg 0 → camino de creación; 0 → `CARDGetStatus`
+  y su chequeo exacto (pasa si `iconAddr + 0x10000 ==
+  0xFFFF mod 2^32`, es decir iconAddr == `0xFFFFFFFF`,
+  y lo mismo para la palabra de comentario en stat+56;
+  si ambos fallan: arg 0 → -4, arg != 0 → reescritura).
+  Creación: `CARDCreate(0, nombre, 24576, fileInfo)`;
+  escritura: `CARDWrite(fileInfo, buf, 16384, 0)` +
+  `CARDWrite(fileInfo, buf+8192, 8192, 16384)`; error -5
+  en escritura → `CARDDelete`; luego `CARDGetStatus`,
+  retoques de stat y `CARDSetStatus`.
+- `maybeTryLoadSave` (llamado desde `loadGameOptions`):
+  byte de reintento = 0; `cardShowLoadingMsg(0)` (pantalla
+  de carga, bucle de 60 frames); `saveGame_prepareAndWrite`
+  → `saveGame` → `cardProbe(0)`; `showMemCardError(1)`
+  incondicional (retorna al instante si estado == 3, el
+  que pone el callback de montaje); si el byte sigue a 1,
+  repite carga + error; si 0, retorna.
+- Menú del aviso (`showMemCardError`, decodificado, no
+  por color TEV): estado 2 (NOCARD) y 3 → 2 opciones,
+  acciones [1, 2], textos [1306, 1309, 1307]. Tabla de
+  acciones (`0x8031031C` en RAM): 1 → estado 13 +
+  byte de reintento = 1 («Retry»: el llamador vuelve a
+  probar); 2 → limpia el byte r13-32100, estado 13,
+  reintento 0 («Play (but cannot save your progress)»:
+  el llamador sigue sin guardar). Selección inicial 0.
+  **Corrección a la hipótesis de la tarea: el menú NO se
+  mueve con D-pad.** Por frame llama a `padGetStickY(0)`
+  y `padGetCY(0)` (stick Y y C-stick Y): < 0 → selección
+  +1 (abajo), > 0 → -1 (arriba), con flanco (mantener
+  mueve una sola vez; soltar rearma). Confirmación con A:
+  `getButtonsJustPressed(0)` bit `0x100`. El bucle sale
+  cuando estado == 13. El byte r13-32100 lo lee
+  `TitleMenu_run`: es el propio flag «guardado activo»
+  del juego.
+
+### 2. Tarjeta virtual (HLE en la frontera SDK, sin EXI)
+
+Ficheros nuevos `app/src/main/cpp/gamecube_runtime/card.h`
++ `card.cpp`, cableados en `hle.h`/`hle.cpp` (tabla HLE +
+`SetCardPath()` + `SetCardEnabled(bool)`, este último
+SOLO para pruebas host; la APK nunca lo usa) y en
+`CMakeLists.txt`. Solo Slot A (canal 0); el canal 1
+devuelve NOCARD como ranura vacía. El código CARD
+huésped nunca corre una vez HLEadas las entradas
+públicas. El callback de montaje se despacha como
+código huésped (r3 = chan, r4 = resultado), seguro aquí
+porque los 3 sitios de llamada pasan
+`cardSetStatusNoCard2`, que solo guarda estado 3.
+- Formato: Memory Card GameCube real, 59 bloques
+  (4 Mbit; imagen `0x80000` B = 64 bloques × 8192 B,
+  5 de sistema + 59 útiles), verificado contra YAGCD
+  §12 y contra el propio código SDK del juego:
+  cabecera @0x0000, directorio @0x2000, respaldo
+  @0x4000, BAM @0x6000, respaldo @0x8000, datos desde
+  @0xA000. Cabecera: serie 12 B @0, hora de formato 8 B
+  @0xC, tamaño en Mbits u16 BE @0x22 (= 4), encoding
+  u16 BE @0x24 (= 0 ASCII), resto 0xFF, contador @0x1FA,
+  checksums @0x1FC/0x1FE. Directorio: 127 entradas ×
+  64 B, contador @8186, checksums @8188/8190. Entrada:
+  gamecode 4, maker 2, reservado 1, formato de banner 1,
+  nombre 32, modtime 4, offset de imagen 4, formato de
+  icono 2, velocidad 2, permisos 1, contador de copias 1,
+  primer bloque 2, nº de bloques 2, reservado 2,
+  palabra de comentario 4. BAM: checksum 2, inverso 2,
+  contador 2, libres 2, último asignado 2, mapa (0 libre,
+  cadena de siguiente bloque, 0xFFFF último).
+- Checksums con el algoritmo exacto del SDK
+  (`__CARDCheckSum 0x80261484`: suma de palabras u16 BE
+  + suma de sus complementos, con 0xFFFF normalizado a
+  0): directorio sobre 8188 B con checksum @8188,
+  inverso @8190, contador @8186 (incrementado antes);
+  BAM sobre 8188 B desde +4 con checksum @0, inverso
+  @2, contador @4. Cobertura de cabecera ([0, 0x1FC))
+  por analogía con dir/BAM: el juego nunca la verifica
+  por el camino HLE; es pulido de validez externa, no
+  un dato del flujo. Verificación independiente: la
+  imagen creada por run48 pasa los 3 checksums
+  (cabecera/dir/BAM calculados == guardados).
+- Serie: generada en el formateo desde la hora de
+  formato, guardada en los 12 B de cabecera;
+  `CARDGetSerialNo` devuelve los 8 primeros como u64
+  BE, estable entre arranques porque persiste en la
+  imagen (serie idéntica en run48 y run49).
+- Persistencia: si hay ruta, cada mutación
+  (Create/Write/Delete/SetStatus/Format) reescribe la
+  imagen completa en esa ruta. Sin ruta, la tarjeta
+  vive solo en RAM. Si el fichero existe con tamaño
+  incorrecto o no parsea, el HLE arranca con una
+  tarjeta recién formateada en RAM, reporta el fallo
+  al llamador y NO toca el fichero existente hasta la
+  primera mutación válida.
+- Slots estables: una entrada borrada queda como hueco
+  0xFF (no se compacta), así que el fileNo (índice de
+  directorio) de los demás no cambia; Create reutiliza
+  un hueco antes que un slot nuevo. La longitud lógica
+  es el tamaño de Create; la capacidad, bloques × 8192;
+  al recargar, la longitud se reconstruye como
+  bloques × 8192 (sin pérdida para este juego: 24576 =
+  exactamente 3 bloques).
+- Structs visibles al huésped: CARDFileInfo +0 chan,
+  +4 fileNo, +8 offset (0), +12 length; CARDStat 108 B
+  (nombre @0, longitud @32, hora @36, gameName @40,
+  company @44, bannerFormat @46, iconAddr @48,
+  iconFormat @52, iconSpeed @54, palabra de comentario
+  @56, offsets @60/@64/@68/@100/@104). Los ficheros
+  nuevos reportan iconAddr = `0xFFFFFFFF` y comentario
+  `0xFFFFFFFF`, que es justo lo que hace pasar el
+  chequeo de `CARDGetStatus` del juego. Tras recargar,
+  bannerFormat/iconAddr/iconFormat/iconSpeed/comentario
+  se restauran desde la entrada (bannerFormat en el
+  byte 7 YAGCD); los offsets de banner/icono NO
+  persisten en la entrada y vuelven como `0xFFFFFFFF`
+  (limitación documentada: el juego solo lee/escribe
+  +46/+48/+52/+54/+56 por este camino, así que no
+  afecta a su flujo).
+- Cableado APK (`native-lib.cpp`): cuando se encuentra
+  `sfa-data`, se llama a
+  `runtime.HleState()->SetCardPath((base +
+  "/memcard-a.raw").c_str())` con la MISMA base que el
+  DOL (interna preferida, almacenamiento privado que
+  persiste entre arranques). Sin datos no se fija ruta
+  (el juego no corre en modo demo).
+
+### 3. Verificación host: las DOS vías superan el aviso
+
+Test `work-port/fase2-tests/test_phase12.cpp` (+
+`build_phase12.sh`): nuevos args argv[7] ruta de tarjeta
+(«-» = solo RAM), argv[8] script PAD
+`desde:botones:stickx:sticky` separado por comas
+(botones decimales, A = 256, Start = 4096), argv[9]
+tarjeta activa 1/0. El informe final vuelca contadores
+CARD, `pad_reads`, estado/reintento/byte de guardado y
+la lista de ficheros de la tarjeta. `SetPadScript()`
+es solo host; la APK usa `SetPadState` desde Input.
+Regresión: run49a (sin tarjeta, con el código nuevo)
+es IDÉNTICO a run47 en todos los contadores HLE
+(PADRead ×191, DVDOpen ×130, GXLoadTexObj ×5028,
+OSReport ×259, …), draws 30.188 y mismo PC final
+(`0x80015CF0`): cero regresión del código CARD.
+
+- **run48 — tarjeta presente, primer arranque**
+  (5.000.000 despachos, Start desde PADRead 12):
+  `CARDProbeEx → 0 (mem 524288, sector 8192,
+  pad_reads=72)` → `CARDMount → 0` + callback →
+  `CARDCheck → 0` → `CARDGetSerialNo → 0` →
+  `CARDOpen → -4` (NOFILE, primer arranque) →
+  segundo intento completo: ProbeEx/Mount/Check/Serial/
+  Open -4 → `CARDCreate «Star Fox Adventures» 24576
+  → 0 (fileNo 0)` → `CARDWrite ×2 (16384 @0, 8192
+  @16384) → 0` → `CARDGetStatus → 0` →
+  `CARDSetStatus → 0` → `CARDUnmount`. Estado final
+  13, reintento 0. El run terminó a mitad de la segunda
+  pantalla de carga (`cardShowLoadingMsg` es un bucle
+  de 60 frames; desp 4.804.848 → tope 5.000.000), NO
+  atascado: PC final en `__save_fpr` (prólogo de
+  render), sin excepción ni PC desconocido. Imagen
+  `memcard-a.raw` exactamente 524.288 B: serie estable,
+  entrada GSAP/01 «Star Fox Adventures», primer bloque
+  5, 3 bloques, iconFormat 0x55, iconSpeed 0xFF
+  (los OR acumulados del juego), cadena BAM 5→6→7→
+  0xFFFF, 56 bloques libres.
+- **run49 — segundo arranque, misma imagen**
+  (8.000.000 despachos, Start 12): ProbeEx → 0, Mount
+  → 0, Check → 0, Serial → 0, `CARDOpen → 0
+  (fileNo 0)`, GetStatus → 0, `CARDRead ×2 (8192 @8192,
+  8192 @0)`, Close, Unmount. Byte r13-32100: 255 → 1
+  (el juego marca «partida presente»). Después:
+  `TitleMenu_run ×44` / `TitleMenu_render ×43` por
+  frame, `n_attractmode_prepareMovie` /
+  `n_attractmode_releaseMovieBuffers` / `THPPlayerStop`
+  (película attract parada), FIFO 30.344.120 B, draws
+  23.175 con TRIANGLESTRIP 4.167 (frente a 783 del
+  run47 atascado): el juego está en el bucle de título,
+  no en el aviso. PC final `GXLoadTexMtxImm` (mitad de
+  un render de título, normal).
+- **run49a — sin tarjeta, sin script** (5.000.000,
+  Start 12, tarjeta deshabilitada): ProbeEx → -3
+  (NOCARD, `pad_reads=72`), estado 2, reintento 0,
+  byte 255, PC final `0x80015CF0` (render de texto, el
+  mismo que run47): el aviso persiste, como debe.
+  No se crea ningún fichero con la tarjeta
+  deshabilitada.
+- **run49b — sin tarjeta + «Play sin guardar»**
+  (8.000.000, Start 12, script
+  `122:0:0:-80,150:0:0:0,170:256:0:0,190:0:0:0`):
+  stick abajo (122) → selección 0→1; soltar (150)
+  rearma el flanco; A (170) confirma la acción 2;
+  soltar (190). Resultado: estado 13, reintento 0,
+  **byte r13-32100 = 0** (el efecto exacto de la
+  acción 2), `TitleMenu_run ×36` / render por frame
+  hasta el tope, FIFO 27.395.620 B, draws 33.826 con
+  TRIANGLESTRIP 3.415, PC final `GXSetVtxDesc`
+  (mitad de render). La vía «Play sin guardar»
+  también supera el aviso, sin tarjeta.
+- Lo que NO se afirma: el menú principal con sus
+  opciones visibles (el renderer host no modela color
+  TEV ni resuelve todas las texturas del título desde
+  el snapshot final), ni jugabilidad. Lo verificado es
+  el bucle de título en marcha tras la puerta CARD, en
+  ambas vías. El siguiente paso de input es navegar
+  ese menú (New Game y demás) con botones táctiles /
+  stick en la APK; el mecanismo de selección ya está
+  medido (stick Y + A, no D-pad).
+
+### 4. Build NDK (verificación Fase 12)
+
+Build `ndk-out-12` (directorio nuevo, compilación
+completa, no incremental): **0 errores** tras corregir
+un defecto latente de la Fase 11 que los builds
+incrementales habían enmascarado — en
+`runtime.cpp:59` la lambda de `SetRamReader` mezclaba
+retornos `const uint8_t*` y `uint8_t*`, y clang la
+rechaza por tipo de retorno deducido inconsistente
+(2 errores). Fix mínimo sin cambio de comportamiento:
+cast a `const uint8_t*` en el último retorno. El
+build incremental de la Fase 11 había reutilizado un
+`runtime.o` anterior al lambda, así que el defecto no
+se vio entonces; el build completo de esta fase lo
+expuso y quedó corregido. `libstarfox.so`
+**27.417.392 B**, ELF64 AArch64, SHA-256
+`553f3cc330ceecec86a118563292c1a2accfb86dd9d9d61bf70eb9c230abce80`,
+`android_main` en `T`, comprobación del script «OK:
+ningún símbolo mem_/ppc_/func_/dolrecomp_ sin
+resolver», **189 undefined totales** (frente a 186 en
+Fase 11; delta +3 coherente con el nuevo uso de stdio
+de `card.cpp` — fopen/fread/fwrite/fseek/ftell —, todos
+de librerías del sistema: AAudio, AConfiguration,
+AInput, libc, libm, sin ningún símbolo de shim/chunk).
+
+### 5. APK de prueba GX12 (verificación Fase 12)
+
+`android-port-base/app-debug-gx12-test.apk`:
+**12.538.534 B**, SHA-256
+`7587eb34aded00bc749b063a8e7acee48ec047b09b1257d1df244ef698406795`,
+`com.starfox.port` v4 / `0.4.0-gx12-test`,
+debuggable solo por ser build de prueba, solo
+arm64-v8a. Validación: apksigner v2+v3 OK (1 firmante),
+zipalign OK, badging (sdk 26, target 34, MainActivity
+lanzable), `libstarfox.so` interior con SHA idéntico
+al del build NDK (`553f3cc3…`), sin datos ni disco
+dentro (solo dex, `libc++_shared.so`, `libstarfox.so`,
+manifiesto y `assets/README.md`). Hace (por código,
+NO probado en dispositivo): todo lo de GX11 (arranca,
+EGL/GLES3 + programa GX, clear + damero sin datos;
+con `sfa-data` por adb, carga el DOL, avanza tras
+videoInit y dibuja frames del bucle real) MÁS la
+tarjeta virtual CARD: con datos, `memcard-a.raw` se
+crea en la misma base que el DOL y la partida persiste
+entre arranques (crear/leer verificados en host, no
+en dispositivo). NO hace: no es jugable, sin sonido
+de juego, sin botones táctiles, sin picker SAF, sin
+probar en Tab S8 real.
+
+### 6. Qué queda (tras Fase 12, en orden)
+
+1. Picker SAF + copia de Pack B a `sfa-data/` y prueba
+   real en Tab S8 (boot.log + frames reales con datos;
+   la tarjeta virtual ya tiene ruta privada fijada, así
+   que en cuanto la APK corra con datos, la partida
+   persistirá entre arranques).
+2. Botones táctiles en pantalla (layout por definir):
+   imprescindibles para navegar el menú de título y el
+   aviso sin tarjeta; el menú del aviso necesita stick
+   Y + A (no D-pad), y el de título, por medir.
+3. Contenido DL en APK con RAM viva (cableado; falta
+   probarlo con datos).
+4. TEV multi-etapa / color de selección / alfa I4 en el
+   renderer (texto y selección correctos).
+5. Mapeo ID de sonido del juego -> WAV; secuencias
+   MusyX; DSP real.
+6. Rumble (`PADControlMotor` sin HLE).
+7. APK 100% jugable: solo cuando renderer + datos +
+   CARD/input + audio estén probados en dispositivo.
+   La APK de este tramo sigue siendo solo prueba de
+   renderer + CARD (ver punto 5).

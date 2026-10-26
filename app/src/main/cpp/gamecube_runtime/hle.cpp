@@ -78,6 +78,21 @@ constexpr HleEntry kHleTable[] = {
     {Hle::kOsSleepThread, "OSSleepThread"},
     {Hle::kPpcSync, "PPCSync"},
     {Hle::kOsReport, "OSReport"},
+    {Hle::kCardInit, "CARDInit"},
+    {Hle::kCardProbeEx, "CARDProbeEx"},
+    {Hle::kCardMount, "CARDMount"},
+    {Hle::kCardUnmount, "CARDUnmount"},
+    {Hle::kCardCheck, "CARDCheck"},
+    {Hle::kCardFormat, "CARDFormat"},
+    {Hle::kCardOpen, "CARDOpen"},
+    {Hle::kCardClose, "CARDClose"},
+    {Hle::kCardCreate, "CARDCreate"},
+    {Hle::kCardRead, "CARDRead"},
+    {Hle::kCardWrite, "CARDWrite"},
+    {Hle::kCardDelete, "CARDDelete"},
+    {Hle::kCardGetStatus, "CARDGetStatus"},
+    {Hle::kCardSetStatus, "CARDSetStatus"},
+    {Hle::kCardGetSerialNo, "CARDGetSerialNo"},
 };
 
 const char* FindHleName(uint32_t address) {
@@ -145,6 +160,137 @@ bool LcDmaCopy(CpuState* cpu, uint32_t mem_addr, uint32_t lc_addr,
   return true;
 }
 
+// Lectura guest de un u32 BE con control de excepcion (false si
+// la direccion no es legible). Solo para structs CARD pequenos.
+bool ReadGuestU32(CpuState* cpu, uint32_t guest, uint32_t* out) {
+  if (cpu == nullptr || out == nullptr) return false;
+  cpu->exception = 0;
+  uint32_t v = ::mem_read32(cpu, guest);
+  if (cpu->exception != 0) {
+    cpu->exception = 0;
+    return false;
+  }
+  *out = v;
+  return true;
+}
+
+void WriteGuestU32(CpuState* cpu, uint32_t guest, uint32_t value) {
+  if (cpu == nullptr) return;
+  cpu->exception = 0;
+  ::mem_write32(cpu, guest, value);
+  if (cpu->exception != 0) cpu->exception = 0;
+}
+
+void WriteGuestU16(CpuState* cpu, uint32_t guest, uint16_t value) {
+  if (cpu == nullptr) return;
+  cpu->exception = 0;
+  ::mem_write16(cpu, guest, value);
+  if (cpu->exception != 0) cpu->exception = 0;
+}
+
+void WriteGuestU8(CpuState* cpu, uint32_t guest, uint8_t value) {
+  if (cpu == nullptr) return;
+  cpu->exception = 0;
+  ::mem_write8(cpu, guest, value);
+  if (cpu->exception != 0) cpu->exception = 0;
+}
+
+// CARDFileInfo guest (SDK, verificado contra el uso del juego:
+// solo +4 = fileNo se lee de vuelta, en CARDGetStatus/SetStatus;
+// +0 chan, +8 offset, +12 length se escriben por plausibilidad).
+void WriteCardFileInfo(CpuState* cpu, uint32_t fileinfo, int chan,
+                       int file_no, uint32_t length) {
+  WriteGuestU32(cpu, fileinfo + 0u, static_cast<uint32_t>(chan));
+  WriteGuestU32(cpu, fileinfo + 4u, static_cast<uint32_t>(file_no));
+  WriteGuestU32(cpu, fileinfo + 8u, 0u);
+  WriteGuestU32(cpu, fileinfo + 12u, length);
+}
+
+// CARDStat guest, 108 B (layout SDK; el juego lee +46
+// bannerFormat, +48 iconAddr, +52 iconFormat, +54 iconSpeed y
+// +56 como palabra de comentario, y los reescribe en SetStatus).
+void WriteCardStat(CpuState* cpu, uint32_t stat,
+                   const CardStatData& data) {
+  uint8_t name[32];
+  std::memset(name, 0, sizeof(name));
+  std::memcpy(name, data.file_name.c_str(),
+              data.file_name.size() < 32 ? data.file_name.size() : 32);
+  for (int i = 0; i < 32; ++i) WriteGuestU8(cpu, stat + i, name[i]);
+  WriteGuestU32(cpu, stat + 32u, data.length);
+  WriteGuestU32(cpu, stat + 36u, data.time);
+  for (int i = 0; i < 4; ++i) {
+    WriteGuestU8(cpu, stat + 40u + i,
+                 static_cast<uint8_t>(data.game_name[i]));
+  }
+  WriteGuestU8(cpu, stat + 44u, static_cast<uint8_t>(data.company[0]));
+  WriteGuestU8(cpu, stat + 45u, static_cast<uint8_t>(data.company[1]));
+  WriteGuestU8(cpu, stat + 46u, data.banner_format);
+  WriteGuestU8(cpu, stat + 47u, 0u);
+  WriteGuestU32(cpu, stat + 48u, data.icon_addr);
+  WriteGuestU16(cpu, stat + 52u, data.icon_format);
+  WriteGuestU16(cpu, stat + 54u, data.icon_speed);
+  WriteGuestU32(cpu, stat + 56u, data.comment_word);
+  WriteGuestU32(cpu, stat + 60u, data.offset_banner);
+  WriteGuestU32(cpu, stat + 64u, data.offset_banner_tlut);
+  for (int i = 0; i < 8; ++i) {
+    WriteGuestU32(cpu, stat + 68u + 4u * static_cast<uint32_t>(i),
+                  data.offset_icon[i]);
+  }
+  WriteGuestU32(cpu, stat + 100u, data.offset_icon_tlut);
+  WriteGuestU32(cpu, stat + 104u, data.offset_data);
+}
+
+bool ReadCardStat(CpuState* cpu, uint32_t stat, CardStatData* data) {
+  if (cpu == nullptr || data == nullptr) return false;
+  uint32_t v = 0;
+  if (!ReadGuestU32(cpu, stat + 32u, &v)) return false;
+  data->length = v;
+  if (!ReadGuestU32(cpu, stat + 36u, &v)) return false;
+  data->time = v;
+  uint8_t b = 0;
+  cpu->exception = 0;
+  b = ::mem_read8(cpu, stat + 46u);
+  if (cpu->exception != 0) {
+    cpu->exception = 0;
+    return false;
+  }
+  data->banner_format = b;
+  if (!ReadGuestU32(cpu, stat + 48u, &v)) return false;
+  data->icon_addr = v;
+  cpu->exception = 0;
+  uint32_t fmt = ::mem_read16(cpu, stat + 52u);
+  if (cpu->exception != 0) {
+    cpu->exception = 0;
+    return false;
+  }
+  data->icon_format = static_cast<uint16_t>(fmt);
+  cpu->exception = 0;
+  uint32_t spd = ::mem_read16(cpu, stat + 54u);
+  if (cpu->exception != 0) {
+    cpu->exception = 0;
+    return false;
+  }
+  data->icon_speed = static_cast<uint16_t>(spd);
+  if (!ReadGuestU32(cpu, stat + 56u, &v)) return false;
+  data->comment_word = v;
+  if (!ReadGuestU32(cpu, stat + 60u, &v)) return false;
+  data->offset_banner = v;
+  if (!ReadGuestU32(cpu, stat + 64u, &v)) return false;
+  data->offset_banner_tlut = v;
+  for (int i = 0; i < 8; ++i) {
+    if (!ReadGuestU32(cpu, stat + 68u + 4u * static_cast<uint32_t>(i),
+                      &v)) {
+      return false;
+    }
+    data->offset_icon[i] = v;
+  }
+  if (!ReadGuestU32(cpu, stat + 100u, &v)) return false;
+  data->offset_icon_tlut = v;
+  if (!ReadGuestU32(cpu, stat + 104u, &v)) return false;
+  data->offset_data = v;
+  return true;
+}
+
 }  // namespace
 
 Hle::Hle() = default;
@@ -164,6 +310,10 @@ void Hle::SetFstPath(const char* path) {
   fst_loaded_ = false;
   fst_load_attempted_ = false;
   fst_entries_.clear();
+}
+
+void Hle::SetCardPath(const char* path) {
+  card_.SetPath(path != nullptr ? path : "");
 }
 
 void Hle::SetPadInject(bool enabled, uint16_t buttons, int8_t stick_x,
@@ -553,8 +703,9 @@ void Hle::LogCall(CpuState* cpu, const char* name, uint32_t address) {
   call.r7 = cpu != nullptr ? cpu->gpr[7] : 0;
   if (calls_.size() < 1000000) calls_.push_back(call);
   // Log en texto solo las 20 primeras por nombre. El indice es
-  // la posicion en kHleTable (mismo puntero de literal).
-  unsigned idx = 63;
+  // la posicion en kHleTable (mismo puntero de literal); 127 es
+  // el cubo de nombres fuera de tabla (log_count_ tiene 128).
+  unsigned idx = 127;
   for (unsigned i = 0; i < sizeof(kHleTable) / sizeof(kHleTable[0]); ++i) {
     if (kHleTable[i].name == name) {
       idx = i;
@@ -1717,6 +1868,20 @@ bool Hle::HandleHostCall(CpuState* cpu, uint32_t address) {
           pad_reads_ < pad_press_from_read_) {
         effective.buttons = 0;
       }
+      // Secuencia de test (Fase 12): si hay guion, el tramo
+      // vigente sustituye botones y stick (no se combina con
+      // la inyeccion constante: el guion es la fuente).
+      if (!pad_script_.empty()) {
+        const PadScriptStep* step = nullptr;
+        for (const PadScriptStep& s : pad_script_) {
+          if (s.from_read <= pad_reads_) step = &s;
+        }
+        if (step != nullptr) {
+          effective.buttons = step->buttons;
+          effective.stick_x = step->stick_x;
+          effective.stick_y = step->stick_y;
+        }
+      }
       uint8_t status[48];
       std::memset(status, 0, sizeof(status));
       status[0] = static_cast<uint8_t>(effective.buttons >> 8);
@@ -1779,6 +1944,321 @@ bool Hle::HandleHostCall(CpuState* cpu, uint32_t address) {
                "(registrado, sin GPU)",
                cpu->gpr[3], cpu->gpr[4]);
       return Return(cpu, 0);
+    }
+    case kCardInit: {
+      // CARDInit del SDK: en huesped solo prepara el estado
+      // EXI, que el HLE CARD no usa (todas las operaciones
+      // publicas estan HLEadas). No-op con retorno 0.
+      card_.EnsureLoaded();
+      return Return(cpu, 0);
+    }
+    case kCardProbeEx: {
+      // (chan, &memSize, &sectorSize). Solo Slot A presente;
+      // el canal 1 devuelve NOCARD como una ranura vacia.
+      if (!card_enabled_) {
+        SFA_LOGI("hle: CARDProbeEx chan=%d -> -3 (NOCARD, card deshabilitada, "
+                 "pad_reads=%llu)",
+                 static_cast<int>(cpu->gpr[3]),
+                 static_cast<unsigned long long>(pad_reads_));
+        return Return(cpu,
+                      static_cast<uint32_t>(VirtualCard::kNoCard));
+      }
+      card_.EnsureLoaded();
+      uint32_t mem_size = 0;
+      uint32_t sector_size = 0;
+      int result = card_.Probe(static_cast<int>(cpu->gpr[3]), &mem_size,
+                               &sector_size);
+      if (result == VirtualCard::kReady) {
+        WriteGuestU32(cpu, cpu->gpr[4], mem_size);
+        WriteGuestU32(cpu, cpu->gpr[5], sector_size);
+      }
+      SFA_LOGI("hle: CARDProbeEx chan=%d -> %d (mem=%u sector=%u, "
+               "pad_reads=%llu)",
+               static_cast<int>(cpu->gpr[3]), result, mem_size,
+               sector_size,
+               static_cast<unsigned long long>(pad_reads_));
+      return Return(cpu, static_cast<uint32_t>(result));
+    }
+    case kCardMount: {
+      // (chan, workArea, callback). El callback del juego
+      // (cardSetStatusNoCard2 en los 3 sitios de llamada)
+      // preserva r3, asi que se puede despachar en linea con
+      // r3=chan y r4=resultado, como DVDReadAsyncPrio hace con
+      // su callback: el callback corre como codigo huesped y
+      // su blr vuelve al retorno del llamador, con r3 intacto
+      // (= chan 0 = READY 0 en Slot A). Sin callback, retorno
+      // directo del resultado.
+      int chan = static_cast<int>(cpu->gpr[3]);
+      uint32_t callback = cpu->gpr[5];
+      if (!card_enabled_) {
+        return Return(cpu,
+                      static_cast<uint32_t>(VirtualCard::kNoCard));
+      }
+      card_.EnsureLoaded();
+      int result = card_.Mount(chan);
+      SFA_LOGI("hle: CARDMount chan=%d -> %d (callback 0x%08X)",
+               chan, result, callback);
+      if (callback != 0) {
+        cpu->gpr[3] = static_cast<uint32_t>(chan);
+        cpu->gpr[4] = static_cast<uint32_t>(result);
+        cpu->pc = callback;
+        return true;
+      }
+      return Return(cpu, static_cast<uint32_t>(result));
+    }
+    case kCardUnmount: {
+      if (!card_enabled_) {
+        return Return(cpu,
+                      static_cast<uint32_t>(VirtualCard::kNoCard));
+      }
+      int result =
+          card_.Unmount(static_cast<int>(cpu->gpr[3]));
+      return Return(cpu, static_cast<uint32_t>(result));
+    }
+    case kCardCheck: {
+      if (!card_enabled_) {
+        return Return(cpu,
+                      static_cast<uint32_t>(VirtualCard::kNoCard));
+      }
+      int result = card_.Check(static_cast<int>(cpu->gpr[3]));
+      SFA_LOGI("hle: CARDCheck chan=%d -> %d",
+               static_cast<int>(cpu->gpr[3]), result);
+      return Return(cpu, static_cast<uint32_t>(result));
+    }
+    case kCardFormat: {
+      if (!card_enabled_) {
+        return Return(cpu,
+                      static_cast<uint32_t>(VirtualCard::kNoCard));
+      }
+      int result = card_.Format(static_cast<int>(cpu->gpr[3]));
+      SFA_LOGI("hle: CARDFormat chan=%d -> %d",
+               static_cast<int>(cpu->gpr[3]), result);
+      return Return(cpu, static_cast<uint32_t>(result));
+    }
+    case kCardOpen: {
+      if (!card_enabled_) {
+        return Return(cpu,
+                      static_cast<uint32_t>(VirtualCard::kNoCard));
+      }
+      // (chan, filename, fileInfo). El fileNo (indice de
+      // directorio) queda en +4 del struct y en el registro
+      // de abiertos de esta instancia.
+      std::string name;
+      if (!ReadGuestString(cpu, cpu->gpr[4], &name)) {
+        return Return(cpu,
+                      static_cast<uint32_t>(VirtualCard::kIoError));
+      }
+      int file_no = -1;
+      int result = card_.Open(static_cast<int>(cpu->gpr[3]), name,
+                              &file_no);
+      if (result == VirtualCard::kReady) {
+        CardStatData stat;
+        card_.GetStatus(static_cast<int>(cpu->gpr[3]), file_no, &stat);
+        WriteCardFileInfo(cpu, cpu->gpr[5],
+                          static_cast<int>(cpu->gpr[3]), file_no,
+                          stat.length);
+        bool found = false;
+        for (auto& e : card_open_) {
+          if (e.first == cpu->gpr[5]) {
+            e.second = file_no;
+            found = true;
+          }
+        }
+        if (!found) card_open_.push_back({cpu->gpr[5], file_no});
+      }
+      SFA_LOGI("hle: CARDOpen '%s' -> %d (fileNo %d)", name.c_str(),
+               result, file_no);
+      return Return(cpu, static_cast<uint32_t>(result));
+    }
+    case kCardClose: {
+      if (!card_enabled_) {
+        return Return(cpu,
+                      static_cast<uint32_t>(VirtualCard::kNoCard));
+      }
+      // (fileInfo). Se resuelve el fileNo por el registro y,
+      // si no hay registro, por +4 del propio struct.
+      int file_no = -1;
+      for (auto& e : card_open_) {
+        if (e.first == cpu->gpr[3]) file_no = e.second;
+      }
+      if (file_no < 0) {
+        uint32_t v = 0;
+        if (ReadGuestU32(cpu, cpu->gpr[3] + 4u, &v)) {
+          file_no = static_cast<int>(v);
+        }
+      }
+      for (auto it = card_open_.begin(); it != card_open_.end();) {
+        if (it->first == cpu->gpr[3]) {
+          it = card_open_.erase(it);
+        } else {
+          ++it;
+        }
+      }
+      int result = card_.Close(file_no);
+      return Return(cpu, static_cast<uint32_t>(result));
+    }
+    case kCardCreate: {
+      if (!card_enabled_) {
+        return Return(cpu,
+                      static_cast<uint32_t>(VirtualCard::kNoCard));
+      }
+      // (chan, filename, size, fileInfo).
+      std::string name;
+      if (!ReadGuestString(cpu, cpu->gpr[4], &name)) {
+        return Return(cpu,
+                      static_cast<uint32_t>(VirtualCard::kIoError));
+      }
+      int file_no = -1;
+      int result = card_.Create(static_cast<int>(cpu->gpr[3]), name,
+                                cpu->gpr[5], &file_no);
+      if (result == VirtualCard::kReady) {
+        WriteCardFileInfo(cpu, cpu->gpr[6],
+                          static_cast<int>(cpu->gpr[3]), file_no,
+                          cpu->gpr[5]);
+        bool found = false;
+        for (auto& e : card_open_) {
+          if (e.first == cpu->gpr[6]) {
+            e.second = file_no;
+            found = true;
+          }
+        }
+        if (!found) card_open_.push_back({cpu->gpr[6], file_no});
+      }
+      SFA_LOGI("hle: CARDCreate '%s' size %u -> %d (fileNo %d)",
+               name.c_str(), cpu->gpr[5], result, file_no);
+      return Return(cpu, static_cast<uint32_t>(result));
+    }
+    case kCardRead: {
+      if (!card_enabled_) {
+        return Return(cpu,
+                      static_cast<uint32_t>(VirtualCard::kNoCard));
+      }
+      // (fileInfo, buf, length, offset).
+      int file_no = -1;
+      for (auto& e : card_open_) {
+        if (e.first == cpu->gpr[3]) file_no = e.second;
+      }
+      if (file_no < 0) {
+        uint32_t v = 0;
+        if (ReadGuestU32(cpu, cpu->gpr[3] + 4u, &v)) {
+          file_no = static_cast<int>(v);
+        }
+      }
+      uint32_t length = cpu->gpr[5];
+      std::vector<uint8_t> buf(length);
+      int result = card_.Read(file_no, cpu->gpr[6], length,
+                              length > 0 ? buf.data() : nullptr);
+      if (result == VirtualCard::kReady && length > 0) {
+        WriteGuestBytes(cpu, cpu->gpr[4], buf.data(), length);
+      }
+      return Return(cpu, static_cast<uint32_t>(result));
+    }
+    case kCardWrite: {
+      if (!card_enabled_) {
+        return Return(cpu,
+                      static_cast<uint32_t>(VirtualCard::kNoCard));
+      }
+      // (fileInfo, buf, length, offset). Los datos se leen
+      // del guest por el puntero host cuando cabe en RAM.
+      int file_no = -1;
+      for (auto& e : card_open_) {
+        if (e.first == cpu->gpr[3]) file_no = e.second;
+      }
+      if (file_no < 0) {
+        uint32_t v = 0;
+        if (ReadGuestU32(cpu, cpu->gpr[3] + 4u, &v)) {
+          file_no = static_cast<int>(v);
+        }
+      }
+      uint32_t length = cpu->gpr[5];
+      std::vector<uint8_t> buf(length);
+      uint8_t* host = nullptr;
+      if (length > 0 && GuestRangeHostPtr(cpu, cpu->gpr[4], length,
+                                          &host)) {
+        std::memcpy(buf.data(), host, length);
+      } else {
+        for (uint32_t i = 0; i < length; ++i) {
+          cpu->exception = 0;
+          buf[i] = ::mem_read8(cpu, cpu->gpr[4] + i);
+          if (cpu->exception != 0) {
+            cpu->exception = 0;
+            break;
+          }
+        }
+      }
+      int result = card_.Write(file_no, cpu->gpr[6],
+                               length > 0 ? buf.data() : nullptr,
+                               length);
+      SFA_LOGI("hle: CARDWrite fileNo %d off %u len %u -> %d",
+               file_no, cpu->gpr[6], length, result);
+      return Return(cpu, static_cast<uint32_t>(result));
+    }
+    case kCardDelete: {
+      if (!card_enabled_) {
+        return Return(cpu,
+                      static_cast<uint32_t>(VirtualCard::kNoCard));
+      }
+      // (chan, filename).
+      std::string name;
+      if (!ReadGuestString(cpu, cpu->gpr[4], &name)) {
+        return Return(cpu,
+                      static_cast<uint32_t>(VirtualCard::kIoError));
+      }
+      int result =
+          card_.Delete(static_cast<int>(cpu->gpr[3]), name);
+      SFA_LOGI("hle: CARDDelete '%s' -> %d", name.c_str(), result);
+      return Return(cpu, static_cast<uint32_t>(result));
+    }
+    case kCardGetStatus: {
+      if (!card_enabled_) {
+        return Return(cpu,
+                      static_cast<uint32_t>(VirtualCard::kNoCard));
+      }
+      // (chan, fileNo, stat).
+      CardStatData stat;
+      int result = card_.GetStatus(static_cast<int>(cpu->gpr[3]),
+                                   static_cast<int>(cpu->gpr[4]),
+                                   &stat);
+      if (result == VirtualCard::kReady) {
+        WriteCardStat(cpu, cpu->gpr[5], stat);
+      }
+      return Return(cpu, static_cast<uint32_t>(result));
+    }
+    case kCardSetStatus: {
+      if (!card_enabled_) {
+        return Return(cpu,
+                      static_cast<uint32_t>(VirtualCard::kNoCard));
+      }
+      // (chan, fileNo, stat): el juego reescribe el stat que
+      // GetStatus le dio, con iconAddr/comentario/banner
+      // retocados (saveGame). Solo esos campos se persisten.
+      CardStatData stat;
+      if (!ReadCardStat(cpu, cpu->gpr[5], &stat)) {
+        return Return(cpu,
+                      static_cast<uint32_t>(VirtualCard::kIoError));
+      }
+      int result = card_.SetStatus(static_cast<int>(cpu->gpr[3]),
+                                   static_cast<int>(cpu->gpr[4]),
+                                   stat);
+      return Return(cpu, static_cast<uint32_t>(result));
+    }
+    case kCardGetSerialNo: {
+      if (!card_enabled_) {
+        return Return(cpu,
+                      static_cast<uint32_t>(VirtualCard::kNoCard));
+      }
+      // (chan, &serial u64 BE).
+      uint64_t serial = 0;
+      int result = card_.GetSerialNo(static_cast<int>(cpu->gpr[3]),
+                                     &serial);
+      if (result == VirtualCard::kReady) {
+        uint8_t bytes[8];
+        for (int i = 0; i < 8; ++i) {
+          bytes[i] = static_cast<uint8_t>(serial >> (56 - 8 * i));
+        }
+        WriteGuestBytes(cpu, cpu->gpr[4], bytes, 8);
+      }
+      return Return(cpu, static_cast<uint32_t>(result));
     }
     case kOsReport: {
       // Observacion, no sustitucion de logica: el stub huesped

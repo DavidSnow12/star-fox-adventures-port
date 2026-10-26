@@ -62,7 +62,7 @@ bool GameCubeRuntime::LoadGame(const char* dol_path) {
     if (off + size > memory_.RamSize()) {
       return static_cast<const uint8_t*>(nullptr);
     }
-    return memory_.RamData() + off;
+    return static_cast<const uint8_t*>(memory_.RamData() + off);
   });
   gx_fifo_base_ = 0;
   gx_texloads_converted_ = 0;

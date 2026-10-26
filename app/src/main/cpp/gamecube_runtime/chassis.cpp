@@ -110,6 +110,33 @@ ChassisResult RunChassis(CpuState* cpu, Hle* hle,
             0x80014954u,  // setCurUiDll
             0x80014974u,  // loadUiDll
             0x80117440u,  // TitleMenu_setSelection
+            // Fase 12: traza CARD (juego + libreria SDK).
+            0x8007E08Cu,  // cardProbe
+            0x8007E42Cu,  // showMemCardError
+            0x8007E190u,  // cardGetMessage
+            0x8007FBA8u,  // saveGame
+            0x8007DEDCu,  // loadSaveGame
+            0x8007DE40u,  // maybeTryLoadSave
+            0x8007DF84u,  // cardCreateSaveFile
+            0x8007D910u,  // cardFormatMemoryCard
+            0x8007DD08u,  // cardWriteOptions
+            0x8007E8A4u,  // cardShowLoadingMsg
+            0x8025F664u,  // CARDInit
+            0x802624B8u,  // CARDProbeEx
+            0x80262D1Cu,  // CARDMount
+            0x80262B7Cu,  // CARDMountAsync
+            0x80262398u,  // CARDCheck
+            0x80261E08u,  // CARDCheckExAsync
+            0x8026391Cu,  // CARDOpen
+            0x80263A94u,  // CARDClose
+            0x80263E40u,  // CARDCreate
+            0x802642B8u,  // CARDRead
+            0x80264634u,  // CARDWrite
+            0x80264A70u,  // CARDGetStatus
+            0x80264830u,  // CARDDelete
+            0x80263648u,  // CARDFormat
+            0x80262E00u,  // CARDUnmount
+            0x80264D58u,  // CARDGetSerialNo
         };
         for (uint32_t t : kTracePcs) {
           if (pc == t) {

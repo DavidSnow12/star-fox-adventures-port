@@ -43,6 +43,7 @@ add_library(starfox SHARED
     ${SFA_CHUNKS_C}
     gamecube_runtime/runtime.cpp
     gamecube_runtime/hle.cpp
+    gamecube_runtime/card.cpp
     gamecube_runtime/chassis.cpp
     gamecube_runtime/cpu.cpp
     gamecube_runtime/memory.cpp

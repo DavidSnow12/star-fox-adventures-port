@@ -67,6 +67,13 @@ void HandleCmd(struct android_app* app, int32_t cmd) {
             tried = true;
             std::string files = std::string(base) + "/sfa-data/files";
             state->runtime.SetDiscRoot(files.c_str());
+            // Fase 12 — tarjeta virtual Slot A: persiste en el
+            // almacenamiento privado de la app, junto a los
+            // datos (misma base que el DOL: interna preferida).
+            // Sin esta llamada, la tarjeta viviria solo en RAM
+            // y la partida se perderia al cerrar la app.
+            state->runtime.HleState()->SetCardPath(
+                (std::string(base) + "/memcard-a.raw").c_str());
             if (state->runtime.LoadGame(dol.c_str())) {
               SFA_LOGI("native: juego cargado desde %s", dol.c_str());
             } else {
