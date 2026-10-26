@@ -4817,3 +4817,61 @@ construyó con Temurin 21.0.13 descargado por curl a
 diferencia de /usr); el JDK parcial de
 `~/tools/jdk21` NO sirve (le falta `java.security`
 y `javac` falla en `SecurityProperties`).
+
+## Fase 18 (2026-10-26, este tramo): hook sndFXStartEx por ID FX — primer SFX real por el bridge
+
+**Veredicto que cambia el sonido:** la tabla FX NO es la identidad.
+El campo de Sfx.bin que el bridge usaba como «ID de muestra» es un
+ID FX: entra a dataGetFX, sale un descriptor cuyo único campo
+variable es macro (offset 2), y la muestra real es el operando
+flags>>8 del único START-SAMPLE del macro. macro == fxId en 0/833
+casos y sample == fxId en 0/833. Las 1331/1331 variantes de trigger
+con muestra sonaban con un WAV distinto del verificado.
+
+**Verificación por tres vías (trabajo en work-port/fase18-fx/):**
+1) Offline: starfoxs.pro (56 grupos; 29 tipo 1 con 833 FX, IDs 0–832
+contiguos) + starfoxs.poo (925 macros; 833/833 macros FX con
+exactamente un START-SAMPLE, muestras 595–1471, todas con WAV).
+2) RAM real tras sndInit: 833 descriptores idénticos a .pro salvo
+vGroup=31 impuesto por dataInsertFX (833/833).
+3) dataGetFX real en host: descriptores esperados para
+13/25/35/45/175/648/335/420–423/0/832/1, NULL para 999/65535.
+Formato FX_TAB (10 B BE): id@0, macro@2, maxVoices@4, priority@5,
+volume@6, panning@7, key@8, vGroup@9; en los 833: maxVoices 255,
+priority 10, volume 127, panning 64, key 60 constantes.
+Direcciones: sndFXStartEx 0x80273218 (r3=fxId, r4=volume, r5=pan,
+r6=studio; r7 basura del llamador, se ignora), synthFXStart
+0x80272120, dataGetFX 0x80275B28, dataFXGroupTable 0x803CB7D8.
+Tabla verificada: FX 13 -> muestra 926, FX 25 -> 1285, FX 35 -> 693,
+FX 45 -> 839. Trigger 13 -> FX 175 -> macro 1040 -> muestra 841
+(no starfoxm/0175); trigger 45 no tiene FX (sus 6 sfxIds son 0,
+así que no llama a sndFXStartEx; su «no resuelto» era correcto
+por ese motivo, no por secuencia/grupo).
+
+**Implementado en este commit:** audio/fx_table.h (833 muestras,
+generada desde fx_verified.csv, no a mano) + AudioBridge::OnFxStart
+(fxId&0xFFFF, volume 0xFF->127, pan 0xFF->64 solo registrado sin
+ley de paneo inventada, studio, ganancia volume/127, bucle por
+metadato) + OnAudioEntry(pc 0x80273218) que lo despacha con
+r3-r6 del chassis (el hook ya disparaba en ese pc; antes solo
+contaba). Test host test_fase18_fx.cpp: TODO OK (FX 13/25/35/45 a
+sus muestras correctas, hook por pc con r7=0x12345678 ignorado,
+FX 999/65535 no resueltos sin crash, entregados == drenados,
+0 descartados). Regresión test_fase17: TODO OK.
+
+**Pendiente documentado, no oculto:** el helper OnSfxTrigger
+sigue tratando el campo Sfx.bin como muestra directa (camino
+solo de test host; el camino real del juego es sndFXStartEx ->
+OnFxStart). Corregirlo para que pase por la tabla FX y actualizar
+los tests Fase 16/17 (que fijan muestra 175 / 79068 frames para
+trigger 13) queda para el siguiente paso, no se hizo aquí para
+no romper la suite validada. Primer SFX real por PCTRACE:
+pendiente de partida más larga más allá de 0x80081B70 (en la
+ventana medida hubo 56 sndPushGroup y 0 sndFXStartEx; el hook
+quedó probado en prueba aislada, no en partida). FX 96, 162, 820:
+su macro tiene play-macro antes del START-SAMPLE, muestra lineal
+tabulada con branch_before_sample=1 pendiente de confirmar por
+ejecución MCMD completa. sndFXStartEx aislado devuelve -1 por
+falta de estado synth en el test aislado, no por error de tabla.
+La cuestión 1367 sigue abierta. MusyX/DSP (secuencias) y TEV
+multi-etapa siguen pendientes en este tramo.

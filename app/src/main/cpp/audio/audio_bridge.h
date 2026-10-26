@@ -25,13 +25,13 @@
 //     vol_base/127 (el volumen maestro lo aplica
 //     Audio::SubmitBuffer, no el bridge, para no
 //     aplicarlo dos veces).
-// Que SOLO cuenta (sin reproducir): sndFXStartEx,
-// sndSeqPlayEx, AudioStream_StartPrepared y cualquier otra
-// entrada, porque su layout de argumentos NO esta verificado
-// (sndFXStartEx) o no es un fichero de audio
-// (sndSeqPlayEx: secuenciador .pro/.poo + midi.wad).
+// Que SOLO cuenta (sin reproducir): sndSeqPlayEx,
+// AudioStream_StartPrepared y cualquier otra entrada, porque
+// no es un fichero de audio (sndSeqPlayEx: secuenciador
+// .pro/.poo + midi.wad) o su layout no está verificado.
 // Sus IDs quedan en CountedEntries() para la traza, no en
-// PlayedEntries().
+// PlayedEntries(). sndFXStartEx YA reproduce desde la
+// Fase 18 (OnFxStart, tabla FX verificada), no solo cuenta.
 // Mezcla (Fase 17): 8 voces SFX + 1 voz de stream, en
 // PARALELO (no en serie): Tick() mezcla un bloque de
 // hasta kFeedFrames sumando en int32 por frame y con
@@ -100,7 +100,30 @@ class AudioBridge {
   // (la primera no nula; ver comentario Fase 16 en el .cpp).
   // Devuelve 1 si se encoló, 0 si no (sin muestra directa,
   // id desconocido, WAV ilegible o voces llenas).
+  // NOTA Fase 18: este helper de test trata el campo de
+  // Sfx.bin como ID de muestra directo, y la Fase 18
+  // demostró que ese campo es un ID FX (ver OnFxStart).
+  // El camino REAL del juego no pasa por aquí: pasa por
+  // sndFXStartEx -> OnFxStart. Corregir este helper para
+  // que pase por la tabla FX y actualizar los tests
+  // Fase 16/17 (que fijan muestra 175 / 79068 frames para
+  // trigger 13) queda como trabajo pendiente documentado,
+  // no se hace aquí para no romper la suite validada.
   int OnSfxTrigger(uint32_t trigger_id);
+
+  // SFX real por ID FX (Fase 18, hook sndFXStartEx
+  // 0x80273218): fxId = r3&0xFFFF, volume = r4&0xFF
+  // (0xFF -> volumen del descriptor, 127), pan = r5&0xFF
+  // (0xFF -> panning del descriptor, 64; hoy solo se
+  // registra, no se aplica ley de paneo), studio = r6&0xFF
+  // (r7 se IGNORA: basura del llamador, no es el ITD).
+  // Resuelve fxId -> muestra por fx_table.h (NO identidad:
+  // macro == fxId en 0/833) y encola la muestra con
+  // ganancia volume/127. Devuelve 1 si se encoló, 0 si no
+  // (FX desconocido -> unresolved, WAV ilegible, voces
+  // llenas con dropped_sfx_ incrementado).
+  int OnFxStart(uint32_t fx_id, uint32_t volume, uint32_t pan,
+                uint32_t studio);
 
   // Avance de reproduccion: mezcla un bloque de hasta
   // kFeedFrames de todas las voces activas y lo entrega al
@@ -167,6 +190,11 @@ class AudioBridge {
   const char* LookupStreamWav(uint32_t id) const;
   const struct MusyxSampleEntry* LookupSampleEntry(
       uint32_t id) const;
+  // Encola UNA muestra MusyX como voz SFX (carga WAV,
+  // resamplea a 48 kHz estéreo, aplica bucle por metadato
+  // y ganancia). Usado por OnFxStart; OnSfxTrigger conserva
+  // su propio camino para no romper la suite Fase 16/17.
+  bool EnqueueSample(uint32_t sample_id, float gain);
   // Carga un WAV relativo a wav_root_, lo resamplea a
   // estereo 48.000 Hz y lo encola como voz (stream o SFX).
   // Registra Played o Unresolved segun el caso. Devuelve

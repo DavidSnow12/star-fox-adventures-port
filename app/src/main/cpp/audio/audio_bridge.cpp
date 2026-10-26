@@ -4,6 +4,7 @@
 #include <cmath>
 
 #include "audio/audio_id_map.h"
+#include "audio/fx_table.h"
 #include "log.h"
 
 namespace sfa {
@@ -13,6 +14,7 @@ namespace {
 // Direcciones guest verificadas en codigo/symbols.map.
 constexpr uint32_t kAudioStreamPlay = 0x8000D220u;
 constexpr uint32_t kAudioStreamStopCurrent = 0x8000D03Cu;
+constexpr uint32_t kSndFxStartEx = 0x80273218u;
 
 int16_t ClampS16(int32_t v) {
   if (v > 32767) return 32767;
@@ -295,9 +297,118 @@ int AudioBridge::OnSfxTrigger(uint32_t trigger_id) {
   return enqueued;
 }
 
+bool AudioBridge::EnqueueSample(uint32_t sample_id, float gain) {
+  const MusyxSampleEntry* entry = LookupSampleEntry(sample_id);
+  if (entry == nullptr) return false;
+  Voice* slot = nullptr;
+  for (Voice& v : sfx_voices_) {
+    if (!v.active) {
+      slot = &v;
+      break;
+    }
+  }
+  if (slot == nullptr) {
+    ++dropped_sfx_;
+    SFA_LOGI("bridge: SFX muestra %u descartada (8 voces ocupadas)",
+             sample_id);
+    return false;
+  }
+  std::string path = wav_root_;
+  if (!path.empty() && path.back() != '/') path += '/';
+  path += entry->wav;
+  Audio::WavData wav;
+  if (!Audio::LoadWavFile(path.c_str(), &wav)) {
+    SFA_LOGI("bridge: WAV no legible '%s' (muestra %u)", path.c_str(),
+             sample_id);
+    return false;
+  }
+  std::vector<int16_t> pcm =
+      Audio::ResampleToStereo(wav, Audio::kOutputRate);
+  if (pcm.empty()) return false;
+  size_t loop_start_48k = 0;
+  size_t loop_len_48k = 0;
+  if (entry->loop_len > 0 && wav.rate > 0) {
+    loop_start_48k = static_cast<size_t>(
+        (static_cast<uint64_t>(entry->loop_start) *
+         static_cast<uint64_t>(Audio::kOutputRate)) /
+        static_cast<uint64_t>(wav.rate));
+    loop_len_48k = static_cast<size_t>(
+        (static_cast<uint64_t>(entry->loop_len) *
+         static_cast<uint64_t>(Audio::kOutputRate)) /
+        static_cast<uint64_t>(wav.rate));
+    size_t total = pcm.size() / 2;
+    if (loop_start_48k + loop_len_48k > total) {
+      loop_len_48k =
+          total > loop_start_48k ? total - loop_start_48k : 0;
+    }
+  }
+  Played p;
+  p.id = sample_id;
+  p.kind = "sfx_muestra";
+  p.wav = entry->wav;
+  p.src_rate = wav.rate;
+  p.src_channels = wav.channels;
+  p.frames_48k = pcm.size() / 2;
+  played_.push_back(p);
+  slot->pcm = std::move(pcm);
+  slot->pos = 0;
+  slot->gain = gain;
+  slot->loop_start = loop_start_48k;
+  slot->loop_len = loop_len_48k;
+  slot->active = true;
+  SFA_LOGI("bridge: sfx_muestra id %u -> '%s' (%d Hz x%d, %llu "
+           "frames a 48 kHz, bucle [%llu, %llu), ganancia %.3f)",
+           sample_id, entry->wav, wav.rate, wav.channels,
+           static_cast<unsigned long long>(p.frames_48k),
+           static_cast<unsigned long long>(loop_start_48k),
+           static_cast<unsigned long long>(loop_start_48k +
+                                            loop_len_48k),
+           static_cast<double>(gain));
+  return true;
+}
+
+int AudioBridge::OnFxStart(uint32_t fx_id, uint32_t volume,
+                           uint32_t pan, uint32_t studio) {
+  // Fase 18: fxId ya viene enmascarado por el llamador del
+  // hook (r3&0xFFFF); aquí se vuelve a enmascarar por
+  // seguridad para llamadas directas del test host.
+  fx_id &= 0xFFFFu;
+  volume &= 0xFFu;
+  pan &= 0xFFu;
+  studio &= 0xFFu;
+  if (fx_id >= kFxTableCount) {
+    Unresolved u;
+    u.id = fx_id;
+    u.kind = "sfx_fx";
+    unresolved_.push_back(u);
+    SFA_LOGI("bridge: FX %u desconocido (fuera de tabla 0-832)",
+             fx_id);
+    return 0;
+  }
+  // 0xFF = valor del descriptor (volume 127, panning 64 en
+  // los 833). El panning hoy solo se registra: no se aplica
+  // ley de paneo inventada sobre un WAV ya estéreo/mono
+  // resampleado.
+  uint32_t vol = (volume == 0xFFu) ? 127u : volume;
+  uint32_t pan_eff = (pan == 0xFFu) ? 64u : pan;
+  float gain = static_cast<float>(vol) / 127.0f;
+  uint32_t sample_id = kFxSample[fx_id];
+  SFA_LOGI("bridge: sndFXStartEx fx=%u studio=%u pan=%u -> "
+           "muestra %u (tabla FX, no identidad)",
+           fx_id, studio, pan_eff, sample_id);
+  if (!EnqueueSample(sample_id, gain)) {
+    Unresolved u;
+    u.id = fx_id;
+    u.kind = "sfx_fx";
+    unresolved_.push_back(u);
+    return 0;
+  }
+  return 1;
+}
+
 bool AudioBridge::OnAudioEntry(uint32_t pc, uint32_t r3,
-                               uint32_t /*r4*/, uint32_t /*r5*/,
-                               uint32_t /*r6*/, uint32_t /*r7*/) {
+                               uint32_t r4, uint32_t r5,
+                               uint32_t r6, uint32_t /*r7*/) {
   Counted c;
   c.pc = pc;
   c.r3 = r3;
@@ -306,6 +417,13 @@ bool AudioBridge::OnAudioEntry(uint32_t pc, uint32_t r3,
   if (pc == kAudioStreamStopCurrent) {
     OnStreamStop();
     return true;
+  }
+  if (pc == kSndFxStartEx) {
+    // sndFXStartEx (Fase 18, layout verificado en código
+    // huésped): r3=fxId, r4=volume, r5=pan, r6=studio.
+    // r7 se ignora (basura del llamador).
+    return OnFxStart(r3 & 0xFFFFu, r4 & 0xFFu, r5 & 0xFFu,
+                     r6 & 0xFFu) == 1;
   }
   // Demas entradas de audio: solo conteo (layout de
   // argumentos sin verificar; ver cabecera).
