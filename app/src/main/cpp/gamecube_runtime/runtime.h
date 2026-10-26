@@ -91,6 +91,16 @@ class GameCubeRuntime {
   bool game_ended_ = false;
   uint64_t post_boot_slices_ = 0;
   std::vector<GxDraw> pending_gx_draws_;
+  // Alimentacion GX por frame (Fase 11): la captura FIFO se
+  // drena tras cada slice y se alimenta al parser incremental,
+  // para que Frame() dibuje los draws del frame real (no solo
+  // el frame aislado de Fase 10). Sin captura activa (host
+  // sin SFA_FIFO_CAPTURE o APK sin datos) no hace nada.
+  GxParser gx_parser_;
+  uint64_t gx_fifo_base_ = 0;
+  size_t gx_texloads_converted_ = 0;
+  bool gx_capture_on_ = false;
+  void FeedGxFrame();
 };
 
 }  // namespace sfa

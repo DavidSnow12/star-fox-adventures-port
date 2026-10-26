@@ -1,5 +1,6 @@
 #!/bin/bash
-# Build manual de APK de prueba (Fase 10), sin Gradle.
+# Build manual de APK de prueba (Fase 10; Fase 11: version por
+# argumentos), sin Gradle.
 #
 # Por que manual: Gradle 8.6 falla en este entorno con
 # "Could not receive a message from the daemon" (daemon arranca y
@@ -9,13 +10,14 @@
 # Fase 0 (57.916 B) y se reutiliza aqui.
 #
 # Uso: ./android-port-base/build-apk-manual.sh <libstarfox.so> <out.apk>
-#   [keystore]  (si no se da, genera uno de prueba en <out>.keystore)
+#   [keystore] [version-code] [version-name]
+#   (si no se da keystore, genera uno de prueba en <out>.keystore;
+#   version por defecto 3 / 0.3.0-gx11-test desde la Fase 11)
 # Requisitos: SDK en $ANDROID_HOME o ~/tools/android-sdk
 #   (build-tools 34.0.0, platforms android-34), JDK (javac/keytool).
 # Salida: APK de PRUEBA, debuggable (ver AndroidManifest.xml),
-#   versionCode 2 / versionName 0.2.0-gx-test, paquete
-#   com.starfox.port, solo arm64-v8a. NO es release: la firma es
-#   autofirmada de prueba y el manifiesto lleva
+#   paquete com.starfox.port, solo arm64-v8a. NO es release: la
+#   firma es autofirmada de prueba y el manifiesto lleva
 #   android:debuggable="true" solo porque es build de prueba
 #   (para leer boot.log con run-as). Quitar para release.
 #   Sin datos del juego: la APK arranca en clear + quad de
@@ -23,9 +25,11 @@
 #   PORT-STATUS, via de datos). NUNCA meter disco/datos en el APK.
 set -eu
 ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
-SO=${1:?uso: build-apk-manual.sh <libstarfox.so> <out.apk> [keystore]}
+SO=${1:?uso: build-apk-manual.sh <libstarfox.so> <out.apk> [keystore] [version-code] [version-name]}
 OUT_APK=${2:?}
 KEYSTORE=${3:-$(dirname "$OUT_APK")/test-debug.keystore}
+VERSION_CODE=${4:-3}
+VERSION_NAME=${5:-0.3.0-gx11-test}
 SDK=${ANDROID_HOME:-$HOME/tools/android-sdk}
 BT=$SDK/build-tools/34.0.0
 ANDROID_JAR=$SDK/platforms/android-34/android.jar
@@ -45,7 +49,7 @@ mkdir -p "$WORK/res"
 "$BT/aapt2" compile "$APP/res/values/strings.xml" -o "$WORK/compiled_res.zip"
 "$BT/aapt2" link -o "$WORK/apk_unsigned.apk" -I "$ANDROID_JAR" \
   --manifest "$APP/AndroidManifest.xml" \
-  --version-code 2 --version-name "0.2.0-gx-test" \
+  --version-code "$VERSION_CODE" --version-name "$VERSION_NAME" \
   --auto-add-overlay -A "$APP/assets" "$WORK/compiled_res.zip"
 echo "== anadir dex + lib =="
 mkdir -p "$WORK/stage/lib/arm64-v8a"

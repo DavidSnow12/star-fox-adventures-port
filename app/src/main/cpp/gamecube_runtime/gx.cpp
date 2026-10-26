@@ -82,30 +82,118 @@ void GxParser::SetTexLoads(const std::vector<GxTexLoad>& loads) {
 
 bool GxParser::Parse(const uint8_t* fifo, size_t fifo_len) {
   draws_.clear();
+  fed_draws_.clear();
+  pending_.clear();
   stats_ = GxStats();
   cp_.clear();
   bp_.clear();
   xf_.clear();
   first_unknown_.clear();
   failed_ = false;
+  trunc_ = false;
+  stream_base_ = 0;
+  feed_base_ = 0;
   stats_.total_bytes = fifo_len;
-  bool ok = ParseStream(fifo, fifo_len, false, 0, 0);
-  return ok && !failed_;
+  size_t consumed = 0;
+  StreamResult r = ParseStream(fifo, fifo_len, false, 0, 0, &consumed);
+  if (r == StreamResult::kTrunc) {
+    first_unknown_ = "stream truncado en offset " +
+                     std::to_string(consumed);
+    failed_ = true;
+    return false;
+  }
+  return r == StreamResult::kDone && !failed_;
 }
 
-bool GxParser::ParseStream(const uint8_t* data, size_t len, bool in_dl,
-                           int depth, uint64_t base_offset) {
+void GxParser::ResetFeed() {
+  draws_.clear();
+  fed_draws_.clear();
+  pending_.clear();
+  stats_ = GxStats();
+  cp_.clear();
+  bp_.clear();
+  xf_.clear();
+  first_unknown_.clear();
+  failed_ = false;
+  trunc_ = false;
+  stream_base_ = 0;
+  feed_base_ = 0;
+}
+
+bool GxParser::Feed(const uint8_t* data, size_t len, uint64_t base_offset) {
+  if (failed_) return false;
+  if (data == nullptr && len != 0) return false;
+  fed_draws_.clear();
+  trunc_ = false;
+  if (pending_.empty()) {
+    feed_base_ = base_offset;
+  } else if (base_offset != feed_base_ + pending_.size()) {
+    // El llamador debe alimentar bytes contiguos: un salto
+    // invalida los offsets FIFO de draws y texloads.
+    first_unknown_ = "Feed no contiguo en offset " +
+                     std::to_string(base_offset);
+    failed_ = true;
+    return false;
+  }
+  if (len > 0) {
+    pending_.insert(pending_.end(), data, data + len);
+    stats_.total_bytes += len;
+  }
+  stream_base_ = feed_base_;
+  size_t consumed = 0;
+  StreamResult r = ParseStream(pending_.data(), pending_.size(), false, 0,
+                               0, &consumed);
+  if (r == StreamResult::kFailed) return false;
+  if (r == StreamResult::kTrunc) {
+    // Conservar solo el comando incompleto (y su base).
+    pending_.erase(pending_.begin(),
+                   pending_.begin() + static_cast<long>(consumed));
+    feed_base_ += consumed;
+    return true;
+  }
+  pending_.clear();
+  feed_base_ += consumed;
+  return true;
+}
+
+std::vector<GxDraw> GxParser::TakeFedDraws() {
+  std::vector<GxDraw> out;
+  out.swap(fed_draws_);
+  return out;
+}
+
+void GxParser::AppendTexLoads(const std::vector<GxTexLoad>& loads) {
+  tex_loads_.insert(tex_loads_.end(), loads.begin(), loads.end());
+}
+
+GxParser::StreamResult GxParser::ParseStream(const uint8_t* data, size_t len,
+                                             bool in_dl, int depth,
+                                             uint64_t base_offset,
+                                             size_t* consumed_io) {
   size_t pos = 0;
+  // En un DL, la truncacion es un error (el DL viene completo
+  // de RAM); en el stream principal, es kTrunc (Feed retiene
+  // el resto). El helper traduce el caso.
+  auto trunc_or_fail = [&](size_t at) -> StreamResult {
+    if (in_dl) {
+      first_unknown_ = "DL truncado en offset " + std::to_string(at);
+      failed_ = true;
+      return StreamResult::kFailed;
+    }
+    if (consumed_io != nullptr) *consumed_io = at;
+    return StreamResult::kTrunc;
+  };
   while (pos < len) {
     uint8_t op = data[pos];
-    uint64_t fifo_offset = in_dl ? base_offset : pos;
+    uint64_t fifo_offset =
+        in_dl ? base_offset : (stream_base_ + pos);
     if (op == 0x00) {
       ++stats_.n_nop;
       ++pos;
       continue;
     }
     if (op == 0x08) {
-      if (pos + 6 > len) break;
+      if (pos + 6 > len) return trunc_or_fail(pos);
       uint32_t addr = data[pos + 1];
       uint32_t value = ReadBe32(data + pos + 2);
       cp_[addr] = value;
@@ -114,11 +202,13 @@ bool GxParser::ParseStream(const uint8_t* data, size_t len, bool in_dl,
       continue;
     }
     if (op == 0x10) {
-      if (pos + 5 > len) break;
+      if (pos + 5 > len) return trunc_or_fail(pos);
       uint32_t header = ReadBe32(data + pos + 1);
       uint32_t count = (header >> 16) + 1;
       uint32_t addr = header & 0xFFFF;
-      if (pos + 5 + 4 * static_cast<size_t>(count) > len) break;
+      if (pos + 5 + 4 * static_cast<size_t>(count) > len) {
+        return trunc_or_fail(pos);
+      }
       std::vector<uint32_t> words;
       for (uint32_t i = 0; i < count; ++i) {
         words.push_back(ReadBe32(data + pos + 5 + 4 * i));
@@ -130,8 +220,22 @@ bool GxParser::ParseStream(const uint8_t* data, size_t len, bool in_dl,
       pos += 5 + 4 * static_cast<size_t>(count);
       continue;
     }
+    if (op == 0x20 || op == 0x28 || op == 0x30 || op == 0x38) {
+      // XF indexado (YAGCD 5.11.5.9): opcode + indice (2 B) +
+      // (longitud-1:4 bits, direccion:12 bits) + 4 B por dato.
+      // Se parsea y cuenta; NO muta xf_ (ver gx.h).
+      if (pos + 5 > len) return trunc_or_fail(pos);
+      uint32_t w = ReadBe16(data + pos + 3);
+      uint32_t count = ((w >> 12) & 0xF) + 1;
+      if (pos + 5 + 4 * static_cast<size_t>(count) > len) {
+        return trunc_or_fail(pos);
+      }
+      ++stats_.n_indx;
+      pos += 5 + 4 * static_cast<size_t>(count);
+      continue;
+    }
     if (op == 0x61) {
-      if (pos + 5 > len) break;
+      if (pos + 5 > len) return trunc_or_fail(pos);
       uint32_t v = ReadBe32(data + pos + 1);
       bp_[v >> 24] = v & 0xFFFFFF;
       ++stats_.n_bp;
@@ -139,7 +243,7 @@ bool GxParser::ParseStream(const uint8_t* data, size_t len, bool in_dl,
       continue;
     }
     if (op == 0x40) {
-      if (pos + 9 > len) break;
+      if (pos + 9 > len) return trunc_or_fail(pos);
       uint32_t addr = ReadBe32(data + pos + 1);
       uint32_t size = ReadBe32(data + pos + 5);
       ++stats_.n_dl;
@@ -148,27 +252,35 @@ bool GxParser::ParseStream(const uint8_t* data, size_t len, bool in_dl,
         first_unknown_ = "DL anidado demasiado profundo en offset " +
                          std::to_string(fifo_offset);
         failed_ = true;
-        return false;
+        return StreamResult::kFailed;
       }
-      if (ram_reader_ == nullptr) {
-        first_unknown_ = "DL sin lector RAM en offset " +
+      // Fase 11: un DL sin lector valido NO detiene el stream.
+      // Sin lector (test host sin RAM) o con lector que devuelve
+      // nullptr (direccion/tamano fuera de rango: el caso del
+      // DL 0x80379320 size 0x7FC86CE0, repetido 96x en run42),
+      // se consumen sus 9 B y se cuenta como saltado. El
+      // contenido del DL no se dibuja en ese caso. Con lector
+      // valido (APK: RAM viva) el contenido SI se parsea. Un
+      // DL que fallase a mitad si detendria el parse (fallo
+      // real, no ausencia de lector).
+      const uint8_t* dl = nullptr;
+      if (ram_reader_ != nullptr) dl = ram_reader_(addr, size);
+      if (dl == nullptr) {
+        ++stats_.n_dl_skipped;
+        pos += 9;
+        continue;
+      }
+      size_t dl_consumed = 0;
+      StreamResult dr =
+          ParseStream(dl, size, true, depth + 1, fifo_offset, &dl_consumed);
+      if (dr != StreamResult::kDone) {
+        if (dr == StreamResult::kFailed) {
+          return StreamResult::kFailed;
+        }
+        first_unknown_ = "DL truncado en offset " +
                          std::to_string(fifo_offset);
         failed_ = true;
-        return false;
-      }
-      const uint8_t* dl = ram_reader_(addr, size);
-      if (dl == nullptr) {
-        char buf[128];
-        std::snprintf(buf, sizeof(buf),
-                      "DL ilegible guest=0x%08X size=%u en offset %llu",
-                      addr, size,
-                      static_cast<unsigned long long>(fifo_offset));
-        first_unknown_ = buf;
-        failed_ = true;
-        return false;
-      }
-      if (!ParseStream(dl, size, true, depth + 1, fifo_offset)) {
-        return false;
+        return StreamResult::kFailed;
       }
       pos += 9;
       continue;
@@ -179,14 +291,16 @@ bool GxParser::ParseStream(const uint8_t* data, size_t len, bool in_dl,
       continue;
     }
     if (op >= 0x80 && op <= 0xBF) {
+      size_t draw_start = pos;
+      trunc_ = false;
       if (!ParseDraw(data, len, &pos, op & 0xF8, op & 0x07,
                      fifo_offset)) {
-        return false;
+        if (trunc_ && !in_dl) return trunc_or_fail(draw_start);
+        return StreamResult::kFailed;
       }
       continue;
     }
-    // Opcode desconocido (incluye 0x20/0x28/0x30/0x38): detener
-    // sin adivinar su payload.
+    // Opcode desconocido: detener sin adivinar su payload.
     {
       size_t ctx_len = len - pos < 16 ? len - pos : 16;
       char buf[256];
@@ -197,24 +311,18 @@ bool GxParser::ParseStream(const uint8_t* data, size_t len, bool in_dl,
                     HexContext(data + pos, ctx_len).c_str());
       first_unknown_ = buf;
       failed_ = true;
-      return false;
+      return StreamResult::kFailed;
     }
   }
-  if (pos != len && !in_dl) {
-    first_unknown_ = "stream truncado en offset " + std::to_string(pos);
-    failed_ = true;
-    return false;
-  }
-  return true;
+  if (consumed_io != nullptr) *consumed_io = pos;
+  return StreamResult::kDone;
 }
 
 bool GxParser::ParseDraw(const uint8_t* data, size_t len, size_t* pos_io,
                          int prim, int vat, uint64_t fifo_offset) {
   size_t pos = *pos_io;
   if (pos + 3 > len) {
-    first_unknown_ = "draw truncado en offset " +
-                     std::to_string(fifo_offset);
-    failed_ = true;
+    trunc_ = true;
     return false;
   }
   uint32_t count = ReadBe16(data + pos + 1);
@@ -227,9 +335,7 @@ bool GxParser::ParseDraw(const uint8_t* data, size_t len, size_t* pos_io,
     return false;
   }
   if (pos + 3 + static_cast<size_t>(vsize) * count > len) {
-    first_unknown_ = "vertices truncados en offset " +
-                     std::to_string(fifo_offset);
-    failed_ = true;
+    trunc_ = true;
     return false;
   }
   GxDraw draw;
@@ -245,6 +351,102 @@ bool GxParser::ParseDraw(const uint8_t* data, size_t len, size_t* pos_io,
   auto cp_it = cp_.find(0x30);
   if (cp_it != cp_.end()) pnmtx = static_cast<int>(cp_it->second & 0x3F);
   PosMatrix(pnmtx, draw.pos_matrix);
+  // Desviacion medida A (run42, offsets 2157-4122): TRIANGLESTRIP
+  // VAT2 con stride aritmetico 21 aparece en el stream con
+  // stride 8: 15 draws consecutivos a exactamente 131 B
+  // (3 + 16x8), seguidos de 32 NOP + recarga VCD/XF limpia en
+  // 4154. Con 21 B el parser aterriza en 2497 en un byte 0x03
+  // que NO es un opcode: es el 4o byte del vertice 9 del
+  // segundo strip (bytes 03 00 03 00 33...). El contenido de
+  // 8 B no se decodifica (sin base de arrays CP 0xA0-0xBF en
+  // el stream y sin escritura CP por MMIO en la traza HW):
+  // se guarda crudo y el renderer lo salta, contado.
+  if (prim == 0x98 && vat == 2 && vsize == 21) {
+    if (pos + 3 + 8u * count > len) {
+      trunc_ = true;
+      return false;
+    }
+    draw.has_raw_vertices = true;
+    draw.raw_vertex_data.assign(data + pos + 3,
+                                data + pos + 3 + 8u * count);
+    draws_.push_back(draw);
+    fed_draws_.push_back(draw);
+    ++stats_.n_draw;
+    ++stats_.n_opaque_draws;
+    ++stats_.draws_by_prim[prim];
+    ++stats_.draws_by_vat[vat];
+    *pos_io = pos + 3 + 8u * count;
+    return true;
+  }
+  // Desviacion medida B (run42, offsets 4207-56339): POINTS
+  // VAT0 con stride aritmetico 11 aparece con stride 10
+  // (POS S16 XYZ + TEX S16 ST, sin byte de indice de matriz):
+  // 92 draws a exactamente 567 B (3 + 50x10 + 64 NOP), y el
+  // ultimo cierra con 32 NOP exactos antes de la recarga XF
+  // de viewport en 56339. Con 11 B el parser se pasa 18 B y
+  // aterriza dentro del valor XF 0x44258000 (byte 0x25).
+  // Las posiciones usan la misma formula de shift que VAT1
+  // (divisor 2^(shift+2)); para VAT0 es extrapolacion, no
+  // validacion (el renderer salta los POINTS igualmente).
+  if (prim == 0xB8 && vat == 0 && vsize == 11) {
+    if (pos + 3 + 10u * count > len) {
+      trunc_ = true;
+      return false;
+    }
+    VatFmt f = VatFormat(vat);
+    size_t vpos = pos + 3;
+    for (uint32_t i = 0; i < count; ++i) {
+      GxVertex v;
+      size_t off = 0;
+      float x = 0, y = 0, z = 0, s = 0, t = 0;
+      const uint8_t* p = data + vpos;
+      if (!ReadComp(p, 10, &off, f.pos_type, f.pos_shift, &x) ||
+          !ReadComp(p, 10, &off, f.pos_type, f.pos_shift, &y) ||
+          !ReadComp(p, 10, &off, f.pos_type, f.pos_shift, &z) ||
+          !ReadComp(p, 10, &off, f.tex_type[0], f.tex_shift[0], &s) ||
+          !ReadComp(p, 10, &off, f.tex_type[0], f.tex_shift[0], &t)) {
+        first_unknown_ = "vertice POINTS no decodificable en offset " +
+                         std::to_string(fifo_offset);
+        failed_ = true;
+        return false;
+      }
+      v.x = x;
+      v.y = y;
+      v.z = z;
+      v.s = s;
+      v.t = t;
+      v.has_tex = true;
+      draw.verts.push_back(v);
+      vpos += 10;
+    }
+    draws_.push_back(draw);
+    fed_draws_.push_back(draw);
+    ++stats_.n_draw;
+    ++stats_.draws_by_prim[prim];
+    ++stats_.draws_by_vat[vat];
+    *pos_io = pos + 3 + 10u * count;
+    return true;
+  }
+  // Si algun campo VCD es indexado, todos los vertices del
+  // draw lo son (el indice va por vertice, no por draw).
+  bool vcd_indexed = false;
+  {
+    auto lo_it = cp_.find(0x50);
+    auto hi_it = cp_.find(0x60);
+    if (lo_it != cp_.end() && hi_it != cp_.end()) {
+      uint32_t lo = lo_it->second;
+      uint32_t hi = hi_it->second;
+      for (int i = 0; i < 4; ++i) {
+        // POS@9, NRM@11, COL0@13, COL1@15 (2 bits cada uno).
+        uint32_t f = (lo >> (9 + 2 * i)) & 0x3;
+        if (f == 2 || f == 3) vcd_indexed = true;
+      }
+      for (int i = 0; i < 8; ++i) {
+        uint32_t tf = (hi >> (2 * i)) & 0x3;  // TEX0-7
+        if (tf == 2 || tf == 3) vcd_indexed = true;
+      }
+    }
+  }
   size_t vpos = pos + 3;
   for (uint32_t i = 0; i < count; ++i) {
     GxVertex v;
@@ -254,6 +456,10 @@ bool GxParser::ParseDraw(const uint8_t* data, size_t len, size_t* pos_io,
                        std::to_string(fifo_offset);
       failed_ = true;
       return false;
+    }
+    if (vcd_indexed) {
+      draw.indexed = true;
+      ++stats_.indexed_attrs;
     }
     draw.verts.push_back(v);
     vpos += consumed;
@@ -265,7 +471,9 @@ bool GxParser::ParseDraw(const uint8_t* data, size_t len, size_t* pos_io,
     PosMatrix(draw.verts[0].pos_mtx_idx, draw.pos_matrix);
   }
   draws_.push_back(draw);
+  fed_draws_.push_back(draw);
   ++stats_.n_draw;
+  if (draw.indexed) ++stats_.n_indexed_draws;
   ++stats_.draws_by_prim[prim];
   ++stats_.draws_by_vat[vat];
   *pos_io = pos + 3 + static_cast<size_t>(vsize) * count;
@@ -325,54 +533,85 @@ uint32_t GxParser::VertexSize(int vat) const {
   uint32_t hi = vcd_hi_it->second;
   VatFmt f = VatFormat(vat);
   uint32_t size = 0;
-  auto direct = [](uint32_t field) -> bool { return field == 1; };
-  // Indices de matriz (1 byte cada uno si presentes).
-  if (lo & 0x100) size += 1;  // PNMTXIDX
+  // Tamano de un campo indexado en el FIFO: 1 B (indice8) o
+  // 2 B (indice16). El atributo al que apunta NO se decodifica
+  // aqui (ver DecodeVertex): solo se reserva su hueco para
+  // que el parse no se desincronice.
+  auto field_size = [](uint32_t field, uint32_t direct_size,
+                       uint32_t* out) -> bool {
+    if (field == 0) return true;  // ausente: 0 B
+    if (field == 1) {
+      *out += direct_size;
+      return true;
+    }
+    if (field == 2) {
+      *out += 1;
+      return true;
+    }
+    if (field == 3) {
+      *out += 2;
+      return true;
+    }
+    return false;
+  };
+  // Indices de matriz (1 byte cada uno si presentes; layout
+  // YAGCD: PMIDX@0, TnMIDX@1+n).
+  if (lo & 0x1) size += 1;  // PMIDX
   for (int i = 0; i < 8; ++i) {
-    if (lo & (0x200u << i)) size += 1;  // TEXnMTXIDX
+    if (lo & (0x2u << i)) size += 1;  // TEXnMTXIDX
   }
   // POS
-  uint32_t pos_field = lo & 0x3;
+  uint32_t pos_field = (lo >> 9) & 0x3;
   if (pos_field == 0) {
     // Sin posicion: un draw sin posicion no es valido aqui.
     return 0;
   }
-  if (!direct(pos_field)) return 0;
   int cs = CompSize(f.pos_type);
   if (cs < 0) return 0;
-  size += static_cast<uint32_t>(cs) * (f.pos_count ? 3u : 2u);
+  if (!field_size(pos_field,
+                  static_cast<uint32_t>(cs) * (f.pos_count ? 3u : 2u),
+                  &size)) {
+    return 0;
+  }
   // NRM
-  uint32_t nrm_field = (lo >> 2) & 0x3;
+  uint32_t nrm_field = (lo >> 11) & 0x3;
   if (nrm_field != 0) {
-    if (!direct(nrm_field)) return 0;
     if (f.nrm_count) return 0;  // NBT (9 comps) no soportado
     cs = CompSize(f.nrm_type);
     if (cs < 0) return 0;
-    size += static_cast<uint32_t>(cs) * 3u;
+    if (!field_size(nrm_field, static_cast<uint32_t>(cs) * 3u, &size)) {
+      return 0;
+    }
   }
   // CLR0 / CLR1
-  uint32_t c0_field = (lo >> 4) & 0x3;
+  uint32_t c0_field = (lo >> 13) & 0x3;
   if (c0_field != 0) {
-    if (!direct(c0_field)) return 0;
     cs = ColorSize(f.col0_type);
     if (cs < 0) return 0;
-    size += static_cast<uint32_t>(cs);
+    if (!field_size(c0_field, static_cast<uint32_t>(cs), &size)) {
+      return 0;
+    }
   }
-  uint32_t c1_field = (lo >> 6) & 0x3;
+  uint32_t c1_field = (lo >> 15) & 0x3;
   if (c1_field != 0) {
-    if (!direct(c1_field)) return 0;
     cs = ColorSize(f.col1_type);
     if (cs < 0) return 0;
-    size += static_cast<uint32_t>(cs);
+    if (!field_size(c1_field, static_cast<uint32_t>(cs), &size)) {
+      return 0;
+    }
   }
   // TEX0-7
   for (int i = 0; i < 8; ++i) {
     uint32_t t_field = (hi >> (2 * i)) & 0x3;
     if (t_field == 0) continue;
-    if (!direct(t_field)) return 0;
     cs = CompSize(f.tex_type[i]);
     if (cs < 0) return 0;
-    size += static_cast<uint32_t>(cs) * (f.tex_count[i] ? 2u : 1u);
+    if (!field_size(t_field,
+                    static_cast<uint32_t>(cs) *
+                        (f.tex_count[i] ? 2u : 1u),
+                    &size)) {
+      return 0;
+    }
   }
   return size;
 }
@@ -493,43 +732,69 @@ bool GxParser::DecodeVertex(const uint8_t* data, size_t avail, int vat,
   uint32_t hi = vcd_hi_it->second;
   VatFmt f = VatFormat(vat);
   size_t off = 0;
-  auto need_direct = [&](uint32_t field) -> bool {
-    return field == 1;
+  // Lee un indice (1 B si field == 2, 2 B si field == 3).
+  auto read_index = [&](uint32_t field, uint32_t* value) -> bool {
+    if (field == 2) {
+      if (off + 1 > avail) return false;
+      *value = data[off];
+      off += 1;
+      return true;
+    }
+    if (field == 3) {
+      if (off + 2 > avail) return false;
+      *value = ReadBe16(data + off);
+      off += 2;
+      return true;
+    }
+    return false;
   };
-  if (lo & 0x100) {
+  if (lo & 0x1) {
     if (off + 1 > avail) return false;
     out->pos_mtx_idx = data[off];
     out->has_pos_mtx_idx = true;
     off += 1;
   }
   for (int i = 0; i < 8; ++i) {
-    if (lo & (0x200u << i)) {
+    if (lo & (0x2u << i)) {
       if (off + 1 > avail) return false;
       if (i == 0) out->tex_mtx_idx = data[off];
       off += 1;
     }
   }
-  uint32_t pos_field = lo & 0x3;
-  if (!need_direct(pos_field)) return false;
+  uint32_t pos_field = (lo >> 9) & 0x3;
   float x = 0, y = 0, z = 0;
-  if (!ReadComp(data, avail, &off, f.pos_type, f.pos_shift, &x)) {
-    return false;
-  }
-  if (!ReadComp(data, avail, &off, f.pos_type, f.pos_shift, &y)) {
-    return false;
-  }
-  if (f.pos_count) {
-    if (!ReadComp(data, avail, &off, f.pos_type, f.pos_shift, &z)) {
+  if (pos_field == 2 || pos_field == 3) {
+    uint32_t idx = 0;
+    if (!read_index(pos_field, &idx)) return false;
+    out->has_pos_index = true;
+    out->pos_index = idx;
+  } else if (pos_field == 1) {
+    if (!ReadComp(data, avail, &off, f.pos_type, f.pos_shift, &x)) {
       return false;
     }
+    if (!ReadComp(data, avail, &off, f.pos_type, f.pos_shift, &y)) {
+      return false;
+    }
+    if (f.pos_count) {
+      if (!ReadComp(data, avail, &off, f.pos_type, f.pos_shift, &z)) {
+        return false;
+      }
+    }
+  } else {
+    return false;
   }
   out->x = x;
   out->y = y;
   out->z = z;
-  uint32_t nrm_field = (lo >> 2) & 0x3;
+  uint32_t nrm_field = (lo >> 11) & 0x3;
   if (nrm_field != 0) {
-    if (!need_direct(nrm_field) || f.nrm_count) return false;
-    float nx = 0, ny = 0, nz = 0;
+    if (nrm_field == 2 || nrm_field == 3) {
+      uint32_t idx = 0;
+      if (!read_index(nrm_field, &idx)) return false;
+    } else if (nrm_field != 1 || f.nrm_count) {
+      return false;
+    } else {
+      float nx = 0, ny = 0, nz = 0;
     // Normales: normalizacion directa (sin shift de VAT; la
     // iluminacion no la usa el renderer actual).
     auto read_nrm = [&](float* v) -> bool {
@@ -563,27 +828,50 @@ bool GxParser::DecodeVertex(const uint8_t* data, size_t avail, int vat,
     out->ny = ny;
     out->nz = nz;
     out->has_normal = true;
+    }
   }
-  uint32_t c0_field = (lo >> 4) & 0x3;
+  uint32_t c0_field = (lo >> 13) & 0x3;
   if (c0_field != 0) {
-    if (!need_direct(c0_field)) return false;
-    if (!ReadColor(data, avail, &off, f.col0_type, f.col0_count, out)) {
+    if (c0_field == 2 || c0_field == 3) {
+      uint32_t idx = 0;
+      if (!read_index(c0_field, &idx)) return false;
+    } else if (c0_field != 1) {
+      return false;
+    } else if (!ReadColor(data, avail, &off, f.col0_type, f.col0_count,
+                          out)) {
       return false;
     }
   }
-  uint32_t c1_field = (lo >> 6) & 0x3;
+  uint32_t c1_field = (lo >> 15) & 0x3;
   if (c1_field != 0) {
-    if (!need_direct(c1_field)) return false;
-    // CLR1 se decodifica pero no se guarda (el renderer usa CLR0).
-    GxVertex tmp;
-    if (!ReadColor(data, avail, &off, f.col1_type, f.col1_count, &tmp)) {
+    if (c1_field == 2 || c1_field == 3) {
+      uint32_t idx = 0;
+      if (!read_index(c1_field, &idx)) return false;
+    } else if (c1_field != 1) {
       return false;
+    } else {
+      // CLR1 se decodifica pero no se guarda (el renderer usa
+      // CLR0).
+      GxVertex tmp;
+      if (!ReadColor(data, avail, &off, f.col1_type, f.col1_count,
+                     &tmp)) {
+        return false;
+      }
     }
   }
   for (int i = 0; i < 8; ++i) {
     uint32_t t_field = (hi >> (2 * i)) & 0x3;
     if (t_field == 0) continue;
-    if (!need_direct(t_field)) return false;
+    if (t_field == 2 || t_field == 3) {
+      uint32_t idx = 0;
+      if (!read_index(t_field, &idx)) return false;
+      if (i == 0) {
+        out->has_tex_index = true;
+        out->tex_index = idx;
+      }
+      continue;
+    }
+    if (t_field != 1) return false;
     float s = 0, t = 0;
     if (!ReadComp(data, avail, &off, f.tex_type[i], f.tex_shift[i],
                   &s)) {

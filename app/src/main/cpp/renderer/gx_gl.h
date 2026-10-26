@@ -1,7 +1,7 @@
 #pragma once
 
-// Renderer GX para APK (Fase 10, GLES3) — camino host verificado,
-// portado sin cambiar su matematica.
+// Renderer GX para APK (Fase 10, GLES3; Fase 11: triangulos) —
+// camino host verificado, portado sin cambiar su matematica.
 //
 // Parte independiente de GL (usable y testeable en host):
 //   - GxDrawToGlQuads(): la misma transformada que el renderer host
@@ -69,12 +69,15 @@ class GxGlRenderer {
   // Un quad a pantalla completa con una textura RGBA dada.
   void DrawTexturedQuad(const uint8_t* rgba, int width, int height);
   // Dibuja los draws GX traducibles de la lista. Devuelve el
-  // numero de quads dibujados.
+  // numero de draws dibujados (QUADS, TRIANGLES, TRIANGLESTRIP
+  // y TRIANGLEFAN via GxDrawToGlTris; LINES/POINTS, draws
+  // indexados y opacos se cuentan en quads_skipped_).
   int DrawDraws(const std::vector<GxDraw>& draws,
                 const TexResolver& resolver);
 
   int QuadsDrawn() const { return quads_drawn_; }
   int QuadsSkipped() const { return quads_skipped_; }
+  int TrisDrawn() const { return tris_drawn_; }
   int TexturesUploaded() const { return textures_uploaded_; }
   const std::string& LastError() const { return last_error_; }
 
@@ -82,6 +85,8 @@ class GxGlRenderer {
   GLuint UploadTexture(const uint8_t* rgba, int width, int height);
   void DrawQuadVertices(const GlQuad& q, GLuint tex, bool use_tex,
                         uint8_t r, uint8_t g, uint8_t b);
+  void DrawTriVertices(const GlTri& tri, GLuint tex, bool use_tex,
+                       uint8_t r, uint8_t g, uint8_t b);
 
   GLuint program_ = 0;
   GLuint vbo_ = 0;
@@ -93,6 +98,7 @@ class GxGlRenderer {
   GLuint checker_tex_ = 0;
   int quads_drawn_ = 0;
   int quads_skipped_ = 0;
+  int tris_drawn_ = 0;
   int textures_uploaded_ = 0;
   std::string last_error_;
 };

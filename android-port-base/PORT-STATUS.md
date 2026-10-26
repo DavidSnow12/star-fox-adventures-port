@@ -179,14 +179,18 @@ sigue intacta.
    actual cubre arranque + eventos DSP/ARQ + callback DVD +
    PAD + sueño instantáneo + callbacks VI + DMA LC + colas
    de mensajes.
-4. **GX en APK (Fase 10, parcial):** el renderer GLES3 ya
-   existe en la APK (QUADS + texturas decodificadas,
-   validado en host 602/602 sobre run19) y la APK de prueba
-   GX dibuja clear + damero; falta la alimentación GX por
-   frame desde el FIFO (parser con estado incremental) y
-   ampliar el parser (se detiene en el offset 2497 del
-   FIFO de película, opcode 0x03) para un frame real del
-   juego en dispositivo. Ver «Fase 10».
+4. **GX en APK (Fase 11, ya no parcial en parser/alimentacion):**
+   el renderer GLES3 ya dibuja frames del bucle real por
+   triangulos (QUADS/TRIANGLES/STRIP/FAN + texturas) y el
+   parser host cubre el FIFO de pelicula COMPLETO hasta EOF
+   sin desconocidos (5148 draws en run42; ver «Fase 11»).
+   La APK de prueba GX11 alimenta `SetGxDraws()` por frame
+   desde la captura FIFO con parser incremental y lector DL
+   sobre RAM viva. Queda: contenido DL en host (solo fiable
+   con RAM viva, no con snapshot de fin de run), TEV
+   multi-etapa/lighting/EFB (no-op), y la prueba en
+   dispositivo con `sfa-data` (sin ejecutar aqui). Ver
+   «Fase 11».
 5. **Audio MusyX/DSP pendiente:** backend AAudio implementado
    (sin probar en dispositivo) y WAV probados en host; falta
    el mapeo ID de sonido del juego → WAV (tablas
@@ -204,7 +208,9 @@ sigue intacta.
    arranque. En Fase 10, la prueba a nivel de bucle de
    título SÍ se hizo (Start tras la película en marcha
    rompe el bucle attract/title; ver «Fase 10», punto 1),
-   pero la pantalla nueva no queda identificada como menú.
+   pero la pantalla nueva no queda identificada como menú
+   (identificada en Fase 11: pantalla de carga + aviso de
+   falta de Memory Card, ver «Fase 11»).
 7. **Datos (Fase 10, vía definida, SAF pendiente):** Pack B
    (240 MB, sin `streams/`) aparte, nunca en APK ni en Git;
    la APK ya acepta `<base>/sfa-data/sys/main.dol` +
@@ -2703,3 +2709,281 @@ Regresion host: run42 identico a run41 (punto 1) y
    input tactil + audio esten probados en dispositivo.
    La APK de este tramo sigue siendo solo arranque con
    renderer (ver punto 4).
+
+## Fase 11 (2026-10-26, este tramo): renderer completo (parser GX ampliado + pantalla post-Start identificada + APK GX11)
+
+### 1. Correccion del layout VCD (el error real bajo el "opcode 0x03")
+
+El parser de la Fase 10 tenia los campos VCD desplazados:
+usaba POS@0-1, NRM@2-3, CLR0@4-5, CLR1@6-7,
+PNMTXIDX@8, TEXnMTXIDX@9+n. El layout real YAGCD
+(5.11.2, verificado contra el documento y contra el
+stream) es: **PMIDX@0, TnMIDX@1+n, POS@9-10, NRM@11-12,
+COL0@13-14, COL1@15-16** (HI: TEXn@2n, ese si estaba
+bien). run19 parseaba igual por compensacion de dos
+errores: el bit 9 (POS directo real) se leia como
+"TEX0MTXIDX presente" y el bit 0 (PMIDX real) como "POS
+directo": mismo numero de bytes, mismas posiciones, solo
+cambiaba la etiqueta del primer byte (que antes se
+guardaba como `tex_mtx_idx` y ahora como `pos_mtx_idx`,
+y por eso el primer quad de run19 sale IDENTICO tras la
+correccion: NDC x [-1,1], y [0.912,-0.916]).
+
+Con el layout corregido, el "opcode desconocido 0x03" en
+offset 2497 queda explicado sin tocarlo: el parser viejo
+sobre-consumia el strip VAT2 como 21 B y aterrizaba en
+medio de un vertice. Y el draw que detenia la Fase 10
+(0x9C, strip VAT4 en 59080, VCD 0xA00) se decodifica
+solo: POS directo + NRM directo, VAT4 F32+F32 = **24 B
+exactos**, validados por 16 draws consecutivos a 819 B
+exactos (3 + 34x24) que teselan una rejilla en x
+(-1, -0.8666, -0.7333, -0.6, ...).
+
+### 2. Parser ampliado: dos desviaciones MEDIDAS que siguen en pie
+
+Bajo el layout corregido, dos casos siguen sin reproducir
+los limites del stream y usan stride medido (nunca reglas
+GX generales; fuera de estos dos triples exactos rige la
+aritmetica VCD/VAT):
+
+- **TRIANGLESTRIP VAT2, stride aritmetico 21 -> 8 B
+  opacos** (run42, offsets 2157-4122): 15 draws a 131 B
+  exactos (3 + 16x8), seguidos de 32 NOP + recarga VCD/XF
+  limpia en 4154. Contenido de 8 B sin decodificar (sin
+  bases de arrays CP 0xA0-0xBF en el stream y sin
+  escrituras CP por MMIO en la traza HW): se guarda crudo
+  (`has_raw_vertices`), se cuenta (`n_opaque_draws`) y el
+  renderer lo salta.
+- **POINTS VAT0, stride aritmetico 11 -> 10 B** (run42,
+  offsets 4207-56339): 92 draws a 567 B exactos
+  (3 + 50x10 + 64 NOP); el ultimo cierra con 32 NOP
+  exactos antes de la recarga XF de viewport en 56339.
+  Decodificacion manual POS S16 XYZ + TEX S16 ST, sin
+  byte PMIDX (la formula de shift 2^(shift+2) es
+  extrapolacion de VAT1, no validacion para VAT0; el
+  renderer salta los POINTS igualmente).
+
+Ademas: **atributos indexados** (VCD 2 = indice8,
+3 = indice16) ya no detienen el parse: se leen los
+indices (POS/TEX0 guardados en `GxVertex`, resto
+consumidos), el draw queda marcado `indexed` y el
+renderer lo salta, contado (`n_indexed_draws`,
+`indexed_attrs`). En los runs actuales no aparece ningun
+draw indexado (0 en todos), pero el camino existe.
+**Display lists (0x40):** con lector RAM valido se
+parsea el contenido (recursion, profundidad maxima 4);
+sin lector valido (test host sin RAM, o direccion/tamano
+fuera de rango) se consumen sus 9 B y se cuenta
+(`n_dl_skipped`), SIN detener el stream. Esto es lo que
+permite el parseo completo del FIFO en host.
+
+### 3. Parseo completo del FIFO de pelicula (verificacion host)
+
+Test host nuevo (fuera del repo, como siempre):
+`work-port/fase2-tests/test_gx11.cpp` +
+`build_gx11.sh` (parseo completo + triangulacion +
+equivalencia Feed incremental + segmento post-transicion
++ fase DL-RAM diagnostica). Resultados:
+
+- **run19 (regresion):** parse_ok=1, 602 draws (QUADS
+  VAT1), 1204 tris, 0 saltados, 3 texturas, primer quad
+  identico a Fase 10. Feed incremental equivalente al
+  parseo completo en trozos de 1/7/64/1000/65536/131/567
+  bytes y de una pieza.
+- **run42 / run45ph11base (baseline, FIFO 15.021.078 B):
+  parse_ok=1, 5148 draws, 0 desconocidos, 19586 tris,
+  107 saltados (92 POINTS + 15 strips opacos), 21
+  texturas distintas, 6674 DLs (todas saltadas sin
+  lector).** Desglose: QUADS 2769 (1852 VAT1 + 917
+  VAT4), TRIANGLESTRIP 2287 (15 VAT2 + 16 VAT4 + 2256
+  VAT0), POINTS 92 VAT0. run45 = run42 en todo.
+- **run43press12 / run46ph11press12 (FIFO 10.095.648 B):
+  parse_ok=1, 30188 draws, 63650 tris, 2272 DLs.**
+  run44press20 (12.867.490 B): 18137 draws, 42556 tris,
+  4544 DLs. run46 = run43 en todo (sin regresion).
+- **DLs:** 6674 llamadas en run42; las sanas forman una
+  libreria reutilizada (164 pares (direccion, tamano)
+  distintos, el mas repetido x368; tamano mediano 2400 B,
+  rango 96-64992 B). 120 llamadas anomalas: 96x DL
+  0x80379320 con size 0x7FC86CE0 (2,1 GB, imposible) y
+  24x DL 0x816A0000 con size 0. Con lector con chequeo de
+  rango devuelven nullptr y se saltan contadas; el
+  tratamiento de 9 B queda validado por el walk completo
+  a EOF sin desconocidos. El word de size anomalo queda
+  SIN explicar (no se inventa mascara ni semantica).
+- **Fase DL-RAM (diagnostica, NO exito/fracaso):** con
+  lector sobre `ram.bin` de fin de run, el parseo falla
+  en el offset 76003 dentro del DL 0x816E75E0 (35.360 B,
+  solapado con el siguiente DL 0x816E7800): la libreria DL
+  se reescribe durante el run y el snapshot final NO
+  contiene los DLs tal como estaban en cada llamada (los
+  DLs tardios si sobreviven: strips VAT6 visibles en
+  0x80EE5C60). Conclusion: **el contenido DL solo es
+  fiable con RAM viva (APK), nunca con snapshot host.**
+  Por eso la fase DL-RAM no marca el test como fallido.
+
+### 4. Pantalla post-Start IDENTIFICADA (no es el menu principal)
+
+Umbral PCTRACE de run46 (ultimo `TitleMenu_render`):
+FIFO offset > 5.232.323. Segmento POST en run46:
+**28487 draws, todos QUADS, 56974 tris, 0 saltados**;
+texturas: 0x80E24E40 (fuente) x28308, 0x816148C0
+(negro) x179; rango de indices [1701, 30187].
+Render host del tramo (renderer 640x480 + variante 4x
+para leer; el render 1x deja los glifos a ~1,7 px):
+
+1. **Pantalla de carga** (primeros draws POST): texto
+   leido literal del render 4x:
+   "Star Fox Adventures is loading. / Do not touch the
+   Memory Card or the POWER Button. / Star Fox Adventures
+   only supports Memory Card Slot A."
+   (3 lineas, atlas de fuente 512x64 I4 0x80E24E40).
+2. **Aviso de falta de Memory Card** (desde ~draw 16000
+   hasta el final del run): "There is no Memory Card in
+   Slot A." + opciones "Retry" / "Play (but cannot save
+   your progress)". Ventana 13000: solo texto de carga
+   (y 61-69); ventana 16000: mezcla (transicion);
+   ventana 18000 en adelante: solo aviso (y 36-40).
+   **Cual opcion esta seleccionada NO se puede afirmar:**
+   el renderer host no modela color TEV (todo sale
+   blanco) y no hay traza de seleccion.
+3. **NO es el menu principal:** no hay traza de
+   `TitleMenuItem_*` (0 despachos inter-chunk en PCTRACE;
+   las llamadas intra-chunk son invisibles para PCTRACE,
+   ver matiz Fase 10), ni cambio de DLL UI (`curUiDll`
+   = 4, `pendingUiDll` = 0 en los tres runs; `loadUiDll`
+   solo 2 veces en init, nunca tras Start), ni texto de
+   menu. La pantalla tras Start es carga y, sin tarjeta
+   (CARD sin implementar en el entorno host), el aviso
+   de falta de tarjeta. El run termina en esa zona
+   (PC final 0x80015CF0 `utf8GetNextChar`, dibujo de
+   texto). La cola del run sale negra en render
+   acumulado porque el run termina a mitad de frame tras
+   los quads negros de limpieza, no porque la pantalla
+   sea negra: ventanas anteriores (29000, 29500) si
+   muestran el texto del aviso.
+
+### 5. Renderer APK: triangulos + alimentacion por frame
+
+- `renderer/gx_translate.{h,cpp}`: `GlTri` +
+  `GxDrawToGlTris()` (misma transformada por vertice que
+  `GxDrawToGlQuads`, sin cambiarla): QUADS -> 2 tris
+  (0,1,2)(0,2,3) (pixel-identicos al camino anterior);
+  TRIANGLES -> grupos de 3; TRIANGLESTRIP -> orden
+  YAGCD (v0,v1,v2),(v1,v3,v2),(v2,v3,v4),...;
+  TRIANGLEFAN -> (v0,v1,v2),(v0,v2,v3),.... LINES/
+  LINESTRIP/POINTS, draws indexados y opacos devuelven
+  false y se cuentan como saltados.
+- `renderer/gx_gl.{h,cpp}`: `DrawDraws()` dibuja por
+  `GL_TRIANGLES` (`DrawTriangleVertices`, mismo shader
+  y programa de textura); cache de texturas por frame,
+  sin textura -> (32,32,64), sin resolver -> magenta,
+  todo sin cambios. Contador de draws mantenida
+  (`quads_drawn_` = draws dibujados) + contador nuevo
+  de triangulos (`tris_drawn_`).
+- `gamecube_runtime/runtime.{h,cpp}`: `FeedGxFrame()`:
+  tras CADA rebanada (boot y post-boot) drena la captura
+  FIFO (tope 32 MiB, evitado por el drenaje), convierte
+  las texloads HLE nuevas a offset global
+  (`gx_fifo_base_ + offset relativo`), alimenta el
+  parser incremental y deja los draws en
+  `SetGxDraws()`; en fallo del parser, log de
+  `FirstUnknown()` una vez y `ResetFeed()` (el juego
+  reescribe VCD/VAT/XF cada frame). `LoadGame()` activa
+  la captura + lector DL sobre RAM viva con chequeo de
+  rango; `Shutdown()` la desactiva. Sin datos, el
+  comportamiento Fase 0 no cambia (clear + quad).
+- **Caveat renderer (honesto):** TEV multi-etapa,
+  lighting, EFB y color de seleccion siguen siendo
+  no-op; las texturas I4 (fuente) se suben con alfa 255
+  (el decode compartido no da alfa de intensidad), asi
+  que en la APK los glifos se dibujan con su fondo negro
+  opaco (legibles como bloques de texto blanco sobre
+  negro; el solape entre glifos adyacentes no existe en
+  el stream: ancho <= avance). El manejo alfa/TEV para
+  texto queda pendiente, documentado aqui, no maquillado
+  como resuelto.
+
+### 6. APK de prueba GX11 (NO JUGABLE, solo renderer real)
+
+**Fichero en esta rama:**
+`android-port-base/app-debug-gx11-test.apk`
+**Tamano:** 12.518.054 bytes
+**SHA-256:**
+`0f60154e91908d288acd3ccd1acefa919405f0afd40707479e860cba544abd4c`
+**Paquete:** `com.starfox.port`, versionCode 3 /
+versionName `0.3.0-gx11-test`, debuggable SOLO por ser
+build de prueba, solo arm64-v8a.
+**Validacion:** apksigner verify OK (esquemas v2+v3),
+zipalign -c 4 OK, aapt2 badging OK (v3 /
+0.3.0-gx11-test / debuggable / arm64-v8a), apktool d OK,
+`libstarfox.so` interior 27.360.560 B = el .so NDK
+verificado abajo. `build-apk-manual.sh` acepta ahora
+version-code/version-name opcionales (defecto 3 /
+0.3.0-gx11-test). La APK Fase 10
+(`app-debug-gx-test.apk`, SHA-256
+`70fedbd289440118e9c21da2ca10498ca2a83601d29247301f406ac124aab8ce`)
+y la Fase 0 (`app-debug-boot-test.apk`) quedan intactas,
+sin reconstruir.
+**Que hace (por codigo, NO probado en dispositivo):**
+arranca, EGL/GLES3 + programa GX, clear + damero si no
+hay datos; **con `sfa-data` por adb, carga el DOL,
+avanza tras `videoInit` y dibuja los frames del bucle
+real por triangulos con texturas desde RAM viva**
+(pelicula/title/carga/aviso, segun hasta donde llegue
+el bucle), con `boot.log`.
+**Que NO hace / NO es:** no es jugable, no tiene
+sonido de juego, no tiene botones tactiles, no tiene
+picker SAF, no incluye datos/disco (nunca en APK ni en
+Git), no esta probada en una Tab S8 real en este tramo
+(sin Android/emulador aqui; la validacion es estructura:
+compilacion, firma, manifiesto, librerias, simbolos).
+Si se abre sin datos y se ve clear + damero, ESO ES LO
+ESPERADO, no un fallo.
+
+### 7. Build NDK (verificacion Fase 11)
+
+Build `ndk-gx11` (copia de `ndk-phase10` bajo
+`work-port/`, fuera del repo; incremental por fecha:
+solo se recompilaron los ficheros tocados + chassis):
+PASS, **0 errores**. `libstarfox.so` **27.360.560 B**
+(mismo tamano que Fase 10 por coincidencia de alineacion
+del enlace; el SHA-256 si cambia), ELF64 AArch64, SHA-256
+`f9e3de8f5342ebfe808d36be7c02cd418b6cfa23428b81b6423ab331c04cd0be`,
+`android_main` en `T`, comprobacion del script "OK:
+ningun simbolo mem_/ppc_/func_/dolrecomp_ sin
+resolver", **186 undefined totales, lista IDENTICA a
+Fase 10** (delta 0: el camino de triangulos usa las
+mismas funciones GLES que el de quads).
+Regresion host: run19 identico (punto 3), run45 = run42
+y run46 = run43 en contadores (verificacion previa de
+esta fase, sin cambios en el chassis: el parser solo
+lee el FIFO capturado, no afecta a la ejecucion).
+
+### 8. Que queda (tras Fase 11, en orden)
+
+1. **CARD (guardado): AHORA ES EL BLOQUEADOR VISIBLE:**
+   sin tarjeta, el juego se queda en el aviso "There is
+   no Memory Card in Slot A" (Retry / Play sin guardar).
+   Para avanzar mas alla hacen falta: emulacion CARD
+   (al menos una tarjeta virtual en Slot A con formato
+   valido) o input que elija "Play (but cannot save
+   your progress)" + el HLE que ese camino pida.
+2. Picker SAF + copia de Pack B a `sfa-data/` y prueba
+   real en Tab S8 de la APK GX11 (boot.log + frames
+   reales con datos; sin eso, la APK GX11 sigue sin
+   probar en dispositivo).
+3. Contenido DL en APK con RAM viva (el camino ya esta
+   cableado; falta probarlo con datos: los DLs aportan
+   la mayor parte de la geometria de la pelicula).
+4. TEV multi-etapa / color de seleccion / alfa de
+   texturas I4 en el renderer (texto y seleccion
+   correctos, no solo bloques blancos).
+5. Mapeo ID de sonido del juego -> WAV; secuencias
+   MusyX; DSP real.
+6. Botones tactiles en pantalla (layout por definir),
+   rumble.
+7. APK 100% jugable: solo cuando renderer + datos +
+   CARD/input + audio esten probados en dispositivo. La
+   APK de este tramo sigue siendo solo renderer real
+   (ver punto 6).

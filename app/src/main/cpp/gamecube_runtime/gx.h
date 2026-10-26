@@ -9,10 +9,23 @@
 // Layouts verificados contra el propio stream (run19) y contra
 // YAGCD (registros CP/XF/BP):
 // - Comandos: 0x00 NOP (1 B), 0x08 CP (1+1+4), 0x10 XF (1+4+4n),
+//   0x20/0x28/0x30/0x38 INDX (XF indexado, YAGCD 5.11.5.9:
+//   1+2 indice +2 (longitud-1:4 bits, direccion:12 bits) +4n
+//   datos; se parsea y cuenta, pero NO muta el mapa XF: su
+//   direccionamiento indexado exacto no esta modelado y ningun
+//   draw observado hasta ahora depende de el),
 //   0x40 DL (1+4+4), 0x48 invalidar cache (1 B), 0x61 BP (1+4),
-//   0x80-0xBF draw (1+2+vertices). Los codigos 0x20/0x28/0x30/0x38
-//   no aparecen en este stream: si aparecen, el parser se detiene
-//   y los reporta como desconocidos en vez de adivinar su payload.
+//   0x80-0xBF draw (1+2+vertices).
+// - Desviaciones MEDIDAS del stream de la pelicula/titulo
+//   (run42/46), NO reglas GX generales: el calculo aritmetico
+//   VCD/VAT da un stride que NO reproduce los limites de
+//   comando del stream para dos casos, y el parser usa el
+//   stride medido (validado por periodicidad + limite limpio),
+//   documentado en gx.cpp. Fuera de esos dos casos exactos
+//   (prim+vat+stride aritmetico), rige la aritmetica VCD/VAT.
+//   El "opcode desconocido 0x03" de la Fase 10 NO era un
+//   opcode: era el 4o byte de un vertice de strip de 8 B,
+//   alcanzado por sobre-consumir el draw como 21 B.
 // - VAT: CP 0x70+vat (A), 0x80+vat (B), 0x90+vat (C). VAT_A:
 //   POSCNT@0 (0=XY,1=XYZ), POSFMT@1-3 (0=U8,1=S8,2=U16,3=S16,
 //   4=F32), POSSHFT@4-8, NRMCNT@9, NRMFMT@10-12, COL0CNT@13,
@@ -24,13 +37,17 @@
 //   TEX4FMT@28-30, VCACHE_ENHANCE@31. VAT_C: TEX5-7 analogos.
 //   Formatos de color: 0=RGB565,1=RGB8,2=RGBX8,3=RGBA4,4=RGBA6,
 //   5=RGBA8.
-// - VCD: CP 0x50 (LO): POS@0-1, NRM@2-3, CLR0@4-5, CLR1@6-7,
-//   PNMTXIDX@8 (1 bit), TEXnMTXIDX@9+n (1 bit). CP 0x60 (HI):
+// - VCD (layout YAGCD 5.11.2, CORREGIDO en Fase 11: la version
+//   anterior tenia los campos desplazados y run19 solo parseaba
+//   por compensacion de dos errores): CP 0x50 (LO): PMIDX@0,
+//   TnMIDX@1+n (1 bit cada uno), POS@9-10, NRM@11-12,
+//   COL0@13-14, COL1@15-16. CP 0x60 (HI):
 //   TEXn@2n (0=nada,1=directo,2=indice8,3=indice16).
-//   Orden de componentes en el vertice: PNMTXIDX, TEXnMTXIDX,
-//   POS, NRM, CLR0, CLR1, TEX0-7. Los atributos indexados NO se
-//   decodifican (se reportan como no soportados): todo el stream
-//   actual es directo.
+//   Orden de componentes en el vertice: PMIDX, TnMIDX,
+//   POS, NRM, CLR0, CLR1, TEX0-7. Los atributos indexados se
+//   decodifican como indices (sin resolver contra arrays CP, que
+//   el stream no trae): el draw queda marcado indexed y el
+//   renderer lo salta, contado.
 // - Posiciones enteras: el campo shift de VAT1 es 2 (bits 4-8) y
 //   el quad de pantalla completa (0,0)-(10240,7680) solo cuadra
 //   con la proyeccion orto + viewport del stream si el divisor
@@ -62,6 +79,15 @@ struct GxVertex {
   uint8_t pos_mtx_idx = 0;
   bool has_pos_mtx_idx = false;
   uint8_t tex_mtx_idx = 60;  // GX_IDENTITY si no viene en el vertice
+  // Atributos indexados (VCD 2 = indice8, 3 = indice16): el
+  // parser guarda los indices, pero NO resuelve el atributo
+  // (necesitaria base/stride CP 0xA0-0xBF + lector de RAM del
+  // array); el draw queda marcado indexed y el renderer lo
+  // salta (contado, no silencioso).
+  bool has_pos_index = false;
+  uint32_t pos_index = 0;
+  bool has_tex_index = false;
+  uint32_t tex_index = 0;
   float x = 0.0f;
   float y = 0.0f;
   float z = 0.0f;
@@ -85,6 +111,13 @@ struct GxDraw {
   int prim = 0;  // opcode & 0xF8 (0x80 QUADS, 0x90 TRIANGLES, ...)
   int vat = 0;
   std::vector<GxVertex> verts;
+  // Draws con vertices opacos (stride medido, contenido sin
+  // decodificar: strips VAT2, ver gx.cpp): los bytes crudos
+  // van aqui y verts queda vacio; el renderer los salta.
+  bool has_raw_vertices = false;
+  std::vector<uint8_t> raw_vertex_data;
+  // True si algun vertice trae atributos indexados.
+  bool indexed = false;
   uint32_t tex_obj = 0;  // 0 = sin resolver (placeholder)
   int tex_map = 0;
   // Estado vigente (copia en el momento del draw).
@@ -108,12 +141,17 @@ struct GxStats {
   uint64_t n_nop = 0;
   uint64_t n_cp = 0;
   uint64_t n_xf = 0;
+  uint64_t n_indx = 0;  // comandos XF indexados 0x20-0x38
   uint64_t n_bp = 0;
   uint64_t n_dl = 0;
+  uint64_t n_dl_skipped = 0;  // DL sin lector valido: 9 B, sin
+                              // contenido (ver ParseStream)
   uint64_t n_inv = 0;
   uint64_t n_draw = 0;
   uint64_t dl_bytes = 0;
   uint64_t indexed_attrs = 0;  // vertices con atributo indexado
+  uint64_t n_opaque_draws = 0;  // draws con stride medido
+  uint64_t n_indexed_draws = 0;  // draws con algun indice
   std::map<int, uint64_t> draws_by_prim;
   std::map<int, uint64_t> draws_by_vat;
 };
@@ -133,9 +171,32 @@ class GxParser {
   void SetTexLoads(const std::vector<GxTexLoad>& loads);
 
   // Parsea todo el stream. Devuelve false si se detiene en un
-  // opcode desconocido, un atributo indexado, un DL ilegible o
-  // un vertice truncado (ver FirstUnknown() y Stats()).
+  // opcode desconocido o un vertice truncado (ver FirstUnknown()
+  // y Stats()). Un DL sin lector valido NO detiene el parse:
+  // se salta (n_dl_skipped). Los atributos indexados
+  // ya NO detienen el parse: se guardan los indices y el draw
+  // queda marcado indexed.
   bool Parse(const uint8_t* fifo, size_t fifo_len);
+
+  // Alimentacion incremental (Fase 11, APK): el estado CP/XF/BP
+  // persiste entre llamadas; solo se emiten los draws de
+  // comandos completos y el resto incompleto queda pendiente
+  // para el siguiente Feed. base_offset es el offset FIFO
+  // global del primer byte de data (para que los draws y las
+  // texloads sigan siendo comparables tras drenar la captura).
+  // Devuelve false si el stream se desincroniza (opcode
+  // desconocido / DL ilegible): en ese caso el llamador debe
+  // descartar el estado con ResetFeed() (el juego reescribe
+  // VCD/VAT/XF cada frame, asi que el estado se restablece).
+  // ResetFeed() deja el parser listo para un stream nuevo.
+  void ResetFeed();
+  bool Feed(const uint8_t* data, size_t len, uint64_t base_offset);
+  // Draws emitidos por el ultimo Feed (se vacia en cada Feed).
+  std::vector<GxDraw> TakeFedDraws();
+  // Anade cargas de textura sin reordenar (el llamador las
+  // entrega en orden creciente de offset, como las registra
+  // el HLE). Para stream completo, usar SetTexLoads().
+  void AppendTexLoads(const std::vector<GxTexLoad>& loads);
 
   const std::vector<GxDraw>& Draws() const { return draws_; }
   const GxStats& Stats() const { return stats_; }
@@ -155,6 +216,12 @@ class GxParser {
   uint32_t VertexSize(int vat) const;
 
  private:
+  // Resultado de ParseStream: kDone (stream completo), kTrunc
+  // (el ultimo comando esta incompleto: consumed marca su
+  // inicio y el resto queda pendiente), kFailed (ver
+  // first_unknown_).
+  enum class StreamResult { kDone, kTrunc, kFailed };
+
   struct VatFmt {
     int pos_count = 0;  // 0 = XY, 1 = XYZ
     int pos_type = 0;
@@ -170,8 +237,9 @@ class GxParser {
     int tex_shift[8] = {0, 0, 0, 0, 0, 0, 0, 0};
   };
 
-  bool ParseStream(const uint8_t* data, size_t len, bool in_dl,
-                   int depth, uint64_t base_offset);
+  StreamResult ParseStream(const uint8_t* data, size_t len, bool in_dl,
+                           int depth, uint64_t base_offset,
+                           size_t* consumed_io);
   bool ParseDraw(const uint8_t* data, size_t len, size_t* pos_io,
                  int prim, int vat, uint64_t fifo_offset);
   bool DecodeVertex(const uint8_t* data, size_t avail, int vat,
@@ -195,6 +263,18 @@ class GxParser {
   std::map<uint32_t, std::vector<uint32_t>> xf_;  // addr -> palabras
   std::string first_unknown_;
   bool failed_ = false;
+  // True si el ultimo fallo de ParseDraw fue solo falta de
+  // bytes (comando incompleto al final del buffer), no un
+  // error real: ParseStream lo traduce a kTrunc.
+  bool trunc_ = false;
+  // Estado incremental (Feed): bytes pendientes del comando
+  // incompleto, base FIFO global del stream actual y draws del
+  // ultimo Feed. stream_base_ es la base del ParseStream en
+  // curso (0 en Parse() completo; base_offset en Feed()).
+  std::vector<uint8_t> pending_;
+  uint64_t feed_base_ = 0;
+  uint64_t stream_base_ = 0;
+  std::vector<GxDraw> fed_draws_;
 };
 
 }  // namespace sfa

@@ -45,6 +45,28 @@ bool GameCubeRuntime::LoadGame(const char* dol_path) {
   hle_.Install(&cpu_state_);
   sfa_hw_trace_reset();
   sfa_hw_trace_set_enabled(1);
+  // Fase 11: captura FIFO activa desde el primer slice. El
+  // tope es 32 MiB, asi que FeedGxFrame() la drena tras cada
+  // slice (un frame tipico es de decenas de KiB; el arranque
+  // completo en host fue de ~15 MB en 5M despachos, repartido
+  // en muchas rebanadas).
+  sfa_fifo_capture_reset();
+  sfa_fifo_capture_set_enabled(1);
+  gx_parser_.ResetFeed();
+  // Fase 11: lector DL sobre la RAM viva del runtime (con
+  // chequeo de rango: un DL fuera de rango devuelve nullptr y
+  // el parser lo salta contado, sin tumbar el frame).
+  gx_parser_.SetRamReader([this](uint32_t guest, uint32_t size) {
+    if (guest < 0x80000000u) return static_cast<const uint8_t*>(nullptr);
+    uint64_t off = static_cast<uint64_t>(guest) - 0x80000000u;
+    if (off + size > memory_.RamSize()) {
+      return static_cast<const uint8_t*>(nullptr);
+    }
+    return memory_.RamData() + off;
+  });
+  gx_fifo_base_ = 0;
+  gx_texloads_converted_ = 0;
+  gx_capture_on_ = true;
   game_loaded_ = true;
   boot_finished_ = false;
   boot_reached_main_ = false;
@@ -60,7 +82,52 @@ void GameCubeRuntime::Shutdown() {
   running_ = false;
   audio_.Shutdown();
   sfa_hw_trace_set_enabled(0);
+  sfa_fifo_capture_set_enabled(0);
+  gx_capture_on_ = false;
   SFA_LOGI("runtime: apagado");
+}
+
+void GameCubeRuntime::FeedGxFrame() {
+  if (!gx_capture_on_) return;
+  // Texloads HLE nuevas: su fifo_offset es relativo al buffer
+  // de captura vigente (se resetea tras cada drenaje), asi que
+  // se convierten a offset global sumando gx_fifo_base_.
+  const std::vector<Hle::TexLoad>& loads = hle_.TexLoads();
+  if (loads.size() > gx_texloads_converted_) {
+    std::vector<GxTexLoad> conv;
+    for (size_t i = gx_texloads_converted_; i < loads.size(); ++i) {
+      GxTexLoad gl;
+      gl.fifo_offset = gx_fifo_base_ + loads[i].fifo_offset;
+      gl.tex_obj = loads[i].tex_obj;
+      gl.map = static_cast<int>(loads[i].map);
+      conv.push_back(gl);
+    }
+    gx_parser_.AppendTexLoads(conv);
+    gx_texloads_converted_ = loads.size();
+  }
+  unsigned long long len = sfa_fifo_capture_count();
+  if (sfa_fifo_capture_overflow() > 0) {
+    SFA_LOGI("runtime: captura FIFO desbordada (base %llu, "
+             "len %llu): se pierden bytes; el parser se "
+             "reinicia en el proximo frame",
+             static_cast<unsigned long long>(gx_fifo_base_), len);
+  }
+  const uint8_t* data = sfa_fifo_capture_data();
+  if (len > 0 && data != nullptr) {
+    if (!gx_parser_.Feed(data, static_cast<size_t>(len),
+                         gx_fifo_base_)) {
+      SFA_LOGI("runtime: parser GX fallo en frame (base %llu): "
+               "%s; se reinicia el feed",
+               static_cast<unsigned long long>(gx_fifo_base_),
+               gx_parser_.FirstUnknown().c_str());
+      gx_parser_.ResetFeed();
+    } else {
+      std::vector<GxDraw> fed = gx_parser_.TakeFedDraws();
+      if (!fed.empty()) SetGxDraws(fed);
+    }
+  }
+  sfa_fifo_capture_reset();
+  gx_fifo_base_ += len;
 }
 
 bool GameCubeRuntime::DumpHwTrace(const char* csv_path,
@@ -74,13 +141,14 @@ void GameCubeRuntime::Frame(Renderer* renderer) {
   if (!running_ || renderer == nullptr) return;
   renderer->BeginFrame();
   if (game_loaded_ && boot_finished_ && !game_ended_) {
-    // Fase 10: tras videoInit, el juego NO se detiene: sigue
-    // en rebanadas por frame (100.000 despachos o 0,25 s).
-    // Sin captura FIFO (32 MiB de tope: no es la via del
-    // renderer; la alimentacion GX incremental con parser con
-    // estado queda pendiente, ver PORT-STATUS).
+    // Fase 11: tras videoInit, el juego sigue en rebanadas por
+    // frame (100.000 despachos o 0,25 s) y FeedGxFrame() drena
+    // la captura FIFO tras cada rebanada para dibujar los
+    // draws del frame real (el tope de 32 MiB se evita con el
+    // drenaje por frame).
     ChassisResult slice =
         RunChassis(&cpu_state_, &hle_, 100000, 0.25, 0);
+    FeedGxFrame();
     ++post_boot_slices_;
     if (slice.reason == ChassisResult::kException ||
         slice.reason == ChassisResult::kUnknownPc ||
@@ -99,6 +167,7 @@ void GameCubeRuntime::Frame(Renderer* renderer) {
     ChassisResult slice =
         RunChassis(&cpu_state_, &hle_, 100000, 0.25,
                    kBootVideoInitAddress);
+    FeedGxFrame();
     if (slice.reached_main) boot_reached_main_ = true;
     if (slice.reached_init) boot_reached_init_ = true;
     if (slice.reached_stop_pc) boot_reached_video_init_ = true;

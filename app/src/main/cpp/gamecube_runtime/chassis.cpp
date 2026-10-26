@@ -1,5 +1,7 @@
 #include "gamecube_runtime/chassis.h"
 
+#include "cpu/cpu.h"
+
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
@@ -101,13 +103,23 @@ ChassisResult RunChassis(CpuState* cpu, Hle* hle,
             0x80244A68u,  // OSReceiveMessage
             0x801190C8u,  // InitAllMessageQueue
             0x801383C0u,  // hilo creado en run26 (OSCreateThread)
+            // Fase 11: traza de menu/UI post-Start (simbolos
+            // GSAP01_rev1 PAL): TitleMenuItem_render,
+            // setCurUiDll, loadUiDll, TitleMenu_setSelection.
+            0x80131BF8u,  // TitleMenuItem_render
+            0x80014954u,  // setCurUiDll
+            0x80014974u,  // loadUiDll
+            0x80117440u,  // TitleMenu_setSelection
         };
         for (uint32_t t : kTracePcs) {
           if (pc == t) {
             std::fprintf(stderr,
-                         "PCTRACE desp=%llu pc=0x%08X lr=0x%08X\n",
+                         "PCTRACE desp=%llu pc=0x%08X lr=0x%08X "
+                         "fifo=%llu\n",
                          static_cast<unsigned long long>(result.dispatches),
-                         pc, cpu->lr);
+                         pc, cpu->lr,
+                         static_cast<unsigned long long>(
+                             sfa_fifo_capture_count()));
             break;
           }
         }

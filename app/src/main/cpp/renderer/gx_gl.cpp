@@ -192,6 +192,39 @@ void GxGlRenderer::DrawTexturedQuad(const uint8_t* rgba, int width,
   ++quads_drawn_;
 }
 
+void GxGlRenderer::DrawTriVertices(const GlTri& tri, GLuint tex,
+                                   bool use_tex, uint8_t r, uint8_t g,
+                                   uint8_t b) {
+  float verts[3 * 4];
+  for (int k = 0; k < 3; ++k) {
+    verts[k * 4 + 0] = tri.x[k];
+    verts[k * 4 + 1] = tri.y[k];
+    verts[k * 4 + 2] = tri.s[k];
+    verts[k * 4 + 3] = tri.t[k];
+  }
+  glUseProgram(program_);
+  glBindBuffer(GL_ARRAY_BUFFER, vbo_);
+  glBufferData(GL_ARRAY_BUFFER, sizeof(verts), verts, GL_STREAM_DRAW);
+  glEnableVertexAttribArray(loc_pos_);
+  glVertexAttribPointer(loc_pos_, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float),
+                        reinterpret_cast<const void*>(0));
+  glEnableVertexAttribArray(loc_uv_);
+  glVertexAttribPointer(loc_uv_, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float),
+                        reinterpret_cast<const void*>(2 * sizeof(float)));
+  if (use_tex) {
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, tex);
+    glUniform1i(loc_use_tex_, 1);
+  } else {
+    glUniform1i(loc_use_tex_, 0);
+    glUniform4f(loc_color_, r / 255.0f, g / 255.0f, b / 255.0f, 1.0f);
+  }
+  glDrawArrays(GL_TRIANGLES, 0, 3);
+  glDisableVertexAttribArray(loc_pos_);
+  glDisableVertexAttribArray(loc_uv_);
+  ++tris_drawn_;
+}
+
 int GxGlRenderer::DrawDraws(const std::vector<GxDraw>& draws,
                             const TexResolver& resolver) {
   if (program_ == 0) return 0;
@@ -201,36 +234,46 @@ int GxGlRenderer::DrawDraws(const std::vector<GxDraw>& draws,
   GLuint magenta = 0;
   int drawn = 0;
   for (const GxDraw& d : draws) {
-    GlQuad q;
-    if (!GxDrawToGlQuads(d, 640, 480, &q)) {
+    std::vector<GlTri> tris;
+    if (!GxDrawToGlTris(d, 640, 480, &tris)) {
       ++quads_skipped_;
       continue;
     }
-    if (q.tex_obj == 0) {
-      DrawQuadVertices(q, 0, false, 32, 32, 64);
-      ++drawn;
-      ++quads_drawn_;
-      continue;
-    }
+    // La textura es por draw (no por triangulo): se resuelve
+    // una vez y se reutiliza en sus tris.
+    uint32_t tex_obj = tris.empty() ? 0 : tris[0].tex_obj;
     GLuint tex = 0;
-    auto it = frame_tex.find(q.tex_obj);
-    if (it != frame_tex.end()) {
-      tex = it->second;
+    bool use_tex = false;
+    if (tex_obj == 0) {
+      use_tex = false;
     } else {
-      GxDecodedTex dec;
-      bool ok = resolver != nullptr && resolver(q.tex_obj, &dec) && dec.ok;
-      if (ok) {
-        tex = UploadTexture(dec.rgba.data(), dec.width, dec.height);
+      auto it = frame_tex.find(tex_obj);
+      if (it != frame_tex.end()) {
+        tex = it->second;
+        use_tex = true;
       } else {
-        if (magenta == 0) {
-          uint8_t px[4] = {255, 0, 255, 255};
-          magenta = UploadTexture(px, 1, 1);
+        GxDecodedTex dec;
+        bool ok = resolver != nullptr && resolver(tex_obj, &dec) && dec.ok;
+        if (ok) {
+          tex = UploadTexture(dec.rgba.data(), dec.width, dec.height);
+        } else {
+          if (magenta == 0) {
+            uint8_t px[4] = {255, 0, 255, 255};
+            magenta = UploadTexture(px, 1, 1);
+          }
+          tex = magenta;
         }
-        tex = magenta;
+        use_tex = true;
+        frame_tex[tex_obj] = tex;
       }
-      frame_tex[q.tex_obj] = tex;
     }
-    DrawQuadVertices(q, tex, true, 0, 0, 0);
+    for (const GlTri& tri : tris) {
+      if (use_tex) {
+        DrawTriVertices(tri, tex, true, 0, 0, 0);
+      } else {
+        DrawTriVertices(tri, 0, false, 32, 32, 64);
+      }
+    }
     ++drawn;
     ++quads_drawn_;
   }
