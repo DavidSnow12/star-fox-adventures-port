@@ -14,10 +14,13 @@
 //    out[23:22]; bits[17:16]==3 => COMP (op = 8 + bit[18] +
 //    (bits[21:20]<<1)), si no ADD (bit[18]=0) o SUB (1).
 //  - Palabra alfa: misma estructura de operacion; sus 4 campos
-//    de entrada son de 3 bits (enum GX_CA). SU POSICION
-//    EXACTA es simetria asumida (d[2:0], c[5:3], b[8:6],
-//    a[11:9]), PENDIENTE del anclaje §3.3 del diseño: si el
-//    anclaje la corrige, cambia solo DecodeAlphaWord.
+//    de entrada son de 3 bits (enum GX_CA), ANCLADOS Tramo 5
+//    en GXSetTevAlphaIn 0x8025C430: swap_ras[1:0]
+//    swap_tex[3:2] d[6:4] c[9:7] b[12:10] a[15:13].
+//    (La fase A asumia d[2:0] c[5:3] b[8:6] a[11:9] por
+//    simetria con color: ERRONEO, corregido aqui; los tests
+//    que fijaban el layout viejo deben actualizarse, no el
+//    decodificador.)
 //  - Formula ADD: out = (mix(a,b,c) + d + bias) * scale, con
 //    clamp opcional a [0,1]; SUB: mix(a,-b,c) + d (misma
 //    forma, b negado). COMP: por canal, c si la comparacion
@@ -39,19 +42,42 @@
 //  - GLSL ES 1.00 (attribute/varying/texture2D), misma
 //    sintaxis que los shaders actuales: migrar a 300 es un
 //    cambio separado, no parte de TEV.
-//  - PREV inicial y registros C0-C2: (0,0,0) / 0.0.
-//  - RASC/RASA: color de vertice. Canal 0/4 (COLOR0[A0]) ->
-//    varying vColor; canal 1/5 (COLOR1[A1]) -> vColor1. El
-//    vertex shader actual no entrega ninguno: el camino GL
-//    de gx_gl.cpp solo usa el programa TEV cuando no hace
-//    falta color de vertice (ver TevGlUsable); el resto cae
-//    al programa fijo anterior con log (GX-RESTO.md P0.3
-//    pendiente: varyings de color + UV por mapa).
-//  - Order/KSEL/indirecto/konst/regcolor del snapshot: NO
-//    anclados (ver gx.h). El generador confia en lo que
-//    TevState dice; un TevState construido a mano con esos
-//    campos explicitos genera el GLSL completo (casos
-//    dorados del diseño §4).
+//  - PREV inicial: (0,0,0) / 0.0. Registros C0-C2: se
+//    inicializan con las constantes TevColor de BP
+//    (uniforms uRegC/uRegA; 0 si la palabra no esta
+//    presente). CORRECCION Tramo 5: la fase A los
+//    inicializaba a 0 y trataba C0 como uniform distinto
+//    del local out_reg; el modelo correcto es unificado
+//    (ver el comentario en GenerateTevFragment).
+//  - RASC/RASA: color de vertice. Campo BP de canal 0 ->
+//    varying vColor; campo 1 -> vColor1; campo 7 = NULL
+//    (sin color: RASC/RASA caen a vColor por el else del
+//    generador, caso que el juego no deberia producir).
+//    Tramo 5: gx_gl.cpp entrega vColor/vColor1 y las 8 UV
+//    por mapa (varyings empaquetados vUv01/vUv23/vUv45/
+//    vUv67), asi que TevGlUsable ya no rechaza programas
+//    con color ni con varios samplers.
+//  - Order/KSEL/indirecto/konst/regcolor del snapshot:
+//    ANCLADOS Tramo 5 (ver gx.h para los layouts y las
+//    direcciones SDK). El generador confia en lo que
+//    TevState dice; un TevState construido a mano debe usar
+//    el CAMPO BP de canal (0/1/7), no el enum GX (0,1,4,5).
+//  - Swap: si la tabla swap de ras/tex de la etapa no es
+//    identidad, el generador emite la permutacion (salida
+//    indexada: out.r = in[tabla[0]], etc.). Tabla con una
+//    entrada fuera de [0,3] => swap ignorado (identidad).
+//  - Alpha-compare (estado fijo, no TEV): GenerateTevFragment
+//    acepta un GxAlphaTest opcional y, si el test puede
+//    fallar, inyecta un discard antes de gl_FragColor con
+//    refs en uniforms (uAlphaRef0/uAlphaRef1); el modo
+//    (comp0/comp1/op) queda en TevGenResult.alpha_test_mode
+//    para la clave de caché GL. Refs en float: comparacion
+//    exacta en float de valores k/255 (aproximacion
+//    documentada: el TEV puede dejar prev_a fuera de k/255
+//    exacto tras aritmetica).
+//  - Indirecto: sigue siendo no-op CONTADO (Tramo 5 ancla
+//    la palabra y el ind order, pero la matriz/escala ind
+//    no estan decodificadas: perturbar seria inventar).
 
 #include <cstdint>
 #include <map>
@@ -102,14 +128,15 @@ inline void DecodeColorWord(uint32_t w, TevInput* in, TevOp* op) {
   op->out_reg = static_cast<int>((w >> 22) & 0x3);
 }
 
-// Decodifica una palabra alfa BP. Campos de 3 bits en simetria
-// asumida con la palabra color (ver cabecera: pendiente de
-// anclaje). Operacion: misma estructura de bits que color.
+// Decodifica una palabra alfa BP. ANCLADO Tramo 5 en
+// GXSetTevAlphaIn 0x8025C430 (d<<4, c<<7, b<<10, a<<13) y
+// GXSetTevSwapMode 0x8025C868 (tablas en bits 0-3).
+// Operacion: misma estructura de bits que color.
 inline void DecodeAlphaWord(uint32_t w, TevInput* in, TevOp* op) {
-  in->d = static_cast<int>(w & 0x7);
-  in->c = static_cast<int>((w >> 3) & 0x7);
-  in->b = static_cast<int>((w >> 6) & 0x7);
-  in->a = static_cast<int>((w >> 9) & 0x7);
+  in->d = static_cast<int>((w >> 4) & 0x7);
+  in->c = static_cast<int>((w >> 7) & 0x7);
+  in->b = static_cast<int>((w >> 10) & 0x7);
+  in->a = static_cast<int>((w >> 13) & 0x7);
   int bias_field = static_cast<int>((w >> 16) & 0x3);
   int op_bit = static_cast<int>((w >> 18) & 0x1);
   int scale_field = static_cast<int>((w >> 20) & 0x3);
@@ -124,6 +151,215 @@ inline void DecodeAlphaWord(uint32_t w, TevInput* in, TevOp* op) {
   }
   op->clamp = static_cast<int>((w >> 19) & 0x1);
   op->out_reg = static_cast<int>((w >> 22) & 0x3);
+}
+
+// Ids de tabla swap de una palabra alfa (GXSetTevSwapMode:
+// ras en bits 0-1, tex en bits 2-3).
+inline void DecodeAlphaSwap(uint32_t w, int* swap_ras, int* swap_tex) {
+  *swap_ras = static_cast<int>(w & 0x3);
+  *swap_tex = static_cast<int>((w >> 2) & 0x3);
+}
+
+// Palabra order 0x28+p (GXSetTevOrder 0x8025CA34). Etapa par
+// = mitad alta, impar = mitad baja. Sin flag de presente,
+// texmap = 255 (NULL). colorchan = CAMPO BP (0/1/7).
+inline void DecodeOrderWord(uint32_t w, bool even, int* texcoord,
+                            int* texmap, int* colorchan) {
+  if (even) {
+    *texmap = static_cast<int>((w >> 12) & 0x7);
+    *texcoord = static_cast<int>((w >> 15) & 0x7);
+    if (!((w >> 18) & 0x1)) *texmap = 255;
+    *colorchan = static_cast<int>((w >> 19) & 0x7);
+  } else {
+    *texmap = static_cast<int>(w & 0x7);
+    *texcoord = static_cast<int>((w >> 3) & 0x7);
+    if (!((w >> 6) & 0x1)) *texmap = 255;
+    *colorchan = static_cast<int>((w >> 7) & 0x7);
+  }
+  // El campo de canal solo toma 0/1/7 en entradas validas
+  // (tabla GXSetTevOrder en DOL 0x803303E0 + NULL=7); otro
+  // valor se trata como NULL (nunca como set 1).
+  if (*colorchan != 0 && *colorchan != 1) *colorchan = 255;
+}
+
+// Palabra ksel 0xF6+p (GXSetTevKColorSel 0x8025C790,
+// GXSetTevKAlphaSel 0x8025C7FC). Bits 0-3 = datos swap.
+inline void DecodeKselWord(uint32_t w, bool even, int* kcolor_sel,
+                           int* kalpha_sel) {
+  if (even) {
+    *kcolor_sel = static_cast<int>((w >> 14) & 0x1F);
+    *kalpha_sel = static_cast<int>((w >> 19) & 0x1F);
+  } else {
+    *kcolor_sel = static_cast<int>((w >> 4) & 0x1F);
+    *kalpha_sel = static_cast<int>((w >> 9) & 0x1F);
+  }
+}
+
+// Tablas swap desde las palabras ksel (GXSetTevSwapModeTable
+// 0x8025C8C0): tabla t = (bits 0-1 de 0xF6+2t, bits 2-3 de
+// 0xF6+2t, bits 0-1 de 0xF6+2t+1, bits 2-3 de 0xF6+2t+1).
+// Solo se sobrescriben las entradas cuyas palabras estan
+// presentes; el resto conserva el defecto GXInit del estado.
+inline void DecodeSwapTables(const std::map<uint32_t, uint32_t>& bp,
+                             int tables[4][4]) {
+  for (int t = 0; t < 4; ++t) {
+    auto it0 = bp.find(0xF6u + 2u * static_cast<uint32_t>(t));
+    if (it0 != bp.end()) {
+      tables[t][0] = static_cast<int>(it0->second & 0x3);
+      tables[t][1] = static_cast<int>((it0->second >> 2) & 0x3);
+    }
+    auto it1 = bp.find(0xF6u + 2u * static_cast<uint32_t>(t) + 1u);
+    if (it1 != bp.end()) {
+      tables[t][2] = static_cast<int>(it1->second & 0x3);
+      tables[t][3] = static_cast<int>((it1->second >> 2) & 0x3);
+    }
+  }
+}
+
+// Palabra indirecta 0x10+etapa (GXSetTevIndirect 0x8025BB58).
+inline void DecodeIndirectWord(uint32_t w, TevStage* s) {
+  s->indstage = static_cast<int>(w & 0x3);
+  s->ind_format = static_cast<int>((w >> 2) & 0x3);
+  s->ind_bias = static_cast<int>((w >> 4) & 0x7);
+  s->ind_alpha = static_cast<int>((w >> 7) & 0x3);
+  s->ind_mtx = static_cast<int>((w >> 9) & 0xF);
+  s->ind_wrap_s = static_cast<int>((w >> 13) & 0x7);
+  s->ind_wrap_t = static_cast<int>((w >> 16) & 0x7);
+  s->ind_flag19 = static_cast<int>((w >> 19) & 0x1);
+  s->ind_add = static_cast<int>((w >> 20) & 0x3);
+}
+
+// Konst/regcolor desde 0xE0+2*i / 0xE1+2*i (GXSetTevColor
+// 0x8025C634, GXSetTevKColor 0x8025C71C): bit 23 = 1 =>
+// KColor, 0 => TevColor. Devuelve true si el par estaba
+// presente (al menos una palabra).
+inline bool DecodeKonstRegcolor(const std::map<uint32_t, uint32_t>& bp,
+                                int i, float konst_out[4],
+                                float regcolor_out[4]) {
+  auto it0 = bp.find(0xE0u + 2u * static_cast<uint32_t>(i));
+  auto it1 = bp.find(0xE1u + 2u * static_cast<uint32_t>(i));
+  if (it0 == bp.end() && it1 == bp.end()) return false;
+  uint32_t w0 = it0 == bp.end() ? 0 : it0->second;
+  uint32_t w1 = it1 == bp.end() ? 0 : it1->second;
+  float r = static_cast<float>(w0 & 0xFF) / 255.0f;
+  float a = static_cast<float>((w0 >> 12) & 0xFF) / 255.0f;
+  float b = static_cast<float>(w1 & 0xFF) / 255.0f;
+  float g = static_cast<float>((w1 >> 12) & 0xFF) / 255.0f;
+  float* dst = ((w0 >> 23) & 0x1) ? konst_out : regcolor_out;
+  dst[0] = r;
+  dst[1] = g;
+  dst[2] = b;
+  dst[3] = a;
+  return true;
+}
+
+// --- Estado fijo (decodificadores puros, sin GL) ---
+
+// Blend 0x41 (GXSetBlendMode 0x8025CEF4). Bit 2 sin asignar:
+// se ignora (no se afirma nada sobre el).
+inline void DecodeBlendWord(uint32_t w, GxBlendState* out) {
+  out->present = true;
+  out->enable = (w & 0x1) != 0;
+  out->logic = (w & 0x2) != 0;
+  out->color_update = (w & 0x8) != 0;
+  out->alpha_update = (w & 0x10) != 0;
+  out->dst = static_cast<int>((w >> 5) & 0x7);
+  out->src = static_cast<int>((w >> 8) & 0x7);
+  out->subtract = (w & 0x800) != 0;
+  out->op = static_cast<int>((w >> 12) & 0xF);
+}
+
+// Z 0x40 (GXSetZMode 0x8025D078).
+inline void DecodeZWord(uint32_t w, GxZState* out) {
+  out->present = true;
+  out->enable = (w & 0x1) != 0;
+  out->func = static_cast<int>((w >> 1) & 0x7);
+  out->update = (w & 0x10) != 0;
+}
+
+// Alpha-compare 0xF3 (GXSetAlphaCompare 0x8025C960, args
+// comp0/ref0/op/comp1/ref1). Ver gx.h: empaquetado limpio
+// ref0[7:0] ref1[15:8] comp0[18:16] comp1[21:19] op[23:22].
+inline void DecodeAlphaCompareWord(uint32_t w, GxAlphaTest* out) {
+  out->present = true;
+  out->ref0 = static_cast<int>(w & 0xFF);
+  out->ref1 = static_cast<int>((w >> 8) & 0xFF);
+  out->comp0 = static_cast<int>((w >> 16) & 0x7);
+  out->comp1 = static_cast<int>((w >> 19) & 0x7);
+  out->op = static_cast<int>((w >> 22) & 0x3);
+}
+
+// GENMODE 0x00 (GXSetNumTexGens 0x80258B50, GXSetNumTevStages
+// 0x8025CC10, GXSetCullMode 0x80259494, GXSetNumIndStages
+// 0x8025C060).
+inline void DecodeGenmodeWord(uint32_t w, int* num_texgens,
+                              int* num_stages, int* cull,
+                              int* num_ind_stages) {
+  *num_texgens = static_cast<int>(w & 0xF);
+  *num_stages = static_cast<int>(((w >> 10) & 0xF) + 1);
+  *cull = static_cast<int>((w >> 14) & 0x3);
+  *num_ind_stages = static_cast<int>((w >> 16) & 0x7);
+}
+
+// Scissor 0x20/0x21 (GXSetScissor 0x8025DC94). Devuelve false
+// si falta alguna palabra (sin scissor completo no hay rect).
+inline bool DecodeScissorWords(uint32_t w20, uint32_t w21,
+                               GxScissorState* out) {
+  int x0 = static_cast<int>((w20 >> 12) & 0x7FF) - 342;
+  int y0 = static_cast<int>(w20 & 0x7FF) - 342;
+  int x1 = static_cast<int>((w21 >> 12) & 0x7FF) - 342;
+  int y1 = static_cast<int>(w21 & 0x7FF) - 342;
+  out->present = true;
+  out->x = x0;
+  out->y = y0;
+  out->w = x1 - x0 + 1;
+  out->h = y1 - y0 + 1;
+  return true;
+}
+
+// Snapshot de estado fijo desde el mapa BP vigente (lo llama
+// GxParser::ParseDraw junto al snapshot TEV).
+inline GxFixedState SnapshotFixedFromBp(
+    const std::map<uint32_t, uint32_t>& bp) {
+  GxFixedState f;
+  auto get = [&](uint32_t reg, uint32_t* out) {
+    auto it = bp.find(reg);
+    if (it == bp.end()) return false;
+    *out = it->second;
+    return true;
+  };
+  uint32_t w = 0;
+  if (get(0x00, &w)) {
+    f.genmode_present = true;
+    int ns = 1, ni = 0;
+    // num_ind_stages no vive en GxFixedState (va en TevState);
+    // se decodifica alli desde el mismo GENMODE.
+    DecodeGenmodeWord(w, &f.num_texgens, &ns, &f.cull, &ni);
+  }
+  if (get(0x41, &w)) DecodeBlendWord(w, &f.blend);
+  if (get(0x40, &w)) DecodeZWord(w, &f.z);
+  if (get(0xF3, &w)) DecodeAlphaCompareWord(w, &f.alpha);
+  uint32_t w20 = 0, w21 = 0;
+  if (get(0x20, &w20) && get(0x21, &w21))
+    DecodeScissorWords(w20, w21, &f.scissor);
+  for (int i = 0; i < 5; ++i) {
+    if (get(0xEEu + static_cast<uint32_t>(i), &w)) {
+      f.fog_words[i] = w;
+      f.fog_present[i] = true;
+    }
+  }
+  static const uint32_t kCopyRegs[3] = {0x49, 0x4A, 0x4D};
+  for (int i = 0; i < 3; ++i) {
+    if (get(kCopyRegs[i], &w)) {
+      f.copy_words[i] = w;
+      f.copy_present[i] = true;
+    }
+  }
+  if (get(0x27, &w)) {
+    f.ind_order_word = w;
+    f.ind_order_present = true;
+  }
+  return f;
 }
 
 // Etapa identidad: devuelve PREV intacto (color y alfa).
@@ -172,6 +408,9 @@ inline bool ValidateTevState(const TevState& st, std::string* error) {
     if (s.kcolor_sel < 0 || s.kcolor_sel > 27 ||
         s.kalpha_sel < 0 || s.kalpha_sel > 27)
       return fail("ksel fuera de enum");
+    if (s.swap_ras < 0 || s.swap_ras > 3 || s.swap_tex < 0 ||
+        s.swap_tex > 3)
+      return fail("swap fuera de enum");
   }
   return true;
 }
@@ -185,11 +424,28 @@ inline uint32_t TevHash(const TevState& st) {
     h *= 16777619u;
   };
   mix(static_cast<uint32_t>(st.num_stages));
+  mix(static_cast<uint32_t>(st.num_ind_stages));
+  for (int t = 0; t < 4; ++t)
+    for (int c = 0; c < 4; ++c)
+      mix(static_cast<uint32_t>(st.swap_tables[t][c]));
   for (int i = 0; i < 16; ++i) {
     const TevStage& s = st.stages[i];
     mix(static_cast<uint32_t>(s.texcoord));
     mix(static_cast<uint32_t>(s.texmap));
     mix(static_cast<uint32_t>(s.colorchan));
+    mix(static_cast<uint32_t>(s.swap_ras) |
+        (static_cast<uint32_t>(s.swap_tex) << 4) |
+        (static_cast<uint32_t>(s.indstage) << 8) |
+        (static_cast<uint32_t>(s.ind_format) << 12) |
+        (static_cast<uint32_t>(s.ind_bias) << 16) |
+        (static_cast<uint32_t>(s.ind_alpha) << 20) |
+        (static_cast<uint32_t>(s.ind_mtx) << 24) |
+        (static_cast<uint32_t>(s.ind_wrap_s) << 28));
+    mix(static_cast<uint32_t>(s.ind_wrap_t) |
+        (static_cast<uint32_t>(s.ind_add) << 4) |
+        (static_cast<uint32_t>(s.ind_flag19) << 8) |
+        (static_cast<uint32_t>(s.ind_texmap) << 12) |
+        (static_cast<uint32_t>(s.ind_texcoord) << 20));
     mix(static_cast<uint32_t>(s.color.a) |
         (static_cast<uint32_t>(s.color.b) << 4) |
         (static_cast<uint32_t>(s.color.c) << 8) |
@@ -228,22 +484,20 @@ inline uint32_t TevHash(const TevState& st) {
 }
 
 // Snapshot TEV desde el mapa BP vigente en el momento del
-// draw (lo llama GxParser::ParseDraw). Copia bp_raw completo
-// y decodifica GENMODE + palabras color/alfa. Order: sin
-// anclar -> heuristica documentada texcoord=texmap=etapa
-// (coincide con el caso dorado UI 2 etapas; NO garantizada
-// para mundo) con order_anchored=false. KSEL: sin anclar ->
-// sel 0 (constante 1) con ksel_anchored=false; la palabra
-// cruda 0xF6+etapa queda en bp_raw para el anclaje futuro.
-// Konst/regcolor: sin anclar -> 0. Palabra de etapa ausente
-// en bp_ (etapa dentro de num_stages pero sin escritura
-// previa): etapa identidad (devuelve PREV), no basura.
+// draw (lo llama GxParser::ParseDraw). ANCLADO Tramo 5 (ver
+// gx.h): order 0x28+p, ksel 0xF6+p, indirecto 0x10+e, ind
+// order 0x27, konst/regcolor 0xE0-0xE7, swap en alfa bits
+// 0-3 y tablas en bits bajos ksel. Palabra ausente =>
+// defecto GXInit (order NULL, ksel 0, indirecto directo,
+// swap tablas GXInit). Palabra de etapa ausente en bp_
+// (etapa dentro de num_stages pero sin escritura previa):
+// etapa identidad (devuelve PREV), no basura.
 inline TevState SnapshotTevFromBp(
     const std::map<uint32_t, uint32_t>& bp) {
   TevState st;
   st.bp_raw = bp;
-  st.order_anchored = false;
-  st.ksel_anchored = false;
+  st.order_anchored = true;
+  st.ksel_anchored = true;
   st.truncated = false;
   auto get = [&](uint32_t reg, uint32_t* out) {
     auto it = bp.find(reg);
@@ -253,26 +507,76 @@ inline TevState SnapshotTevFromBp(
   };
   uint32_t genmode = 0;
   if (get(0x00, &genmode)) {
-    st.num_stages = static_cast<int>(((genmode >> 10) & 0xF) + 1);
+    int nt = 0, c = 0;
+    DecodeGenmodeWord(genmode, &nt, &st.num_stages, &c,
+                      &st.num_ind_stages);
   } else {
     st.num_stages = 1;
+    st.num_ind_stages = 0;
   }
   if (st.num_stages < 1) st.num_stages = 1;
   if (st.num_stages > 16) {
     st.num_stages = 16;
     st.truncated = true;
   }
+  // Tablas swap: defecto GXInit del estado, sobrescrito por
+  // las palabras ksel presentes (DecodeSwapTables).
+  DecodeSwapTables(bp, st.swap_tables);
+  // Ind order 0x27 (ausente => ind_texmap/coord -1).
+  uint32_t ind_order = 0;
+  bool has_ind_order = get(0x27, &ind_order);
+  // Konst/regcolor (ausente => 0).
+  for (int i = 0; i < 4; ++i) {
+    float* k = st.konst[i];
+    float* r = st.regcolor[i];
+    // DecodeKonstRegcolor escribe solo en el destino que
+    // indica el bit 23; el otro queda a 0 (defecto).
+    DecodeKonstRegcolor(bp, i, k, r);
+  }
   for (int i = 0; i < 16; ++i) {
     TevStage& s = st.stages[i];
-    s.texcoord = i;
-    s.texmap = i;
+    // Order: defecto GXInit = NULL en todo.
+    s.texcoord = 255;
+    s.texmap = 255;
     s.colorchan = 255;
+    uint32_t ow = 0;
+    if (get(0x28u + static_cast<uint32_t>(i / 2), &ow)) {
+      DecodeOrderWord(ow, (i % 2) == 0, &s.texcoord, &s.texmap,
+                      &s.colorchan);
+    }
+    // KSEL + swap de la etapa.
     s.kcolor_sel = 0;
     s.kalpha_sel = 0;
+    uint32_t kw = 0;
+    if (get(0xF6u + static_cast<uint32_t>(i / 2), &kw)) {
+      DecodeKselWord(kw, (i % 2) == 0, &s.kcolor_sel, &s.kalpha_sel);
+    }
     s.swap_ras = 0;
     s.swap_tex = 0;
+    // Indirecto: defecto = directo.
     s.has_indirect = false;
     s.indstage = 0;
+    s.ind_format = 0;
+    s.ind_bias = 0;
+    s.ind_alpha = 0;
+    s.ind_mtx = 0;
+    s.ind_wrap_s = 0;
+    s.ind_wrap_t = 0;
+    s.ind_flag19 = 0;
+    s.ind_add = 0;
+    s.ind_texmap = -1;
+    s.ind_texcoord = -1;
+    uint32_t iw = 0;
+    if (get(0x10u + static_cast<uint32_t>(i), &iw) && iw != 0) {
+      s.has_indirect = true;
+      DecodeIndirectWord(iw, &s);
+      if (has_ind_order) {
+        int ind = s.indstage;
+        s.ind_texmap = static_cast<int>((ind_order >> (3 * ind)) & 0x7);
+        s.ind_texcoord =
+            static_cast<int>((ind_order >> (3 * ind + 3)) & 0x7);
+      }
+    }
     uint32_t w = 0;
     if (get(0xC0u + 2u * static_cast<uint32_t>(i), &w)) {
       DecodeColorWord(w, &s.color, &s.color_op);
@@ -283,6 +587,7 @@ inline TevState SnapshotTevFromBp(
     }
     if (get(0xC1u + 2u * static_cast<uint32_t>(i), &w)) {
       DecodeAlphaWord(w, &s.alpha, &s.alpha_op);
+      DecodeAlphaSwap(w, &s.swap_ras, &s.swap_tex);
     } else {
       s.alpha = TevInput{0, 0, 7, 7};
       s.alpha_op = TevOp{0, 0, 0, 0, 0};
@@ -304,6 +609,10 @@ struct TevGenResult {
   int unsupported = 0;             // etapas en passthrough
   bool truncated = false;          // num_stages > 16 (defensa)
   uint32_t hash = 0;
+  // Modo alpha-test inyectado (0 = sin discard; si no, 1 +
+  // comp0 + 8*comp1 + 64*op). Parte de la clave de caché GL
+  // junto a hash (las refs son uniforms, no parte de la clave).
+  int alpha_test_mode = 0;
   std::string error;
 };
 
@@ -383,6 +692,77 @@ inline std::string CompColorExpr(const std::string& a, const std::string& b,
   return out;
 }
 
+// Expresion UV empaquetada para una coord: las 8 UV viajan
+// en 4 varyings vec4 (vUv01/vUv23/vUv45/vUv67) para no
+// superar el minimo de varyings de GLES2 (el APK es GLES3,
+// pero el empaquetado no cuesta nada). La COORD selecciona
+// el varying, el MAPA selecciona el sampler: el muestreo es
+// texture2D(uTex<texmap>, vUv<texcoord>). Fase A usaba
+// vUv<texmap>: mal cuando texcoord != texmap (caso UI etapa
+// 1: texcoord 0, texmap 1).
+inline std::string UvExpr(int texcoord) {
+  static const char* kPair[4] = {"vUv01", "vUv23", "vUv45", "vUv67"};
+  static const char* kSwz[8] = {"xy", "zw", "xy", "zw",
+                                "xy", "zw", "xy", "zw"};
+  if (texcoord < 0 || texcoord > 7) return "vec2(0.0)";
+  return std::string(kPair[texcoord / 2]) + "." + kSwz[texcoord];
+}
+
+// Codigo alpha-test (discard) para un GxAlphaTest. mode = 0
+// si el test siempre pasa (sin discard); si no, 1 + comp0 +
+// 8*comp1 + 64*op. uniforms solo declara las refs que usa un
+// comp no constante. El valor testeado es prev_a (alfa final
+// tras todas las etapas, como en HW).
+struct AlphaGlsl {
+  int mode = 0;
+  std::string uniforms;
+  std::string discard;
+};
+
+inline AlphaGlsl AlphaTestGlsl(const GxAlphaTest& at) {
+  AlphaGlsl out;
+  if (!at.present) return out;
+  auto comp_is_const = [](int c) { return c == 0 || c == 7; };
+  auto comp_val = [](int c) { return c == 7; };
+  auto comp_expr = [](int c, const std::string& ref) -> std::string {
+    switch (c) {
+      case 0: return "false";
+      case 1: return "(prev_a < " + ref + ")";
+      case 2: return "(prev_a == " + ref + ")";
+      case 3: return "(prev_a <= " + ref + ")";
+      case 4: return "(prev_a > " + ref + ")";
+      case 5: return "(prev_a != " + ref + ")";
+      case 6: return "(prev_a >= " + ref + ")";
+      default: return "true";
+    }
+  };
+  bool c0c = comp_is_const(at.comp0), c1c = comp_is_const(at.comp1);
+  bool v0 = comp_val(at.comp0), v1 = comp_val(at.comp1);
+  bool comb_const = false, comb_val = false;
+  switch (at.op) {
+    case 0: comb_const = c0c && c1c; comb_val = v0 && v1; break;  // AND
+    case 1: comb_const = c0c && c1c; comb_val = v0 || v1; break;  // OR
+    case 2: comb_const = c0c && c1c; comb_val = v0 != v1; break;  // XOR
+    default: comb_const = c0c && c1c; comb_val = v0 == v1; break;  // XNOR
+  }
+  if (comb_const && comb_val) return out;  // siempre pasa: sin codigo
+  out.mode = 1 + at.comp0 + 8 * at.comp1 + 64 * at.op;
+  if (!c0c) out.uniforms += "uniform float uAlphaRef0;\n";
+  if (!c1c) out.uniforms += "uniform float uAlphaRef1;\n";
+  if (comb_const) {
+    // Siempre falla: discard incondicional.
+    out.discard = "  discard;\n";
+    return out;
+  }
+  std::string t0 = c0c ? (v0 ? "true" : "false")
+                       : comp_expr(at.comp0, "uAlphaRef0");
+  std::string t1 = c1c ? (v1 ? "true" : "false")
+                       : comp_expr(at.comp1, "uAlphaRef1");
+  const char* op = at.op == 0 ? "&&" : (at.op == 1 ? "||" : (at.op == 2 ? "!=" : "=="));
+  out.discard = "  if (!(" + t0 + " " + op + " " + t1 + ")) discard;\n";
+  return out;
+}
+
 }  // namespace tev_detail
 
 // Genera el fragment shader GLSL ES 1.00 de un TevState.
@@ -393,9 +773,16 @@ inline std::string CompColorExpr(const std::string& a, const std::string& b,
 // > 16 se trunca a 16 con marca (defensa ante stream
 // corrupto). ValidateTevState sigue siendo el chequeo
 // estricto para quien lo quiera (tests de estructura).
-inline TevGenResult GenerateTevFragment(const TevState& st_in) {
+// alpha_test: estado fijo del draw (puede ser null o sin
+// present: entonces no hay discard). El modo va a
+// TevGenResult.alpha_test_mode (clave de caché GL).
+inline TevGenResult GenerateTevFragment(
+    const TevState& st_in, const GxAlphaTest* alpha_test = nullptr) {
   TevGenResult r;
   r.hash = TevHash(st_in);
+  tev_detail::AlphaGlsl alpha_glsl;
+  if (alpha_test != nullptr) alpha_glsl = tev_detail::AlphaTestGlsl(*alpha_test);
+  r.alpha_test_mode = alpha_glsl.mode;
   TevState st = st_in;
   if (st.num_stages < 1) {
     r.error = "num_stages < 1";
@@ -422,7 +809,11 @@ inline TevGenResult GenerateTevFragment(const TevState& st_in) {
         s.color.c == tev::kCcTexA || s.color.d == tev::kCcTexA) {
       if (s.texmap >= 0 && s.texmap <= 7) sampler_used[s.texmap] = true;
     }
-    bool chan1 = (s.colorchan == 1 || s.colorchan == 5);
+    // colorchan es el CAMPO BP (0 = set 0, 1 = set 1, 7 =
+    // NULL): solo 1 selecciona vColor1. (Fase A comparaba
+    // con el enum GX 1/5; el snapshot Tramo 5 ya entrega el
+    // campo, asi que 5 ya no significa nada aqui.)
+    bool chan1 = (s.colorchan == 1);
     if (s.color.a == tev::kCcRasC || s.color.b == tev::kCcRasC ||
         s.color.c == tev::kCcRasC || s.color.d == tev::kCcRasC ||
         s.color.a == tev::kCcRasA || s.color.b == tev::kCcRasA ||
@@ -439,17 +830,34 @@ inline TevGenResult GenerateTevFragment(const TevState& st_in) {
   src += "precision mediump float;\n";
   for (int m : r.sampler_maps) {
     src += "uniform sampler2D uTex" + std::to_string(m) + ";\n";
-    src += "varying vec2 vUv" + std::to_string(m) + ";\n";
   }
+  // UV y colores: varyings empaquetados, siempre declarados
+  // (el vertex shader TEV de gx_gl.cpp los escribe siempre;
+  // un varying declarado en FS y no escrito en VS no enlaza).
+  src += "varying vec4 vUv01;\nvarying vec4 vUv23;\n";
+  src += "varying vec4 vUv45;\nvarying vec4 vUv67;\n";
   src += "uniform vec3 uRegC0;\nuniform vec3 uRegC1;\nuniform vec3 uRegC2;\n";
   src += "uniform float uRegA0;\nuniform float uRegA1;\nuniform float uRegA2;\n";
   src += "uniform vec4 uKonst0;\nuniform vec4 uKonst1;\nuniform vec4 uKonst2;\nuniform vec4 uKonst3;\n";
+  src += alpha_glsl.uniforms;
   if (r.needs_color) src += "varying vec4 vColor;\n";
   if (r.needs_color1) src += "varying vec4 vColor1;\n";
   src += "void main() {\n";
   src += "  vec3 prev_c = vec3(0.0);\n  float prev_a = 0.0;\n";
-  src += "  vec3 regs_c0 = vec3(0.0);\n  vec3 regs_c1 = vec3(0.0);\n  vec3 regs_c2 = vec3(0.0);\n";
-  src += "  float regs_a0 = 0.0;\n  float regs_a1 = 0.0;\n  float regs_a2 = 0.0;\n";
+  // REGISTROS UNIFICADOS (correccion Tramo 5, probada con la
+  // sombra literal): los inputs C0/C1/C2 (A0/A1/A2) leen LOS
+  // MISMOS registros que escriben los out_reg, y esos
+  // registros se inicializan con las constantes TevColor de
+  // BP (uniforms uRegC/uRegA, decodificadas de 0xE0-0xE7).
+  // La fase A los trataba como cosas distintas (C0 ->
+  // uniform, out_reg -> local a 0): bajo ese modelo, la
+  // escritura REG0 de la etapa base de la sombra seria
+  // codigo muerto (ninguna etapa posterior la leeria) y la
+  // comparacion COMP leeria la constante en vez de la
+  // muestra. Con el modelo unificado, la etapa base escribe
+  // regs_c0 y la etapa COMP lo lee: flujo real.
+  src += "  vec3 regs_c0 = uRegC0;\n  vec3 regs_c1 = uRegC1;\n  vec3 regs_c2 = uRegC2;\n";
+  src += "  float regs_a0 = uRegA0;\n  float regs_a1 = uRegA1;\n  float regs_a2 = uRegA2;\n";
 
   for (int i = 0; i < n; ++i) {
     const TevStage& s = st.stages[i];
@@ -476,6 +884,10 @@ inline TevGenResult GenerateTevFragment(const TevState& st_in) {
       }
       bad |= (s.kcolor_sel < 0 || s.kcolor_sel > 27 ||
               s.kalpha_sel < 0 || s.kalpha_sel > 27);
+      // Ids swap fuera de [0,3] (solo posibles en estados
+      // construidos a mano: el BP da 2 bits): passthrough.
+      bad |= (s.swap_ras < 0 || s.swap_ras > 3 ||
+              s.swap_tex < 0 || s.swap_tex > 3);
       if (bad) {
         ++r.unsupported;
         continue;
@@ -501,6 +913,25 @@ inline TevGenResult GenerateTevFragment(const TevState& st_in) {
       ++r.unsupported;  // passthrough de la etapa
       continue;
     }
+    // Sin texcoord valida no se puede muestrear (texmap
+    // valido + texcoord NULL = material roto en el juego).
+    bool bad_texcoord = (s.texcoord < 0 || s.texcoord > 7);
+    if (bad_texcoord && s.texmap != 255 && (uses_tex_c || uses_tex_a)) {
+      ++r.unsupported;
+      continue;
+    }
+    // Swap de la etapa (identidad si la tabla es identidad o
+    // tiene una entrada fuera de [0,3]).
+    auto swap_active = [&](const int tab[4]) {
+      for (int k = 0; k < 4; ++k)
+        if (tab[k] < 0 || tab[k] > 3) return false;
+      return !(tab[0] == 0 && tab[1] == 1 && tab[2] == 2 &&
+               tab[3] == 3);
+    };
+    const int* ras_tab = st.swap_tables[s.swap_ras];
+    const int* tex_tab = st.swap_tables[s.swap_tex];
+    bool ras_swap = swap_active(ras_tab);
+    bool tex_swap = swap_active(tex_tab);
     std::string pfx = "  ";  // cuerpo de main
     std::string tex_c, tex_a;
     if (uses_tex_c || uses_tex_a) {
@@ -508,37 +939,61 @@ inline TevGenResult GenerateTevFragment(const TevState& st_in) {
         tex_c = "vec3(0.0)";
         tex_a = "0.0";
       } else {
+        // Sampler = texmap, UV = texcoord (ver UvExpr).
         std::string smp = "texture2D(uTex" + std::to_string(s.texmap) +
-                          ", vUv" + std::to_string(s.texmap) + ")";
-        if (uses_tex_c) {
-          src += pfx + "vec3 tex" + std::to_string(i) + "c = " + smp +
-                 ".rgb;\n";
-          tex_c = "tex" + std::to_string(i) + "c";
-        }
-        if (uses_tex_a) {
-          src += pfx + "float tex" + std::to_string(i) + "a = " + smp +
-                 ".a;\n";
-          tex_a = "tex" + std::to_string(i) + "a";
+                          ", " + tev_detail::UvExpr(s.texcoord) + ")";
+        if (tex_swap) {
+          // Muestra completa: la permutacion de alfa puede
+          // tomar R/G/B, no solo A.
+          src += pfx + "vec4 tex" + std::to_string(i) + " = " + smp +
+                 ";\n";
+          static const char* kCh[4] = {"r", "g", "b", "a"};
+          std::string v = "tex" + std::to_string(i);
+          tex_c = "vec3(" + v + "." + kCh[tex_tab[0]] + ", " + v + "." +
+                  kCh[tex_tab[1]] + ", " + v + "." + kCh[tex_tab[2]] +
+                  ")";
+          tex_a = v + "." + kCh[tex_tab[3]];
+        } else {
+          if (uses_tex_c) {
+            src += pfx + "vec3 tex" + std::to_string(i) + "c = " + smp +
+                   ".rgb;\n";
+            tex_c = "tex" + std::to_string(i) + "c";
+          }
+          if (uses_tex_a) {
+            src += pfx + "float tex" + std::to_string(i) + "a = " + smp +
+                   ".a;\n";
+            tex_a = "tex" + std::to_string(i) + "a";
+          }
         }
       }
     }
-    std::string ras_c = (s.colorchan == 1 || s.colorchan == 5)
-                            ? "vColor1.rgb"
-                            : "vColor.rgb";
-    std::string ras_a = (s.colorchan == 1 || s.colorchan == 5)
-                            ? "vColor1.a"
-                            : "vColor.a";
+    std::string ras_base = (s.colorchan == 1) ? "vColor1" : "vColor";
+    std::string ras_c, ras_a;
+    if (ras_swap) {
+      static const char* kCh[4] = {"r", "g", "b", "a"};
+      src += pfx + "vec3 ras" + std::to_string(i) + "c = vec3(" +
+             ras_base + "." + kCh[ras_tab[0]] + ", " + ras_base + "." +
+             kCh[ras_tab[1]] + ", " + ras_base + "." + kCh[ras_tab[2]] +
+             ");\n";
+      src += pfx + "float ras" + std::to_string(i) + "a = " + ras_base +
+             "." + kCh[ras_tab[3]] + ";\n";
+      ras_c = "ras" + std::to_string(i) + "c";
+      ras_a = "ras" + std::to_string(i) + "a";
+    } else {
+      ras_c = ras_base + ".rgb";
+      ras_a = ras_base + ".a";
+    }
     int stage_unsupported_before = r.unsupported;
     auto color_expr = [&](int sel) -> std::string {
       switch (sel) {
         case 0: return "prev_c";
         case 1: return "vec3(prev_a)";
-        case 2: return "uRegC0";
-        case 3: return "vec3(uRegA0)";
-        case 4: return "uRegC1";
-        case 5: return "vec3(uRegA1)";
-        case 6: return "uRegC2";
-        case 7: return "vec3(uRegA2)";
+        case 2: return "regs_c0";
+        case 3: return "vec3(regs_a0)";
+        case 4: return "regs_c1";
+        case 5: return "vec3(regs_a1)";
+        case 6: return "regs_c2";
+        case 7: return "vec3(regs_a2)";
         case 8: return tex_c;
         case 9: return "vec3(" + tex_a + ")";
         case 10: return ras_c;
@@ -553,9 +1008,9 @@ inline TevGenResult GenerateTevFragment(const TevState& st_in) {
     auto alpha_expr = [&](int sel) -> std::string {
       switch (sel) {
         case 0: return "prev_a";
-        case 1: return "uRegA0";
-        case 2: return "uRegA1";
-        case 3: return "uRegA2";
+        case 1: return "regs_a0";
+        case 2: return "regs_a1";
+        case 3: return "regs_a2";
         case 4: return tex_a;
         case 5: return ras_a;
         case 6: return tev_detail::KonstAlphaExpr(s.kalpha_sel, &r.unsupported);
@@ -624,6 +1079,9 @@ inline TevGenResult GenerateTevFragment(const TevState& st_in) {
     }
     ++r.stages_emitted;
   }
+  // Alpha-compare: sobre el alfa FINAL (prev tras todas las
+  // etapas), antes de asignar gl_FragColor.
+  src += alpha_glsl.discard;
   src += "  gl_FragColor = vec4(prev_c, prev_a);\n";
   src += "}\n";
   r.fragment = src;
@@ -641,21 +1099,28 @@ class TevProgramCache {
 
   // Devuelve el GLSL del estado (genera en miss, reutiliza
   // en hit) y acumula contadores en stats si no es null.
-  const std::string& Get(const TevState& st, TevGenResult* stats) {
+  // La clave mezcla el hash TEV con el modo alpha-test (las
+  // refs son uniforms y NO forman parte de la clave).
+  const std::string& Get(const TevState& st, TevGenResult* stats,
+                         const GxAlphaTest* alpha_test = nullptr) {
     uint32_t h = TevHash(st);
-    auto it = programs_.find(h);
+    int mode = 0;
+    if (alpha_test != nullptr && alpha_test->present)
+      mode = tev_detail::AlphaTestGlsl(*alpha_test).mode;
+    uint32_t key = h ^ (static_cast<uint32_t>(mode) * 2654435761u);
+    auto it = programs_.find(key);
     if (it != programs_.end()) {
       if (stats != nullptr) *stats = it->second.second;
       return it->second.first;
     }
-    TevGenResult gen = GenerateTevFragment(st);
+    TevGenResult gen = GenerateTevFragment(st, alpha_test);
     if (programs_.size() >= kMaxPrograms && !order_.empty()) {
       programs_.erase(order_.front());
       order_.erase(order_.begin());
     }
     auto inserted = programs_.emplace(
-        h, std::make_pair(gen.fragment, gen));
-    order_.push_back(h);
+        key, std::make_pair(gen.fragment, gen));
+    order_.push_back(key);
     ++compiled_;
     if (stats != nullptr) *stats = gen;
     return inserted.first->second.first;

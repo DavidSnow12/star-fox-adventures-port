@@ -25,19 +25,32 @@
 //     0x80, 4 vertices, atributos directos, VAT con viewport y
 //     proyeccion): cualquier otro draw se cuenta en
 //     quads_skipped_ y no se dibuja.
-//   - TEV fase A (ver renderer/gx_tev.h): cada draw con
-//     snapshot TEV genera su fragment shader por hash
-//     (TevProgramCache) y se cuenta en los contadores tev_*.
-//     El programa TEV compilado en GL solo se USA cuando es
-//     resoluble con el formato de vertice actual: sin color
-//     de vertice (RASC/RASA) y con como mucho 1 sampler, cuyo
-//     mapa es el tex_map del draw (los demas mapas no tienen
-//     textura resuelta por draw todavia, GX-RESTO.md P0.2).
-//     Cualquier otro draw TEV cae al programa fijo anterior
-//     con contador tev_fallback_ (nunca crash, nunca magenta
-//     por TEV). Un draw sin snapshot (has_tev=false, solo
+//   - TEV Tramo 5 (ver renderer/gx_tev.h): cada draw con
+//     snapshot TEV genera su fragment shader por hash +
+//     modo alpha-test (TevProgramCache) y se cuenta en los
+//     contadores tev_*. El formato de vertice TEV entrega
+//     posicion + 8 UV por mapa (empaquetadas vUv01/23/45/67)
+//     + color0/color1 (26 floats/vertice), asi que el
+//     programa TEV se USA siempre que genera (gen.ok): con
+//     color de vertice y con hasta 8 samplers simultaneos
+//     (unidades = mapa; mapa sin textura resuelta -> magenta
+//     1x1, igual que el host). Solo cae al programa fijo
+//     anterior si el GLSL falla o no compila/enlaza
+//     (tev_fallback_), nunca por falta de color o de
+//     samplers. Un draw sin snapshot (has_tev=false, solo
 //     draws construidos a mano) usa siempre el camino
 //     anterior sin tocar los contadores TEV.
+//   - Estado fijo Tramo 5 (snapshot GxFixedState del draw):
+//     depth/blend/cull/scissor/colormask se aplican en GL
+//     por draw (palabras presentes; palabra ausente = no se
+//     toca el estado GL, no se inventa un defecto). Blend
+//     logico (sin equivalente GLES) => blend desactivado +
+//     contador fixed_logic_fallback_. Fog => solo contador
+//     fixed_fog_draws_ (sin codigo shader: A/B/C no
+//     recuperables de BP, ver gx.h). Winding tras el volteo
+//     Y del traductor: SUPOSICION (ver gx_gl.cpp):
+//     glFrontFace(GL_CW); verificar en dispositivo con un
+//     triangulo de cull conocido.
 //   - Texturas THP: el contenido de una textura decodificada
 //     cambia en cada frame aunque su texObj sea el mismo, asi
 //     que DrawDraws() vuelve a subir cada textura distinta en
@@ -100,31 +113,45 @@ class GxGlRenderer {
   int TevUnsupported() const { return tev_unsupported_; }
   int TevProgramsCompiled() const { return tev_programs_compiled_; }
   int TevFallback() const { return tev_fallback_; }
+  // Contadores de estado fijo Tramo 5.
+  int FixedLogicFallback() const { return fixed_logic_fallback_; }
+  int FixedFogDraws() const { return fixed_fog_draws_; }
   const std::string& LastError() const { return last_error_; }
 
  private:
-  // Programa TEV compilado en GL (por hash de TevState).
+  // Programa TEV compilado en GL (por hash de TevState +
+  // modo alpha-test).
   struct TevGlProgram {
     GLuint program = 0;
     GLint loc_pos = -1;
-    GLint loc_uv = -1;
+    GLint loc_uv01 = -1;
+    GLint loc_uv23 = -1;
+    GLint loc_uv45 = -1;
+    GLint loc_uv67 = -1;
+    GLint loc_color0 = -1;
+    GLint loc_color1 = -1;
     GLint loc_tex[8] = {-1, -1, -1, -1, -1, -1, -1, -1};
     GLint loc_regc[3] = {-1, -1, -1};
     GLint loc_rega[3] = {-1, -1, -1};
     GLint loc_konst[4] = {-1, -1, -1, -1};
+    GLint loc_alpha_ref0 = -1;
+    GLint loc_alpha_ref1 = -1;
   };
   const TevGlProgram* GetOrCompileTevProgram(const TevGenResult& gen);
-  void DrawTriVerticesTev(const GlTri& tri, GLuint tex, bool use_tex,
-                          const TevGlProgram& tp, const TevState& tev);
-  // Resoluble con el formato de vertice actual (ver cabecera).
+  // Dibuja un triangulo TEV: tex_by_map[m] = textura GL del
+  // mapa m (DrawDraws pone magenta si el mapa no tiene carga
+  // o no se resolvio). fixed aporta las refs alpha.
+  void DrawTriVerticesTev(const GlTri& tri, const GLuint tex_by_map[8],
+                          const TevGlProgram& tp, const TevState& tev,
+                          const GxFixedState& fixed);
+  // Aplica el estado fijo GL del draw (palabras presentes;
+  // ausentes no tocan el estado). Ver gx_gl.cpp.
+  void ApplyFixedState(const GxFixedState& f);
+  // Usable = el GLSL genero bien (Tramo 5: color y varios
+  // samplers ya estan soportados por el formato de vertice).
   static bool TevGlUsable(const TevGenResult& gen, const GxDraw& d) {
-    if (!gen.ok) return false;
-    if (gen.needs_color || gen.needs_color1) return false;
-    if (gen.sampler_maps.size() > 1) return false;
-    if (gen.sampler_maps.size() == 1 &&
-        gen.sampler_maps[0] != d.tex_map)
-      return false;
-    return true;
+    (void)d;
+    return gen.ok;
   }
 
   GLuint UploadTexture(const uint8_t* rgba, int width, int height);
@@ -145,9 +172,10 @@ class GxGlRenderer {
   int quads_skipped_ = 0;
   int tris_drawn_ = 0;
   int textures_uploaded_ = 0;
-  // TEV fase A: caché de texto + programas GL compilados.
+  // TEV: caché de texto + programas GL compilados (clave:
+  // hash TEV + modo alpha-test).
   TevProgramCache tev_cache_;
-  std::map<uint32_t, TevGlProgram> tev_programs_;
+  std::map<std::pair<uint32_t, int>, TevGlProgram> tev_programs_;
   bool tev_compile_failed_logged_ = false;
   int tev_draws_ = 0;
   int tev_stages_total_ = 0;
@@ -155,6 +183,9 @@ class GxGlRenderer {
   int tev_unsupported_ = 0;
   int tev_programs_compiled_ = 0;
   int tev_fallback_ = 0;
+  int fixed_logic_fallback_ = 0;
+  int fixed_fog_draws_ = 0;
+  int viewport_h_ = 480;  // altura GL para el flip de scissor
   std::string last_error_;
 };
 

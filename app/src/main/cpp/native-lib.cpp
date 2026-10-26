@@ -6,6 +6,13 @@
 //     existen (o pide el picker SAF si no existen, Fase 13).
 //   - APP_CMD_TERM_WINDOW / APP_CMD_DESTROY: apaga en orden.
 //   - APP_CMD_GAINED_FOCUS / LOST_FOCUS: pausa/reanuda el frame.
+//   - Rumble fase B: APP_CMD_PAUSE y LOST_FOCUS detienen el
+//     rumble sin apagar el runtime (StopAllRumble: cancela
+//     el Vibrator y resetea el tracker, asi que reanudar
+//     vuelve a vibrar); TERM_WINDOW / DESTROY /
+//     destroyRequested apagan el runtime y su Shutdown()
+//     vuelve a cancelar. La capa Java (onPause/onDestroy)
+//     cancela ademas por su lado: doble garantia.
 //   - Sin ventana o sin foco: no se dibuja, se espera eventos.
 //   - Input: se entrega al módulo Input (que escribe el
 //     PadState que PADRead vuelca al juego).
@@ -30,6 +37,7 @@
 
 #include <android/native_window.h>
 
+#include "gamecube_runtime/rumble_jni.h"
 #include "gamecube_runtime/runtime.h"
 #include "log.h"
 #include "platform/platform.h"
@@ -40,6 +48,13 @@ namespace {
 struct AppState {
   sfa::GameCubeRuntime runtime;
   sfa::Renderer renderer;
+  // Rumble fase B: vive en AppState (no en el runtime) porque
+  // necesita vm + actividad del glue, que el runtime no
+  // conoce. Se inyecta en el HLE en INIT_WINDOW y sobrevive
+  // a Shutdown(): el runtime solo guarda el puntero, como
+  // con el PadState de Input. Sin actividad/JVM, Ready() es
+  // false y el sink es inerte (no-op, sin crash).
+  sfa::JniVibratorSink rumble_sink;
   bool has_focus = false;
   bool window_ready = false;
   bool data_found = false;   // existe sfa-data/sys/main.dol
@@ -143,6 +158,59 @@ void RequestSafPicker(struct android_app* app) {
   if (attached) vm->DetachCurrentThread();
 }
 
+// Pide el picker SAF de audio a MainActivity por JNI
+// ("anadir audio", Tramo 5): mismo patron que
+// RequestSafPicker, pero metodo requestAudioFolder().
+// [[maybe_unused]] deliberado: todavia no hay llamador.
+// No se auto-dispara en ningun punto del bucle (un picker
+// que se abriera solo en mitad de partida seria peor que
+// no tener boton): el llamador sera el overlay de
+// ajustes cuando exista; la via Java (picker -> copia
+// solo-audio -> verificacion -> .saf-audio-done) esta
+// completa y el juego ya cargado lee el audio nuevo en
+// vivo (el bridge reconstruye su indice ADP al primer
+// fallo de busqueda). No se ha robado ninguna zona
+// tactil del juego para este picker.
+[[maybe_unused]] void RequestSafAudioPicker(struct android_app* app) {
+  if (app->activity == nullptr || app->activity->vm == nullptr ||
+      app->activity->clazz == nullptr) {
+    SFA_LOGE("native: SAF audio no disponible (sin activity/JVM)");
+    return;
+  }
+  JavaVM* vm = app->activity->vm;
+  JNIEnv* env = nullptr;
+  bool attached = false;
+  if (vm->GetEnv(reinterpret_cast<void**>(&env), JNI_VERSION_1_6) !=
+      JNI_OK) {
+    if (vm->AttachCurrentThread(&env, nullptr) != JNI_OK || env == nullptr) {
+      SFA_LOGE("native: SAF audio: no se pudo asociar el hilo a la JVM");
+      return;
+    }
+    attached = true;
+  }
+  jclass cls = env->GetObjectClass(app->activity->clazz);
+  if (cls == nullptr) {
+    SFA_LOGE("native: SAF audio: sin clase de actividad");
+    if (attached) vm->DetachCurrentThread();
+    return;
+  }
+  jmethodID mid = env->GetMethodID(cls, "requestAudioFolder", "()V");
+  if (mid == nullptr) {
+    SFA_LOGE("native: SAF audio: metodo requestAudioFolder no encontrado");
+    if (attached) vm->DetachCurrentThread();
+    return;
+  }
+  env->CallVoidMethod(app->activity->clazz, mid);
+  if (env->ExceptionCheck()) {
+    env->ExceptionClear();
+    SFA_LOGE("native: SAF audio: excepcion al pedir el picker");
+  } else {
+    SFA_LOGI("native: SAF audio: picker solicitado (anadir audio, "
+             "sin reimportar sys/ ni files/)");
+  }
+  if (attached) vm->DetachCurrentThread();
+}
+
 // Si Java ya termino la copia SAF, carga el juego (una sola vez).
 // Se llama desde el bucle principal, no en cada iteracion:
 // cada 128 vueltas sin juego en marcha, un fopen barato.
@@ -187,6 +255,15 @@ void HandleCmd(struct android_app* app, int32_t cmd) {
               ANativeWindow_getWidth(app->window),
               ANativeWindow_getHeight(app->window));
           state->runtime.Init();
+          // Rumble fase B: inyectar el sink JNI en el HLE
+          // (idempotente en re-INIT_WINDOW: mismo puntero).
+          // Init() solo guarda vm/actividad, no vibra.
+          if (app->activity != nullptr) {
+            state->rumble_sink.Init(app->activity->vm,
+                                    app->activity);
+            state->runtime.HleState()->SetRumbleSink(
+                &state->rumble_sink);
+          }
           if (!TryLoadData(app, state)) {
             SFA_LOGI("native: sin datos sfa-data (modo clear + quad "
                      "de prueba; ver PORT-STATUS, via de datos)");
@@ -207,11 +284,21 @@ void HandleCmd(struct android_app* app, int32_t cmd) {
       state->renderer.Shutdown();
       state->window_ready = false;
       break;
+    case APP_CMD_PAUSE:
+      // Rumble fase B: pausar detiene el motor sin apagar el
+      // runtime (el juego puede reanudar y re-vibrar: el
+      // tracker queda reseteado). La capa Java onPause
+      // cancela ademas por su lado.
+      state->runtime.StopAllRumble();
+      break;
     case APP_CMD_GAINED_FOCUS:
       state->has_focus = true;
       break;
     case APP_CMD_LOST_FOCUS:
       state->has_focus = false;
+      // Sin foco el bucle ya no ejecuta frames: el motor no
+      // debe seguir vibrando por un RUMBLE anterior.
+      state->runtime.StopAllRumble();
       break;
     case APP_CMD_DESTROY:
       state->runtime.Shutdown();

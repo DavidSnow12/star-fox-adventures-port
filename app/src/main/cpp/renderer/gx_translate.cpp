@@ -82,6 +82,46 @@ bool TransformVertex(const GxDraw& draw, const GxVertex& v, int canvas_w,
 
 }  // namespace
 
+bool ApplyTexMatrix(const float m[12], float s, float t, float* s_out,
+                    float* t_out) {
+  if (m == nullptr || s_out == nullptr || t_out == nullptr) return false;
+  float sp = m[0] * s + m[1] * t + m[2];
+  float tp = m[4] * s + m[5] * t + m[6];
+  float wp = m[8] * s + m[9] * t + m[10];
+  if ((m[8] != 0.0f || m[9] != 0.0f || m[10] != 0.0f) && wp != 0.0f) {
+    sp /= wp;
+    tp /= wp;
+  }
+  *s_out = sp;
+  *t_out = tp;
+  return true;
+}
+
+namespace {
+
+// UV final de un vertice para un mapa: UV directa con la
+// matriz TnMIDX del vertice si el draw la trae (distinta de
+// identidad); sin matriz o sin UV en el vertice: UV cruda
+// (0,0 si el vertice no trae esa coord).
+void FinalUv(const GxDraw& draw, const GxVertex& v, int map, float* s_out,
+             float* t_out) {
+  float s = v.has_uv[map] ? v.uv_s[map] : 0.0f;
+  float t = v.has_uv[map] ? v.uv_t[map] : 0.0f;
+  if (v.has_uv[map]) {
+    int idx = v.tex_mtx_idx_arr[map];
+    if (idx != 60) {
+      auto it = draw.tex_matrices.find(idx);
+      if (it != draw.tex_matrices.end() && it->second.size() == 12) {
+        ApplyTexMatrix(it->second.data(), s, t, &s, &t);
+      }
+    }
+  }
+  *s_out = s;
+  *t_out = t;
+}
+
+}  // namespace
+
 bool GxDrawToGlQuads(const GxDraw& draw, int canvas_w, int canvas_h,
                      GlQuad* out) {
   if (out == nullptr) return false;
@@ -115,13 +155,27 @@ bool GxDrawToGlTris(const GxDraw& draw, int canvas_w, int canvas_h,
     GlTri tri;
     const size_t idx[3] = {a, b, c};
     for (int k = 0; k < 3; ++k) {
+      const GxVertex& v = draw.verts[idx[k]];
       tri.x[k] = nx[idx[k]];
       tri.y[k] = ny[idx[k]];
-      tri.s[k] = draw.verts[idx[k]].s;
-      tri.t[k] = draw.verts[idx[k]].t;
+      tri.s[k] = v.s;
+      tri.t[k] = v.t;
+      // Color vertice (sin color: blanco opaco, como el parser).
+      tri.cr0[k] = v.r / 255.0f;
+      tri.cg0[k] = v.g / 255.0f;
+      tri.cb0[k] = v.b / 255.0f;
+      tri.ca0[k] = v.has_color ? v.a / 255.0f : 1.0f;
+      tri.cr1[k] = v.r1 / 255.0f;
+      tri.cg1[k] = v.g1 / 255.0f;
+      tri.cb1[k] = v.b1 / 255.0f;
+      tri.ca1[k] = v.has_color1 ? v.a1 / 255.0f : 1.0f;
+      for (int m = 0; m < 8; ++m) {
+        FinalUv(draw, v, m, &tri.uv_s[k][m], &tri.uv_t[k][m]);
+      }
     }
     tri.tex_obj = draw.tex_obj;
     tri.tex_map = draw.tex_map;
+    for (int m = 0; m < 8; ++m) tri.tex_objs[m] = draw.tex_objs[m];
     out->push_back(tri);
   };
   const size_t n = draw.verts.size();

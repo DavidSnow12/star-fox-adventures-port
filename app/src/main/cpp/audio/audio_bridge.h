@@ -21,10 +21,12 @@
 //     total de la cola serial anterior).
 //   - Triggers SFX por id de Sfx.bin: UNA variante por
 //     disparo (Fase 16: los 4 campos son variantes
-//     alternativas por pesos, no 4 sonidos), ganancia
-//     vol_base/127 (el volumen maestro lo aplica
-//     Audio::SubmitBuffer, no el bridge, para no
-//     aplicarlo dos veces).
+//     alternativas por pesos, no 4 sonidos), resuelta
+//     trigger -> FX -> muestra por fx_table.h (Tramo 5;
+//     antes se usaba la variante como muestra directa,
+//     WAV equivocado), ganancia vol_base/127 (el volumen
+//     maestro lo aplica Audio::SubmitBuffer, no el bridge,
+//     para no aplicarlo dos veces).
 // Que SOLO cuenta (sin reproducir): sndSeqPlayEx,
 // AudioStream_StartPrepared y cualquier otra entrada, porque
 // no es un fichero de audio (sndSeqPlayEx: secuenciador
@@ -61,12 +63,35 @@
 // sin crashear y sin tocar el juego. En Android el wav_root
 // es <base>/sfa-data/audio (ver native-lib); en host, la
 // carpeta assets/extraidos/audio del repo.
+//
+// Streams (Tramo 5, streaming ADP + cache PCM): OnStreamPlay
+// ya NO carga el WAV entero ni decodifica el ADP entero.
+// Orden: cache PCM valida -> ADP por bloques (mientras
+// suena, escribe la cache; al llegar a EOF la promueve) ->
+// WAV por el camino viejo en memoria -> silencio +
+// unresolved + log, nunca crash. El ADP se resuelve por
+// indice insensible a caso sobre audio/streams/ (ver
+// adp_cache.h), no por sustitucion ingenua de extension.
+// La voz de stream en streaming entrega por bloques de
+// hasta kFeedFrames resampleados a 48 kHz (el resampleo
+// incremental comparte la matematica de ResampleToStereo,
+// sin chasquidos en fronteras de bloque). Los SFX siguen
+// por el camino en memoria (cortos, < 1 s tipico).
+// La cache vive en <base>/sfa-data/audio-cache/v1/ (ver
+// adp_cache.h); el bridge la deriva de wav_root. Si el
+// usuario anade audio a mitad de sesion (picker SAF
+// "anadir audio"), el indice se reconstruye al primer
+// fallo de busqueda, asi que el audio nuevo suena sin
+// reiniciar ni reimportar.
 
 #include <array>
 #include <cstdint>
+#include <memory>
 #include <string>
 #include <vector>
 
+#include "audio/adp_cache.h"
+#include "audio/adp_stream.h"
 #include "audio/audio.h"
 
 namespace sfa {
@@ -79,7 +104,19 @@ class AudioBridge {
   void SetAudio(Audio* audio) { audio_ = audio; }
   void SetWavRoot(const char* root) {
     wav_root_ = root != nullptr ? root : "";
+    cache_root_ = DeriveCacheRoot(wav_root_);
+    indexed_root_.clear();
+    adp_index_.Clear();
+    cache_cleaned_ = false;
   }
+  // Techo LRU de la cache PCM (por defecto 2.048 MiB).
+  // Solo para tests host; en la APK no se toca.
+  void SetCacheCapBytes(uint64_t cap) { cache_cap_ = cap; }
+  uint64_t CacheCapBytes() const { return cache_cap_; }
+  const std::string& CacheRoot() const { return cache_root_; }
+  // Via del ultimo stream en streaming: "cache", "adp" o
+  // "" (WAV en memoria o ningun stream en streaming).
+  const std::string& LastStreamVia() const { return last_stream_via_; }
 
   // Entradas del hook del chassis (pc + r3/r4/r5/r6/r7 del
   // juego). Devuelve true si la entrada produjo
@@ -98,17 +135,21 @@ class AudioBridge {
   void OnSfxStop();     // Solo las voces SFX (futuros hooks).
   // Trigger SFX por id de Sfx.bin: encola UNA variante
   // (la primera no nula; ver comentario Fase 16 en el .cpp).
-  // Devuelve 1 si se encoló, 0 si no (sin muestra directa,
-  // id desconocido, WAV ilegible o voces llenas).
-  // NOTA Fase 18: este helper de test trata el campo de
-  // Sfx.bin como ID de muestra directo, y la Fase 18
-  // demostró que ese campo es un ID FX (ver OnFxStart).
-  // El camino REAL del juego no pasa por aquí: pasa por
-  // sndFXStartEx -> OnFxStart. Corregir este helper para
-  // que pase por la tabla FX y actualizar los tests
-  // Fase 16/17 (que fijan muestra 175 / 79068 frames para
-  // trigger 13) queda como trabajo pendiente documentado,
-  // no se hace aquí para no romper la suite validada.
+  // Devuelve 1 si se encoló, 0 si no (sin variante, FX
+  // fuera de tabla, WAV ilegible o voces llenas).
+  // TRAMO 5 (corrección Fase 18): los campos de
+  // SfxTriggerEntry::samples[] NO son muestras, son IDs FX
+  // (sfxIds[] de Sfx.bin). La resolución es trigger -> FX
+  // -> muestra por audio/fx_table.h (kFxSample, 833
+  // entradas verificadas; macro == fxId en 0/833), y luego
+  // EnqueueSample, el mismo camino que OnFxStart. Ejemplo:
+  // trigger 13 -> FX 175 -> muestra 841 (NO 175; la
+  // muestra 175 era el WAV equivocado de antes). El camino
+  // REAL del juego sigue sin pasar por aquí: pasa por
+  // sndFXStartEx -> OnFxStart, que NO se toca en este
+  // tramo. Reserva: FX 96/162/820 usan la muestra lineal
+  // de su macro (branch_before_sample=1, pendiente de
+  // confirmación por ejecución MCMD completa).
   int OnSfxTrigger(uint32_t trigger_id);
 
   // SFX real por ID FX (Fase 18, hook sndFXStartEx
@@ -190,10 +231,27 @@ class AudioBridge {
   const char* LookupStreamWav(uint32_t id) const;
   const struct MusyxSampleEntry* LookupSampleEntry(
       uint32_t id) const;
+  // Resuelve el .adp de un WAV de stream por indice
+  // insensible a caso (con reconstruccion del indice al
+  // primer fallo, para audio anadido a mitad de sesion);
+  // si el indice no lo encuentra, intenta la sustitucion
+  // directa .wav -> .adp si ese fichero existe. "" si no
+  // hay ADP (entonces el llamador cae al WAV).
+  std::string AdpRelForWav(const char* wav_rel);
+  // Arranca una voz de stream en streaming (cache o ADP).
+  // Sustituye cualquier voz de stream anterior (vector o
+  // streaming). Devuelve false si la fuente esta vacia.
+  bool StartStreamSource(std::unique_ptr<StreamSource> src,
+                         const char* rel, const char* via,
+                         uint32_t id);
+  void CloseStreamSource();
+  bool StreamSourceActive() const {
+    return stream_source_ != nullptr && !stream_source_->AtEof();
+  }
   // Encola UNA muestra MusyX como voz SFX (carga WAV,
   // resamplea a 48 kHz estéreo, aplica bucle por metadato
-  // y ganancia). Usado por OnFxStart; OnSfxTrigger conserva
-  // su propio camino para no romper la suite Fase 16/17.
+  // y ganancia). Usado por OnFxStart y, desde el Tramo 5,
+  // también por OnSfxTrigger (tras resolver FX -> muestra).
   bool EnqueueSample(uint32_t sample_id, float gain);
   // Carga un WAV relativo a wav_root_, lo resamplea a
   // estereo 48.000 Hz y lo encola como voz (stream o SFX).
@@ -215,8 +273,20 @@ class AudioBridge {
 
   Audio* audio_ = nullptr;
   std::string wav_root_;
+  std::string cache_root_;
+  std::string indexed_root_;
+  AdpIndex adp_index_;
+  bool cache_cleaned_ = false;
+  uint64_t cache_cap_ = kAdpCacheCapBytes;
+  std::string last_stream_via_;
   std::array<Voice, kMaxSfxVoices> sfx_voices_;
-  Voice stream_voice_;
+  Voice stream_voice_;  // Solo para el fallback WAV en memoria.
+  // Voz de stream en streaming (cache o ADP). Excluyente
+  // con stream_voice_: solo una de las dos esta activa.
+  std::unique_ptr<StreamSource> stream_source_;
+  // Bufer reutilizado por Tick() para el bloque del stream
+  // (evita reservar por Tick en el hilo del juego).
+  std::vector<int16_t> stream_scratch_;
   uint64_t dropped_sfx_ = 0;
   std::vector<Played> played_;
   std::vector<Counted> counted_;

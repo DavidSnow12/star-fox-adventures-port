@@ -14,6 +14,20 @@
         android:required="false" />
     <uses-feature android:name="android.hardware.screen.landscape" />
 
+    <!-- Rumble fase B: VIBRATE es permiso normal (se concede
+         en la instalacion, sin dialogo en tiempo de ejecucion
+         y sin peticion runtime). Sin el, Vibrator.vibrate()
+         lanza SecurityException y el sink JNI la registraria
+         como fallo en cada transicion; con el, no hay dialogo
+         que el usuario tenga que aceptar. El feature es
+         required=false a proposito: un dispositivo sin motor
+         (o un emulador) debe instalar igual, y Java comprueba
+         hasVibrator() antes de vibrar (doble guarda). -->
+    <uses-permission android:name="android.permission.VIBRATE" />
+    <uses-feature
+        android:name="android.hardware.vibrator"
+        android:required="false" />
+
     <!-- android:debuggable="true" SOLO para APKs de prueba
          (Fase 0 arranque, Fase 10 GX): permite leer boot.log
          con run-as. Las APKs de prueba se etiquetan como tales

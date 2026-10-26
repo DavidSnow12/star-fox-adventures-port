@@ -29,34 +29,66 @@ const char* kFragmentShader =
     "  }\n"
     "}\n";
 
-// Vertex shader del camino TEV: la unica UV del formato de
-// vertice actual se replica en vUv0..vUv7, asi que un programa
-// TEV de 1 sampler muestrea bien sea cual sea su mapa (el
-// mapa es el tex_map del draw, ver TevGlUsable). El color de
-// vertice NO se entrega aqui: un programa TEV que lo pida no
-// es usable y cae al programa fijo (GX-RESTO.md P0.3).
+// Vertex shader del camino TEV (Tramo 5): 26 floats por
+// vertice (pos 2 + 4 UV empaquetadas + color0 4 + color1 4).
+// Las 8 UV y los 2 colores se entregan SIEMPRE (el fragment
+// generado declara los 6 varyings siempre; un varying de FS
+// no escrito en VS no enlaza). El fragment usa
+// vUv<texcoord> con el sampler uTex<texmap>.
 const char* kTevVertexShader =
     "attribute vec2 aPos;\n"
-    "attribute vec2 aUv;\n"
-    "varying vec2 vUv0;\n"
-    "varying vec2 vUv1;\n"
-    "varying vec2 vUv2;\n"
-    "varying vec2 vUv3;\n"
-    "varying vec2 vUv4;\n"
-    "varying vec2 vUv5;\n"
-    "varying vec2 vUv6;\n"
-    "varying vec2 vUv7;\n"
+    "attribute vec4 aUv01;\n"
+    "attribute vec4 aUv23;\n"
+    "attribute vec4 aUv45;\n"
+    "attribute vec4 aUv67;\n"
+    "attribute vec4 aColor0;\n"
+    "attribute vec4 aColor1;\n"
+    "varying vec4 vUv01;\n"
+    "varying vec4 vUv23;\n"
+    "varying vec4 vUv45;\n"
+    "varying vec4 vUv67;\n"
+    "varying vec4 vColor;\n"
+    "varying vec4 vColor1;\n"
     "void main() {\n"
-    "  vUv0 = aUv;\n"
-    "  vUv1 = aUv;\n"
-    "  vUv2 = aUv;\n"
-    "  vUv3 = aUv;\n"
-    "  vUv4 = aUv;\n"
-    "  vUv5 = aUv;\n"
-    "  vUv6 = aUv;\n"
-    "  vUv7 = aUv;\n"
+    "  vUv01 = aUv01;\n"
+    "  vUv23 = aUv23;\n"
+    "  vUv45 = aUv45;\n"
+    "  vUv67 = aUv67;\n"
+    "  vColor = aColor0;\n"
+    "  vColor1 = aColor1;\n"
     "  gl_Position = vec4(aPos, 0.0, 1.0);\n"
     "}\n";
+
+// Factor de blend BP (0-7) -> GL. Sin equivalente para
+// valores fuera de enum: se trata como ONE (no crash).
+GLenum BlendFactorGl(int f) {
+  switch (f) {
+    case 0: return GL_ZERO;
+    case 1: return GL_ONE;
+    case 2: return GL_SRC_COLOR;
+    case 3: return GL_ONE_MINUS_SRC_COLOR;
+    case 4: return GL_SRC_ALPHA;
+    case 5: return GL_ONE_MINUS_SRC_ALPHA;
+    case 6: return GL_DST_ALPHA;
+    case 7: return GL_ONE_MINUS_DST_ALPHA;
+    default: return GL_ONE;
+  }
+}
+
+// Funcion de comparacion BP (0-7) -> GL (Z y alpha-test
+// comparten el enum).
+GLenum CompareFuncGl(int f) {
+  switch (f) {
+    case 0: return GL_NEVER;
+    case 1: return GL_LESS;
+    case 2: return GL_EQUAL;
+    case 3: return GL_LEQUAL;
+    case 4: return GL_GREATER;
+    case 5: return GL_NOTEQUAL;
+    case 6: return GL_GEQUAL;
+    default: return GL_ALWAYS;
+  }
+}
 
 GLuint CompileShader(GLenum type, const char* src) {
   GLuint sh = glCreateShader(type);
@@ -260,7 +292,8 @@ void GxGlRenderer::DrawTriVertices(const GlTri& tri, GLuint tex,
 
 const GxGlRenderer::TevGlProgram* GxGlRenderer::GetOrCompileTevProgram(
     const TevGenResult& gen) {
-  auto it = tev_programs_.find(gen.hash);
+  std::pair<uint32_t, int> key(gen.hash, gen.alpha_test_mode);
+  auto it = tev_programs_.find(key);
   if (it != tev_programs_.end()) return &it->second;
   GLuint vs = CompileShader(GL_VERTEX_SHADER, kTevVertexShader);
   if (vs == 0) return nullptr;
@@ -296,7 +329,12 @@ const GxGlRenderer::TevGlProgram* GxGlRenderer::GetOrCompileTevProgram(
   TevGlProgram tp;
   tp.program = prog;
   tp.loc_pos = glGetAttribLocation(prog, "aPos");
-  tp.loc_uv = glGetAttribLocation(prog, "aUv");
+  tp.loc_uv01 = glGetAttribLocation(prog, "aUv01");
+  tp.loc_uv23 = glGetAttribLocation(prog, "aUv23");
+  tp.loc_uv45 = glGetAttribLocation(prog, "aUv45");
+  tp.loc_uv67 = glGetAttribLocation(prog, "aUv67");
+  tp.loc_color0 = glGetAttribLocation(prog, "aColor0");
+  tp.loc_color1 = glGetAttribLocation(prog, "aColor1");
   for (int m = 0; m < 8; ++m) {
     tp.loc_tex[m] = glGetUniformLocation(
         prog, ("uTex" + std::to_string(m)).c_str());
@@ -311,37 +349,70 @@ const GxGlRenderer::TevGlProgram* GxGlRenderer::GetOrCompileTevProgram(
     tp.loc_konst[i] = glGetUniformLocation(
         prog, ("uKonst" + std::to_string(i)).c_str());
   }
+  tp.loc_alpha_ref0 = glGetUniformLocation(prog, "uAlphaRef0");
+  tp.loc_alpha_ref1 = glGetUniformLocation(prog, "uAlphaRef1");
   ++tev_programs_compiled_;
-  auto inserted = tev_programs_.emplace(gen.hash, tp);
+  auto inserted = tev_programs_.emplace(key, tp);
   return &inserted.first->second;
 }
 
-void GxGlRenderer::DrawTriVerticesTev(const GlTri& tri, GLuint tex,
-                                      bool use_tex,
+void GxGlRenderer::DrawTriVerticesTev(const GlTri& tri,
+                                      const GLuint tex_by_map[8],
                                       const TevGlProgram& tp,
-                                      const TevState& tev) {
-  float verts[3 * 4];
+                                      const TevState& tev,
+                                      const GxFixedState& fixed) {
+  // 26 floats por vertice: pos(2) + uv01/23/45/67 (16) +
+  // color0(4) + color1(4).
+  float verts[3 * 26];
   for (int k = 0; k < 3; ++k) {
-    verts[k * 4 + 0] = tri.x[k];
-    verts[k * 4 + 1] = tri.y[k];
-    verts[k * 4 + 2] = tri.s[k];
-    verts[k * 4 + 3] = tri.t[k];
+    float* v = verts + k * 26;
+    v[0] = tri.x[k];
+    v[1] = tri.y[k];
+    v[2] = tri.uv_s[k][0];
+    v[3] = tri.uv_t[k][0];
+    v[4] = tri.uv_s[k][1];
+    v[5] = tri.uv_t[k][1];
+    v[6] = tri.uv_s[k][2];
+    v[7] = tri.uv_t[k][2];
+    v[8] = tri.uv_s[k][3];
+    v[9] = tri.uv_t[k][3];
+    v[10] = tri.uv_s[k][4];
+    v[11] = tri.uv_t[k][4];
+    v[12] = tri.uv_s[k][5];
+    v[13] = tri.uv_t[k][5];
+    v[14] = tri.uv_s[k][6];
+    v[15] = tri.uv_t[k][6];
+    v[16] = tri.uv_s[k][7];
+    v[17] = tri.uv_t[k][7];
+    v[18] = tri.cr0[k];
+    v[19] = tri.cg0[k];
+    v[20] = tri.cb0[k];
+    v[21] = tri.ca0[k];
+    v[22] = tri.cr1[k];
+    v[23] = tri.cg1[k];
+    v[24] = tri.cb1[k];
+    v[25] = tri.ca1[k];
   }
   glUseProgram(tp.program);
   glBindBuffer(GL_ARRAY_BUFFER, vbo_);
   glBufferData(GL_ARRAY_BUFFER, sizeof(verts), verts, GL_STREAM_DRAW);
-  glEnableVertexAttribArray(tp.loc_pos);
-  glVertexAttribPointer(tp.loc_pos, 2, GL_FLOAT, GL_FALSE,
-                        4 * sizeof(float),
-                        reinterpret_cast<const void*>(0));
-  glEnableVertexAttribArray(tp.loc_uv);
-  glVertexAttribPointer(tp.loc_uv, 2, GL_FLOAT, GL_FALSE,
-                        4 * sizeof(float),
-                        reinterpret_cast<const void*>(2 * sizeof(float)));
-  // Uniforms TEV: registros y konstantes del snapshot (el
-  // snapshot sin anclar los deja a 0; un TevState construido
-  // a mano los trae explicitos). glUniform con loc -1 (uniform
-  // optimizado fuera) se ignora en silencio: seguro.
+  auto set_attr = [&](GLint loc, int size, size_t off) {
+    if (loc < 0) return;
+    glEnableVertexAttribArray(loc);
+    glVertexAttribPointer(loc, size, GL_FLOAT, GL_FALSE,
+                          26 * sizeof(float),
+                          reinterpret_cast<const void*>(off));
+  };
+  set_attr(tp.loc_pos, 2, 0);
+  set_attr(tp.loc_uv01, 4, 2 * sizeof(float));
+  set_attr(tp.loc_uv23, 4, 6 * sizeof(float));
+  set_attr(tp.loc_uv45, 4, 10 * sizeof(float));
+  set_attr(tp.loc_uv67, 4, 14 * sizeof(float));
+  set_attr(tp.loc_color0, 4, 18 * sizeof(float));
+  set_attr(tp.loc_color1, 4, 22 * sizeof(float));
+  // Uniforms TEV: registros y konstantes del snapshot.
+  // glUniform con loc -1 (uniform optimizado fuera) se
+  // ignora en silencio: seguro.
   for (int i = 0; i < 3; ++i) {
     glUniform3f(tp.loc_regc[i], tev.regcolor[i][0], tev.regcolor[i][1],
                 tev.regcolor[i][2]);
@@ -351,27 +422,144 @@ void GxGlRenderer::DrawTriVerticesTev(const GlTri& tri, GLuint tex,
     glUniform4f(tp.loc_konst[i], tev.konst[i][0], tev.konst[i][1],
                 tev.konst[i][2], tev.konst[i][3]);
   }
-  if (use_tex) {
-    // Camino usable = como mucho 1 sampler: la unidad 0.
-    glActiveTexture(GL_TEXTURE0);
-    glBindTexture(GL_TEXTURE_2D, tex);
-    for (int m = 0; m < 8; ++m) {
-      if (tp.loc_tex[m] >= 0) glUniform1i(tp.loc_tex[m], 0);
-    }
+  // Refs alpha-test (solo si el programa las declara).
+  if (fixed.alpha.present) {
+    glUniform1f(tp.loc_alpha_ref0, fixed.alpha.ref0 / 255.0f);
+    glUniform1f(tp.loc_alpha_ref1, fixed.alpha.ref1 / 255.0f);
+  }
+  // Samplers: unidad = mapa (DrawDraws pone magenta donde
+  // no hay carga o no se resolvio, asi ninguna unidad queda
+  // con una textura obsoleta de otro draw).
+  for (int m = 0; m < 8; ++m) {
+    glActiveTexture(GL_TEXTURE0 + m);
+    glBindTexture(GL_TEXTURE_2D, tex_by_map[m]);
+    if (tp.loc_tex[m] >= 0) glUniform1i(tp.loc_tex[m], m);
   }
   glDrawArrays(GL_TRIANGLES, 0, 3);
-  glDisableVertexAttribArray(tp.loc_pos);
-  glDisableVertexAttribArray(tp.loc_uv);
+  auto unset_attr = [&](GLint loc) {
+    if (loc >= 0) glDisableVertexAttribArray(loc);
+  };
+  unset_attr(tp.loc_pos);
+  unset_attr(tp.loc_uv01);
+  unset_attr(tp.loc_uv23);
+  unset_attr(tp.loc_uv45);
+  unset_attr(tp.loc_uv67);
+  unset_attr(tp.loc_color0);
+  unset_attr(tp.loc_color1);
   ++tris_drawn_;
+}
+
+void GxGlRenderer::ApplyFixedState(const GxFixedState& f) {
+  // Z: solo si la palabra 0x40 esta presente.
+  if (f.z.present) {
+    if (f.z.enable) {
+      glEnable(GL_DEPTH_TEST);
+      glDepthFunc(CompareFuncGl(f.z.func));
+    } else {
+      glDisable(GL_DEPTH_TEST);
+    }
+    glDepthMask(f.z.update ? GL_TRUE : GL_FALSE);
+  }
+  // Blend: solo si la palabra 0x41 esta presente. Logica
+  // (LOGIC) no tiene equivalente GLES: blend desactivado +
+  // contador (el resultado no sera el de HW, pero el draw
+  // se dibuja en vez de saltarse).
+  if (f.blend.present) {
+    if (f.blend.logic) {
+      glDisable(GL_BLEND);
+      ++fixed_logic_fallback_;
+    } else if (f.blend.enable) {
+      glEnable(GL_BLEND);
+      glBlendFunc(BlendFactorGl(f.blend.src),
+                  BlendFactorGl(f.blend.dst));
+      glBlendEquation(f.blend.subtract ? GL_FUNC_REVERSE_SUBTRACT
+                                       : GL_FUNC_ADD);
+    } else {
+      glDisable(GL_BLEND);
+    }
+    glColorMask(f.blend.color_update ? GL_TRUE : GL_FALSE,
+                f.blend.color_update ? GL_TRUE : GL_FALSE,
+                f.blend.color_update ? GL_TRUE : GL_FALSE,
+                f.blend.alpha_update ? GL_TRUE : GL_FALSE);
+  }
+  // Cull: solo si GENMODE esta presente.
+  if (f.genmode_present) {
+    switch (f.cull) {
+      case 0:
+        glDisable(GL_CULL_FACE);
+        break;
+      case 1:
+        glEnable(GL_CULL_FACE);
+        glCullFace(GL_BACK);
+        break;
+      case 2:
+        glEnable(GL_CULL_FACE);
+        glCullFace(GL_FRONT);
+        break;
+      default:
+        glEnable(GL_CULL_FACE);
+        glCullFace(GL_FRONT_AND_BACK);
+        break;
+    }
+    // SUPOSICION Tramo 5: el traductor niega Y (NDC y arriba
+    // desde EFB y abajo), lo que invierte el winding: el
+    // frente CCW de GX llega como CW a GL. Si en dispositivo
+    // los triangulos con cull salen al reves, el flip va
+    // aqui (GL_CCW) y se vera en la prueba de cull.
+    glFrontFace(GL_CW);
+  }
+  // Scissor: solo si las dos palabras estan presentes. EFB
+  // y arriba->abajo: GL mide desde abajo.
+  if (f.scissor.present) {
+    glEnable(GL_SCISSOR_TEST);
+    glScissor(f.scissor.x, viewport_h_ - (f.scissor.y + f.scissor.h),
+              f.scissor.w, f.scissor.h);
+  }
+  // Fog: contado, sin aplicar (ver gx.h).
+  bool any_fog = false;
+  for (int i = 0; i < 5; ++i) any_fog |= f.fog_present[i];
+  if (any_fog) ++fixed_fog_draws_;
 }
 
 int GxGlRenderer::DrawDraws(const std::vector<GxDraw>& draws,
                             const TexResolver& resolver) {
   if (program_ == 0) return 0;
+  // Altura del viewport GL (una vez por llamada) para el
+  // flip vertical del scissor.
+  {
+    GLint vp[4] = {0, 0, 640, 480};
+    glGetIntegerv(GL_VIEWPORT, vp);
+    if (vp[3] > 0) viewport_h_ = vp[3];
+  }
   // Cache por frame: tex_obj -> textura GL (se borra al final,
   // para que una textura THP reutilizada no quede obsoleta).
   std::map<uint32_t, GLuint> frame_tex;
   GLuint magenta = 0;
+  auto resolve_tex = [&](uint32_t tex_obj) -> GLuint {
+    if (tex_obj == 0) {
+      if (magenta == 0) {
+        uint8_t px[4] = {255, 0, 255, 255};
+        magenta = UploadTexture(px, 1, 1);
+      }
+      return magenta;
+    }
+    auto it = frame_tex.find(tex_obj);
+    if (it != frame_tex.end()) return it->second;
+    GxDecodedTex dec;
+    bool ok = resolver != nullptr && resolver(tex_obj, &dec) && dec.ok;
+    GLuint tex = 0;
+    if (ok) {
+      tex = UploadTexture(dec.rgba.data(), dec.width, dec.height);
+    } else {
+      if (magenta == 0) {
+        uint8_t px[4] = {255, 0, 255, 255};
+        magenta = UploadTexture(px, 1, 1);
+      }
+      tex = magenta;
+    }
+    frame_tex[tex_obj] = tex;
+    return tex;
+  };
   int drawn = 0;
   for (const GxDraw& d : draws) {
     std::vector<GlTri> tris;
@@ -379,56 +567,46 @@ int GxGlRenderer::DrawDraws(const std::vector<GxDraw>& draws,
       ++quads_skipped_;
       continue;
     }
-    // La textura es por draw (no por triangulo): se resuelve
-    // una vez y se reutiliza en sus tris.
+    // Estado fijo del draw (Tramo 5): se aplica a TODOS los
+    // draws traducibles, tengan o no snapshot TEV (un draw
+    // construido a mano trae el estado por defecto: ninguna
+    // palabra presente => no toca nada).
+    ApplyFixedState(d.fixed);
+    // Texturas por mapa (Tramo 5): se resuelven una vez por
+    // draw y se reutilizan en sus tris. Mapa sin carga o sin
+    // resolver => magenta (placeholder documentado).
+    GLuint tex_by_map[8];
+    for (int m = 0; m < 8; ++m) {
+      tex_by_map[m] = resolve_tex(tris.empty() ? 0 : tris[0].tex_objs[m]);
+    }
+    // Textura legacy del camino fijo: ultimo mapa cargado.
     uint32_t tex_obj = tris.empty() ? 0 : tris[0].tex_obj;
     GLuint tex = 0;
     bool use_tex = false;
-    if (tex_obj == 0) {
-      use_tex = false;
-    } else {
-      auto it = frame_tex.find(tex_obj);
-      if (it != frame_tex.end()) {
-        tex = it->second;
-        use_tex = true;
-      } else {
-        GxDecodedTex dec;
-        bool ok = resolver != nullptr && resolver(tex_obj, &dec) && dec.ok;
-        if (ok) {
-          tex = UploadTexture(dec.rgba.data(), dec.width, dec.height);
-        } else {
-          if (magenta == 0) {
-            uint8_t px[4] = {255, 0, 255, 255};
-            magenta = UploadTexture(px, 1, 1);
-          }
-          tex = magenta;
-        }
-        use_tex = true;
-        frame_tex[tex_obj] = tex;
-      }
+    if (tex_obj != 0) {
+      tex = resolve_tex(tex_obj);
+      use_tex = true;
     }
-    // Camino TEV fase A: si el draw trae snapshot, su programa
-    // se genera por hash (contado) y se usa solo si es
-    // resoluble con el formato actual; si no, cae al programa
-    // fijo anterior (tev_fallback_), nunca crash. Sin snapshot
-    // (has_tev=false) no se tocan los contadores TEV.
+    // Camino TEV: si el draw trae snapshot, su programa se
+    // genera por hash + modo alpha-test (contado) y se usa
+    // siempre que genera (Tramo 5: color y varios samplers
+    // soportados); si no compila/enlaza, cae al programa
+    // fijo anterior (tev_fallback_), nunca crash. Sin
+    // snapshot (has_tev=false) no se tocan los contadores TEV.
     if (d.has_tev) {
       ++tev_draws_;
       TevGenResult gen;
-      tev_cache_.Get(d.tev, &gen);
+      const GxAlphaTest* alpha =
+          d.fixed.alpha.present ? &d.fixed.alpha : nullptr;
+      tev_cache_.Get(d.tev, &gen, alpha);
       tev_stages_total_ += gen.stages_processed;
       tev_indirect_noop_ += gen.indirect_noop;
       tev_unsupported_ += gen.unsupported;
       const TevGlProgram* tp = nullptr;
-      // Con sampler pero sin textura (tex_obj 0): no dibujar
-      // con un sampler sin enlazar (negro en GL); caer al
-      // camino fijo, que usa el color diagnostico.
-      if (TevGlUsable(gen, d) &&
-          (gen.sampler_maps.empty() || use_tex))
-        tp = GetOrCompileTevProgram(gen);
+      if (TevGlUsable(gen, d)) tp = GetOrCompileTevProgram(gen);
       if (tp != nullptr) {
         for (const GlTri& tri : tris) {
-          DrawTriVerticesTev(tri, tex, use_tex, *tp, d.tev);
+          DrawTriVerticesTev(tri, tex_by_map, *tp, d.tev, d.fixed);
         }
         ++drawn;
         ++quads_drawn_;

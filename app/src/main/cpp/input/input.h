@@ -22,11 +22,12 @@
 //     puede clasificar una zona en fracciones sin el).
 //     Multitactil: cada dedo es un boton o el stick, con
 //     seguimiento por pointer id; soltar rearma el flanco.
-//   - Rumble: no-op en esta fase (PADControlMotor SI tiene HLE
-//     desde la fase TEV: kPadControlMotor 0x8024F580 con estado
-//     por canal y solo-en-transicion, ver rumble.h; el sink es
-//     nulo hasta la fase B Vibrator por JNI, y el juego no lo
-//     ha llamado en los runs).
+//   - Rumble: PADControlMotor tiene HLE desde la fase TEV
+//     (kPadControlMotor 0x8024F580 con estado por canal y
+//     solo-en-transicion, ver rumble.h); desde la fase B el
+//     sink es JniVibratorSink (chan 0 al Vibrator fisico,
+//     ver rumble_jni.h y MainActivity), y el juego no lo
+//     ha llamado en los runs host todavia.
 // HandleEvent devuelve true solo si el evento cambio el
 // estado (consumido); si no, false para no ocultar eventos
 // al sistema. El flanco JustPressed lo calcula padUpdate

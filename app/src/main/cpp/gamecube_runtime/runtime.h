@@ -49,6 +49,12 @@ class GameCubeRuntime {
   }
   AudioBridge* AudioBridgeState() { return &audio_bridge_; }
   void Shutdown();
+  // Rumble fase B: detiene todo rumble y resetea el tracker
+  // (ver Hle::StopAllRumble). Lo llama Shutdown() siempre, y
+  // native-lib en PAUSE / LOST_FOCUS sin apagar el runtime:
+  // tras el, el siguiente RUMBLE del juego vuelve a vibrar.
+  // Seguro sin sink y sin juego cargado.
+  void StopAllRumble() { hle_.StopAllRumble(); }
 
   // Un frame completo (llamado desde android_main cuando hay
   // ventana). Con juego: una rebanada del chassis; sin juego:

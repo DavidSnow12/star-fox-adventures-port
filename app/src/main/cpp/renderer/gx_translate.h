@@ -41,14 +41,44 @@ struct GlQuad {
 };
 
 // Un triangulo GL (misma transformada que GlQuad, por vertice).
+// Tramo 5: color0/color1 y UV por mapa (s/t = coord 0).
+// Las UV ya llevan la matriz de textura aplicada (ver
+// ApplyTexMatrix en gx_translate.cpp); el renderer GL solo
+// las entrega como varyings.
 struct GlTri {
   float x[3] = {0, 0, 0};
   float y[3] = {0, 0, 0};
   float s[3] = {0, 0, 0};
   float t[3] = {0, 0, 0};
+  // Color vertice 0/1 en [0,1] (sin color en el vertice:
+  // blanco opaco, igual que el parser).
+  float cr0[3] = {1, 1, 1};
+  float cg0[3] = {1, 1, 1};
+  float cb0[3] = {1, 1, 1};
+  float ca0[3] = {1, 1, 1};
+  float cr1[3] = {1, 1, 1};
+  float cg1[3] = {1, 1, 1};
+  float cb1[3] = {1, 1, 1};
+  float ca1[3] = {1, 1, 1};
+  // UV por mapa (8 pares), con matriz ya aplicada.
+  float uv_s[3][8] = {};
+  float uv_t[3][8] = {};
   uint32_t tex_obj = 0;
   int tex_map = 0;
+  // Texturas por mapa del draw (0 = sin carga para el mapa).
+  uint32_t tex_objs[8] = {0, 0, 0, 0, 0, 0, 0, 0};
 };
+
+// Aplica una matriz de textura XF (12 floats, layout 3x4) a
+// una UV (s,t) con la regla (s,t,1) 3x3 + division proyectiva
+// si la fila 3 es no nula y w' != 0. SUPOSICION Tramo 5 (ver
+// gx.h): el vector de entrada es (s,t,1) y la traslacion son
+// m[2]/m[6]; una matriz 2x4 (8 palabras) deja la fila 3 a
+// cero y no divide. La convencion de entrada para coords
+// generadas (fuente POS/NRM) NO esta anclada: este camino
+// solo transforma UV directas de vertice con TnMIDX.
+bool ApplyTexMatrix(const float m[12], float s, float t, float* s_out,
+                    float* t_out);
 
 // 0 o 1 quad; false si no es QUADS de 4 vertices o no trae
 // viewport/proyeccion. canvas 640x480 del renderer host; el

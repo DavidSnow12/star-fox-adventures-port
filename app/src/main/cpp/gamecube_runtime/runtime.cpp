@@ -94,6 +94,11 @@ bool GameCubeRuntime::LoadGame(const char* dol_path) {
 }
 
 void GameCubeRuntime::Shutdown() {
+  // Rumble fase B primero: ningun camino de apagado
+  // (TERM_WINDOW, DESTROY, destroyRequested) puede dejar el
+  // motor vibrando; el tracker reseteado rearma el proximo
+  // RUMBLE si la app vuelve a arrancar el runtime.
+  hle_.StopAllRumble();
   running_ = false;
   audio_.Shutdown();
   sfa_hw_trace_set_enabled(0);

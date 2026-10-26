@@ -43,6 +43,7 @@ add_library(starfox SHARED
     ${SFA_CHUNKS_C}
     gamecube_runtime/runtime.cpp
     gamecube_runtime/hle.cpp
+    gamecube_runtime/rumble_jni.cpp
     gamecube_runtime/card.cpp
     gamecube_runtime/chassis.cpp
     gamecube_runtime/cpu.cpp
@@ -59,6 +60,8 @@ add_library(starfox SHARED
     audio/audio.cpp
     audio/audio_bridge.cpp
     audio/adp_decode.cpp
+    audio/adp_stream.cpp
+    audio/adp_cache.cpp
     input/input.cpp
     platform/platform.cpp)
 

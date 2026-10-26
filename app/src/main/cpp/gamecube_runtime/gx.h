@@ -73,12 +73,16 @@
 
 namespace sfa {
 
-// Un vertice decodificado (solo lo que el renderer usa ahora;
-// normal y color se guardan para TEV/lighting futuros).
+// Un vertice decodificado. Tramo 5: CLR1 y TEX1-7 ya no se
+// descartan (el renderer TEV los necesita); s/t siguen siendo
+// la coord 0 y tex_mtx_idx su indice (compatibilidad).
 struct GxVertex {
   uint8_t pos_mtx_idx = 0;
   bool has_pos_mtx_idx = false;
   uint8_t tex_mtx_idx = 60;  // GX_IDENTITY si no viene en el vertice
+  // Indice de matriz de textura por coord (TnMIDX del vertice;
+  // 60 = identidad si el VCD no trae TnMIDX para esa coord).
+  uint8_t tex_mtx_idx_arr[8] = {60, 60, 60, 60, 60, 60, 60, 60};
   // Atributos indexados (VCD 2 = indice8, 3 = indice16): el
   // parser guarda los indices, pero NO resuelve el atributo
   // (necesitaria base/stride CP 0xA0-0xBF + lector de RAM del
@@ -100,37 +104,73 @@ struct GxVertex {
   uint8_t b = 255;
   uint8_t a = 255;
   bool has_color = false;
+  // CLR1 (segundo juego de colores; antes se decodificaba y
+  // se tiraba). Sin CLR1 en el vertice: blanco opaco.
+  uint8_t r1 = 255;
+  uint8_t g1 = 255;
+  uint8_t b1 = 255;
+  uint8_t a1 = 255;
+  bool has_color1 = false;
   float s = 0.0f;
   float t = 0.0f;
   bool has_tex = false;
+  // TEX1-7 (antes solo se guardaba TEX0 en s/t). s/t siguen
+  // siendo la coord 0; uv_s/uv_t[0] la duplican para que el
+  // traductor recorra las 8 por igual.
+  float uv_s[8] = {0, 0, 0, 0, 0, 0, 0, 0};
+  float uv_t[8] = {0, 0, 0, 0, 0, 0, 0, 0};
+  bool has_uv[8] = {false, false, false, false,
+                    false, false, false, false};
 };
 
-// --- Estado TEV por draw (Fase TEV, ver renderer/gx_tev.h) ---
-//
-// Una etapa TEV = ColorIn/AlphaIn + ColorOp/AlphaOp + Order.
-// Decodificacion de las palabras BP (YAGCD + codigo SDK
-// recompilado, ver TEV-DESIGN.md §3.2): palabra color en BP
-// 0xC0+2*etapa, palabra alfa en 0xC1+2*etapa, nº de etapas en
-// GENMODE (BP 0x00) bits [13:10] + 1. Campos de la palabra
-// color (LSB): d[3:0], c[7:4], b[11:8], a[15:12], bias[17:16],
-// op-bit[18], clamp[19], scale[21:20], out[23:22]; si
-// bits[17:16]==3 la operacion es COMP (op = 8 + bit[18] +
-// (bits[21:20]<<1)), si no es ADD (bit[18]=0) o SUB (1).
-// La palabra alfa tiene la misma estructura de operacion y
-// campos de entrada de 3 bits (posicion exacta de esos 4
-// campos: simetria asumida con la palabra color, PENDIENTE
-// del anclaje §3.3 de TEV-DESIGN.md; el decodificador vive en
-// gx_tev.h y el test host fija el comportamiento actual).
-// Order/KSEL/indirecto/konst/regcolor: NO anclados todavia
-// (TEV-DESIGN.md §3.3). El snapshot guarda SIEMPRE la copia
-// cruda completa de bp_ (bp_raw) para que el anclaje futuro
-// pueda decodificarlos sin tocar el parser; los campos
-// order/ksel del snapshot usan valores neutros documentados
-// abajo y TevState marca order_anchored=false y
-// ksel_anchored=false para que ningun consumidor los confunda
-// con valores medidos. El generador usa solo lo que TevState
-// dice: un TevState construido a mano (tests, casos dorados)
-// con order/ksel explicitos genera el GLSL completo.
+// --- Estado TEV por draw (Fase TEV + Tramo 5, ver
+// renderer/gx_tev.h). Anclaje Tramo 5: todo decodificado de
+// palabras BP reales segun el codigo SDK recompilado
+// (GXSetTevOrder 0x8025CA34, GXSetTevKColorSel 0x8025C790,
+// GXSetTevKAlphaSel 0x8025C7FC, GXSetTevIndirect 0x8025BB58,
+// GXSetTevColor 0x8025C634, GXSetTevKColor 0x8025C71C,
+// GXSetTevSwapMode 0x8025C868, GXSetTevSwapModeTable
+// 0x8025C8C0, GXSetTevAlphaIn 0x8025C430). Palabra ausente en
+// bp_ => valor por defecto de GXInit (documentado en cada
+// campo), que es lo que el HW real tendria: GXInit siempre
+// corre antes del juego, asi que el defecto es medido, no
+// inventado (TevOrder(i,255,255,255), KSEL 0, SwapModeTable
+// 0=(0,1,2,3) 1=(0,0,0,3) 2=(1,1,1,3) 3=(2,2,2,3)).
+//   color 0xC0+2*e: d[3:0] c[7:4] b[11:8] a[15:12]
+//     bias[17:16] op-bit[18] clamp[19] scale[21:20] out[23:22]
+//     (bias==3 => COMP, op = 8 + bit[18] + (scale<<1)).
+//   alfa 0xC1+2*e: swap_ras[1:0] swap_tex[3:2]
+//     d[6:4] c[9:7] b[12:10] a[15:13], misma op que color.
+//     CORRECCION Tramo 5: la fase A asumia d[2:0] c[5:3]
+//     b[8:6] a[11:9] (simetria con color); el SDK demuestra
+//     d en 4-6, c en 7-9, b en 10-12, a en 13-15 y swap en
+//     0-3 (GXSetTevSwapMode escribe las tablas ahi).
+//   order 0x28+p (p = e/2): etapa par (mitad alta):
+//     texmap[14:12] texcoord[17:15] presente[18]
+//     canal[21:19]; etapa impar (mitad baja): texmap[2:0]
+//     texcoord[5:3] presente[6] canal[9:7]. Sin presente,
+//     texmap = 255 (NULL). Canal = CAMPO BP (0 = set 0,
+//     1 = set 1, 7 = NULL), NO el enum GX (0,1,4,5,255):
+//     el generador usa el campo (==1 => vColor1).
+//   ksel 0xF6+p: etapa par: kcolor[18:14] kalpha[23:19];
+//     impar: kcolor[8:4] kalpha[13:9]; bits 0-3 = datos de
+//     swap table (ver abajo). KColorSel/KAlphaSel 0-7 =
+//     constantes 1, 7/8, 3/4, 5/8, 1/2, 3/8, 1/4, 1/8;
+//     8-11 = K0-K3 enteros; 12-27 = K por canal.
+//   swap table t: bits 0-1 de 0xF6+2t, bits 2-3 de 0xF6+2t
+//     (r, g), bits 0-1 de 0xF6+2t+1, bits 2-3 de 0xF6+2t+1
+//     (b, a). Cada entrada = canal de entrada que alimenta
+//     ese canal de salida (0=R, 1=G, 2=B, 3=A).
+//   indirecto 0x10+e: indstage[1:0] formato[3:2]
+//     bias[6:4] alpha[8:7] mtx[12:9] wrap_s[15:13]
+//     wrap_t[18:16] bit19 add[21:20]. has_indirect = palabra
+//     presente y != 0 (Direct escribe 0; un indirecto todo
+//     a cero es indistinguible de Direct y equivale a el).
+//   ind order 0x27: indN: texmap[3N+2:3N] texcoord[3N+5:3N+3].
+//   konst/regcolor 0xE0+2*i / 0xE1+2*i: R[7:0] A[19:12] /
+//     B[7:0] G[19:12]; bit 23 = 1 => KColor, 0 => TevColor.
+//   GENMODE 0x00: texgens[3:0] etapas[13:10]+1 cull[15:14]
+//     ind_etapas[18:16]; cull: 0=NONE 1=BACK 2=FRONT 3=ALL.
 struct TevInput {
   int a = 0, b = 0, c = 0, d = 0;  // enums GX_CC (color) o GX_CA (alfa)
 };
@@ -142,31 +182,117 @@ struct TevOp {
   int out_reg = 0;  // 0=PREV, 1=REG0, 2=REG1, 3=REG2
 };
 struct TevStage {
-  int texcoord = 255, texmap = 255, colorchan = 255;  // Order
+  // Order: colorchan es el CAMPO BP (0/1/7), ver cabecera.
+  int texcoord = 255, texmap = 255, colorchan = 255;
   TevInput color, alpha;
   TevOp color_op, alpha_op;
   int kcolor_sel = 0, kalpha_sel = 0;  // selectores K (0 = constante 1)
-  int swap_ras = 0, swap_tex = 0;      // tablas (def. identidad)
+  int swap_ras = 0, swap_tex = 0;      // ids de tabla swap (0-3)
   bool has_indirect = false;
-  int indstage = 0;  // fase A: no-op contado, ver gx_tev.h
+  int indstage = 0;
+  int ind_format = 0, ind_bias = 0, ind_alpha = 0, ind_mtx = 0;
+  int ind_wrap_s = 0, ind_wrap_t = 0, ind_add = 0;
+  // Bit 19 de la palabra indirecta (byte bajo del 1er arg de
+  // pila de GXSetTevIndirect): preservado, significado sin
+  // asignar (no se usa en el generador).
+  int ind_flag19 = 0;
+  // Mapa/coord indirectos resueltos desde BP 0x27 (-1 si 0x27
+  // ausente). La perturbacion GLSL NO esta implementada
+  // (falta matriz/escala ind: GXSetIndTexMtx 0x8025BBF4 y
+  // GXSetIndTexCoordScale 0x8025BD54 sin decodificar);
+  // has_indirect solo cuenta el no-op, ver gx_tev.h.
+  int ind_texmap = -1, ind_texcoord = -1;
 };
 struct TevState {
   int num_stages = 1;
+  int num_ind_stages = 0;
   TevStage stages[16];
-  // K0..K3 RGBA y C0..C3 RGBA: solo validos si el constructor
-  // los relleno (tests / anclaje futuro); el snapshot del
-  // parser los deja a 0 salvo que BP 0xE0-0xE7 este presente,
-  // en cuyo caso se decodifica como RGBA8 (ver gx_tev.h).
+  // K0..K3 y C0..C2 RGBA decodificados de BP 0xE0-0xE7
+  // (0 si la palabra no esta presente). C3 no existe en el
+  // generador (el juego usa C0-C2); regcolor[3] queda a 0.
   float konst[4][4] = {};
   float regcolor[4][4] = {};
-  int swap_tables[4][4] = {};
-  // Copia cruda de bp_ en el momento del draw (reg -> valor24),
-  // para el anclaje futuro de order/ksel/indirecto/estado fijo.
+  // Tablas swap por defecto = valores GXInit (ver cabecera).
+  int swap_tables[4][4] = {{0, 1, 2, 3},
+                           {0, 0, 0, 3},
+                           {1, 1, 1, 3},
+                           {2, 2, 2, 3}};
+  // Copia cruda de bp_ en el momento del draw (reg -> valor24).
   std::map<uint32_t, uint32_t> bp_raw;
-  bool order_anchored = false;  // Order decodificado de BP real
-  bool ksel_anchored = false;   // KSEL decodificado de BP real
-  bool truncated = false;       // num_stages BP > 16 (defensa)
-  uint32_t hash = 0;            // clave de caché (ver gx_tev.h)
+  bool order_anchored = true;  // Order decodificado de BP real
+  bool ksel_anchored = true;   // KSEL decodificado de BP real
+  bool truncated = false;      // num_stages BP > 16 (defensa)
+  uint32_t hash = 0;           // clave de caché (ver gx_tev.h)
+};
+
+// --- Estado fijo GL por draw (Tramo 5, decodificado en
+// renderer/gx_tev.h, funcion SnapshotFixedFromBp) ---
+// Layouts anclados en codigo SDK recompilado (ver gx_tev.h):
+//   blend 0x41 (GXSetBlendMode 0x8025CEF4): enable[0]
+//     logic[1] color_update[3] alpha_update[4] dst[7:5]
+//     src[10:8] subtract[11] op[15:12]. Bit 2 sin asignar
+//     (posible dst-alpha, NO verificado: se ignora).
+//     Factor: 0=ZERO 1=ONE 2=SRCCLR 3=INVSRCCLR 4=SRCALPHA
+//     5=INVSRCALPHA 6=DSTALPHA 7=INVDSTALPHA.
+//   z 0x40 (GXSetZMode 0x8025D078): enable[0] func[3:1]
+//     update[4]. Func = enum compare (0=NEVER 1=LESS 2=EQUAL
+//     3=LEQUAL 4=GREATER 5=NEQUAL 6=GEQUAL 7=ALWAYS).
+//   alpha 0xF3 (GXSetAlphaCompare 0x8025C960, args
+//     comp0/ref0/op/comp1/ref1): ref0[7:0] ref1[15:8]
+//     comp0[18:16] comp1[21:19] op[23:22] (0=AND 1=OR 2=XOR
+//     3=XNOR). CORRECCION Tramo 5: el resumen previo daba
+//     op[9:8]/ref1[26:19]/comp1[24:22] (solapa ref1/comp1);
+//     el asm prueba el empaquetado limpio de arriba: los
+//     clears previos a cada campo coinciden exactamente con
+//     su ancho (comp1 3 bits en 19-21, op 2 bits en 22-23).
+//   scissor 0x20/0x21 (GXSetScissor 0x8025DC94):
+//     0x20 = (x+342)<<12 | (y+342),
+//     0x21 = (x+w-1+342)<<12 | (y+h-1+342).
+//   fog 0xEE-0xF2: SOLO snapshot crudo + contador. GXSetFog
+//     (0x8025CC44) empaqueta A/B/C con normalizacion de
+//     exponente y start/end no son recuperables de las
+//     palabras sin invertir ese empaquetado (codigo de
+//     emision 0x8025CD58-0x8025CDCC sin decodificar): un fog
+//     adivinado seria peor que ninguno.
+//   copia 0x49/0x4D (+0x4A crudo): SOLO snapshot. El disparo
+//     de copia (GXCopyDisp 0x80259CA8 / GXCopyTex 0x80259E18)
+//     va por MMIO del PE, no por FIFO: el parser no puede
+//     emitir un evento GxCopy; haria falta instrumentacion
+//     HLE/dispatch en otro tramo (ver informe Tramo 5).
+struct GxBlendState {
+  bool present = false;
+  bool enable = false, logic = false, subtract = false;
+  bool color_update = true, alpha_update = true;
+  int src = 4, dst = 5, op = 0;
+};
+struct GxZState {
+  bool present = false;
+  bool enable = false, update = true;
+  int func = 3;  // LEQUAL por defecto
+};
+struct GxAlphaTest {
+  bool present = false;
+  int comp0 = 7, ref0 = 0, comp1 = 7, ref1 = 0, op = 0;
+};
+struct GxScissorState {
+  bool present = false;
+  int x = 0, y = 0, w = 0, h = 0;  // ya sin el +342, en coords EFB
+};
+struct GxFixedState {
+  GxBlendState blend;
+  GxZState z;
+  GxAlphaTest alpha;
+  int cull = 0;  // campo GENMODE: 0=NONE 1=BACK 2=FRONT 3=ALL
+  bool genmode_present = false;
+  int num_texgens = 0;
+  GxScissorState scissor;
+  // Fog y copia: palabras crudas + presencia (sin aplicar).
+  uint32_t fog_words[5] = {0, 0, 0, 0, 0};
+  bool fog_present[5] = {false, false, false, false, false};
+  uint32_t copy_words[3] = {0, 0, 0};  // 0x49, 0x4A, 0x4D
+  bool copy_present[3] = {false, false, false};
+  uint32_t ind_order_word = 0;
+  bool ind_order_present = false;
 };
 
 // Un draw completo con el estado vigente en su offset.
@@ -184,6 +310,10 @@ struct GxDraw {
   bool indexed = false;
   uint32_t tex_obj = 0;  // 0 = sin resolver (placeholder)
   int tex_map = 0;
+  // Tramo 5: ultima carga por mapa (map -> tex_obj, 0 = sin
+  // carga para ese mapa). tex_obj/tex_map legacy = ultimo
+  // mapa cargado (cualquier mapa), sin cambios.
+  uint32_t tex_objs[8] = {0, 0, 0, 0, 0, 0, 0, 0};
   // Estado vigente (copia en el momento del draw).
   float viewport[6] = {0, 0, 0, 0, 0, 0};
   bool has_viewport = false;
@@ -198,6 +328,31 @@ struct GxDraw {
   // false solo en draws construidos a mano sin snapshot.
   TevState tev;
   bool has_tev = false;
+  // Estado fijo (Tramo 5): mismo punto de snapshot que TEV.
+  GxFixedState fixed;
+  // Texgen XF por coord (GXSetTexCoordGen2: palabra 1 en
+  // XF 0x1040+coord, palabra 2 en 0x1050+coord). has_texgen
+  // false = XF sin esa palabra (sin texgen para la coord).
+  // El id de matriz del texgen (palabra 2) NO esta decodificado
+  // todavia: la matriz aplicada en traduccion es la TnMIDX
+  // del vertice (ver gx_translate.h); si el vertice no trae
+  // TnMIDX, la UV va sin matriz (el fallback texgen queda
+  // pendiente, ver informe Tramo 5).
+  uint32_t texgen_w1[8] = {0, 0, 0, 0, 0, 0, 0, 0};
+  uint32_t texgen_w2[8] = {0, 0, 0, 0, 0, 0, 0, 0};
+  bool has_texgen[8] = {false, false, false, false,
+                        false, false, false, false};
+  // Matrices de textura (XF) para los indices TnMIDX
+  // distintos usados por los vertices del draw (solo camino
+  // normal; opacos/POINTS no las llevan porque el renderer
+  // los salta igualmente). Indice 60 (identidad) no se
+  // guarda: ausencia = identidad. 12 palabras en layout
+  // 3x4 como PosMatrix (base indice*4; id >= 64: base
+  // 1280 + (id-64)*4, segun GXLoadTexMtxImm). Palabras
+  // ausentes = 0 (una matriz 2x4 de 8 palabras deja la
+  // fila 3 a cero: sin division proyectiva, ver
+  // gx_translate.h).
+  std::map<int, std::vector<float>> tex_matrices;
 };
 
 // Carga de textura externa (la que registra el HLE GXLoadTexObj).
@@ -324,6 +479,9 @@ class GxParser {
                  int type, int count, GxVertex* out) const;
   uint32_t TexLoadFor(uint64_t fifo_offset) const;
   int TexMapFor(uint64_t fifo_offset) const;
+  // Ultima carga por mapa (map -> tex_obj, 0 si no hay carga
+  // para ese mapa en offset <= fifo_offset).
+  void TexLoadsFor(uint64_t fifo_offset, uint32_t out[8]) const;
 
   RamReader ram_reader_;
   std::vector<GxTexLoad> tex_loads_;

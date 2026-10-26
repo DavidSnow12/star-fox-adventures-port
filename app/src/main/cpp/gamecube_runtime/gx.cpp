@@ -346,12 +346,28 @@ bool GxParser::ParseDraw(const uint8_t* data, size_t len, size_t* pos_io,
   draw.vat = vat;
   draw.tex_obj = TexLoadFor(fifo_offset);
   draw.tex_map = TexMapFor(fifo_offset);
+  TexLoadsFor(fifo_offset, draw.tex_objs);
   // Instantánea TEV (anclaje previo obligatorio): se copia
   // AQUI, antes de las tres salidas (normal, opaca, POINTS),
   // porque bp_ muta con el stream y el generador no puede
   // leerlo al final del frame. Sin snapshot no hay TEV.
   draw.tev = SnapshotTevFromBp(bp_);
   draw.has_tev = true;
+  // Estado fijo (Tramo 5): mismo punto que TEV, misma razon.
+  draw.fixed = SnapshotFixedFromBp(bp_);
+  // Texgen XF por coord (palabras 0x1040+i / 0x1050+i).
+  for (int i = 0; i < 8; ++i) {
+    auto it1 = xf_.find(0x1040u + static_cast<uint32_t>(i));
+    auto it2 = xf_.find(0x1050u + static_cast<uint32_t>(i));
+    if (it1 != xf_.end() && !it1->second.empty()) {
+      draw.texgen_w1[i] = it1->second[0];
+      draw.has_texgen[i] = true;
+    }
+    if (it2 != xf_.end() && !it2->second.empty()) {
+      draw.texgen_w2[i] = it2->second[0];
+      draw.has_texgen[i] = true;
+    }
+  }
   draw.has_viewport = Viewport(draw.viewport);
   draw.has_projection = Projection(draw.projection, &draw.projection_type);
   // Matriz de posicion vigente (CP 0x30, PNMTXIDX en bits 0-5).
@@ -471,6 +487,35 @@ bool GxParser::ParseDraw(const uint8_t* data, size_t len, size_t* pos_io,
     }
     draw.verts.push_back(v);
     vpos += consumed;
+  }
+  // Matrices de textura (Tramo 5): indices TnMIDX distintos
+  // usados por los vertices (solo camino normal; opacos y
+  // POINTS no las llevan porque el renderer los salta).
+  // Indice 60 = identidad (no se guarda). Base XF: id*4 si
+  // id < 64, 1280 + (id-64)*4 si id >= 64 (GXLoadTexMtxImm).
+  {
+    bool seen[256] = {false};
+    for (const GxVertex& v : draw.verts) {
+      for (int m = 0; m < 8; ++m) {
+        if (!v.has_uv[m]) continue;
+        int idx = v.tex_mtx_idx_arr[m];
+        if (idx == 60 || seen[idx]) continue;
+        seen[idx] = true;
+        uint32_t base = idx < 64
+                            ? static_cast<uint32_t>(idx) * 4u
+                            : 1280u + (static_cast<uint32_t>(idx) - 64u) * 4u;
+        std::vector<float> mat(12, 0.0f);
+        bool any = false;
+        for (int k = 0; k < 12; ++k) {
+          auto it = xf_.find(base + static_cast<uint32_t>(k));
+          if (it != xf_.end() && !it->second.empty()) {
+            mat[static_cast<size_t>(k)] = BitsToFloat(it->second[0]);
+            any = true;
+          }
+        }
+        if (any) draw.tex_matrices[idx] = mat;
+      }
+    }
   }
   // Si el vertice trae PNMTXIDX propio, la matriz del draw es la
   // del primer vertice (GX permite una por vertice; el renderer
@@ -765,6 +810,7 @@ bool GxParser::DecodeVertex(const uint8_t* data, size_t avail, int vat,
   for (int i = 0; i < 8; ++i) {
     if (lo & (0x2u << i)) {
       if (off + 1 > avail) return false;
+      out->tex_mtx_idx_arr[i] = data[off];
       if (i == 0) out->tex_mtx_idx = data[off];
       off += 1;
     }
@@ -858,13 +904,18 @@ bool GxParser::DecodeVertex(const uint8_t* data, size_t avail, int vat,
     } else if (c1_field != 1) {
       return false;
     } else {
-      // CLR1 se decodifica pero no se guarda (el renderer usa
-      // CLR0).
+      // CLR1 (Tramo 5): ya no se tira; el renderer TEV la
+      // entrega como vColor1 cuando el canal es el set 1.
       GxVertex tmp;
       if (!ReadColor(data, avail, &off, f.col1_type, f.col1_count,
                      &tmp)) {
         return false;
       }
+      out->r1 = tmp.r;
+      out->g1 = tmp.g;
+      out->b1 = tmp.b;
+      out->a1 = tmp.a;
+      out->has_color1 = true;
     }
   }
   for (int i = 0; i < 8; ++i) {
@@ -891,6 +942,10 @@ bool GxParser::DecodeVertex(const uint8_t* data, size_t avail, int vat,
         return false;
       }
     }
+    // Tramo 5: se guardan las 8 coords (antes solo TEX0).
+    out->uv_s[i] = s;
+    out->uv_t[i] = t;
+    out->has_uv[i] = true;
     if (i == 0) {
       out->s = s;
       out->t = t;
@@ -911,6 +966,15 @@ uint32_t GxParser::TexLoadFor(uint64_t fifo_offset) const {
     }
   }
   return tex;
+}
+
+void GxParser::TexLoadsFor(uint64_t fifo_offset, uint32_t out[8]) const {
+  for (int m = 0; m < 8; ++m) out[m] = 0;
+  for (size_t i = 0; i < tex_loads_.size(); ++i) {
+    if (tex_loads_[i].fifo_offset > fifo_offset) break;
+    int map = tex_loads_[i].map;
+    if (map >= 0 && map < 8) out[map] = tex_loads_[i].tex_obj;
+  }
 }
 
 int GxParser::TexMapFor(uint64_t fifo_offset) const {

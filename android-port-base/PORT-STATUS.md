@@ -5044,3 +5044,131 @@ ADP, mezcla de voces y bucles en host. NO es la APK
 jugable al 100 %: sin secuenciador MusyX audible, sin
 streaming ADP con caché, sin juego real con input y
 audio verificado en Tab S8. La cuestión 1367 sigue abierta.
+
+## Tramo 5 (2026-10-26, coordinador): TEV de mundo anclado + FX por trigger + ADP por bloques + rumble JNI + MusyX primer pase offline
+
+Trabajo en cinco vías paralelas, cada una en su copia, integradas
+por el coordinador con fusiones sin conflictos (0 marcadores de
+conflicto) en android-port-base. La vía MusyX entregó diseño +
+renders offline, NO código en el port (su parche chassis es solo
+harness, marcado TRAMO5-COPY-ONLY, y NO se integró en el repo).
+
+**GX — TEV de mundo anclado:** SnapshotTevFromBp decodifica de BP
+real order 0x28+p, ksel 0xF6+p, indirecto 0x10+e, ind order 0x27,
+konst/regcolor 0xE0-0xE7; order_anchored/ksel_anchored=true (antes
+heurística texcoord=texmap=etapa). Correcciones contra el SDK
+recompilado: palabra alfa d[6:4] c[9:7] b[12:10] a[15:13];
+AlphaCompare 0xF3 limpio; registros TevColor/C0/C1/C2 unificados;
+bug UV (uTex<texmap> con vUv<texcoord>). Casos dorados literales:
+cáustica 0x8004CFF0, sombra 0x80050300, UI 0x8011E35C. Color/UV/
+texturas por mapa (hasta 8 samplers, unidad=mapa, magenta si
+falta), matrices de textura (s,t,1) + proyectiva, estado fijo GL
+desde BP (blend, Z, cull, scissor con corrección -342 + flip,
+alpha-compare como discard; fog solo snapshot+contador; blend
+lógico off+contador). Test nuevo test_tramo5: 80 checks, 0
+fallos; run19 602/602 draws con GLSL; test_tev viejo actualizado
+(AlphaWord nuevo layout, flags anclados) y TODO OK integrado.
+Pendientes con causa: indirecto real P2.1 (falta decodificar
+GXSetIndTexMtx 0x8025BBF4 y GXSetIndTexCoordScale 0x8025BD54);
+texgen-POS (cáustica coords 1/3 desde POS, sombra POS mtx 60);
+Fog start/end sin invertir; EFB/copia P3 (disparo por MMIO PE,
+no FIFO); supuestos explícitos en el informe GX (matriz 2x4,
+glFrontFace CW, igualdad float alpha-compare, bit 19
+indirecto, bit 2 blend, ScissorBoxOffset). Sin captura FIFO de
+mundo: la demostración es decodificador + literales, no frame.
+
+**FX — OnSfxTrigger por tabla:** trigger -> primera variante no
+nula = ID FX -> kFxSample -> EnqueueSample (mismo camino que
+OnFxStart, que no se toca). Trigger 13 -> FX 175 -> muestra 841,
+sample_0841.wav, 51012 frames sin bucle (antes 175 / 79068).
+Fase 16 TODO OK (39), Fase 17 TODO OK (36, §4 rehecha con
+trigger 155 -> FX 156 -> muestra 887, 14315 f, bucle [26,14280)),
+Fase 18-FX TODO OK (22); sonda OnFxStart(175) = misma 841 con
+51012 f. FX 96/162/820 CONFIRMADOS por recorrido MCMD: play-macro
+= voz hija paralela con la misma muestra (1173/1172/1147);
+pendiente solo el doblaje a 2 voces. Primer SFX real por PCTRACE
+NO apareció: 2 intentos de 20M despachos, sndFXStartEx=0; los
+pulsos de pad no alteran la trayectoria (juego no sale de
+título/atractiva); siguiente paso: entrada de pad en menú o
+arrancar desde guardado.
+
+**ADP — streaming por bloques + caché PCM:** nuevos
+adp_stream.{h,cpp} (DTK por bloques 32 B -> 28 frames, int64,
+resampleo incremental sin chasquidos) y adp_cache.{h,cpp}
+(sfa-data/audio-cache/v1/<rel>.pcm s16le 32 kHz, .meta JSON,
+atómico .tmp+rename, LRU 2.048 MiB, keep-set nunca desaloja lo
+que suena, parcial no se promueve). Bridge: caché -> ADP por
+bloques (escribiendo caché en vivo) -> WAV -> silencio +
+unresolved, nunca crash; índice ADP insensible a caso,
+reconstruido al primer fallo. SAF: verifyAndMark() informa de
+audio/ sin bloquear; «añadir audio» por detrás completo
+(requestAudioFolder/copyAudioTree solo en sfa-data/audio/),
+pero el botón visible NO está cableado (sin UI Java ni overlay;
+robar zona táctil sería regresión). Test integrado TODO OK
+(74 checks, tras actualizar el fixture packE a la corrección FX:
+trigger 25 -> FX 648 -> muestra 996, 23989 f); 1301 por bloques
+bit a bit idéntico a fichero entero; gnr1423 mayor en 221 ms.
+Sustituye al fallback ADP fichero entero de la Fase 18.
+
+**Rumble fase B — Vibrator por JNI:** viable sin cambiar a Java
+Activity (patrón SAF existente). Chan 0 + RUMBLE -> waveform
+repetida, STOP/STOP_HARD -> cancel(); canales 1-3 solo
+registrados. Cancelación idempotente en dos capas: nativa
+(StopAllRumble desde Shutdown, PAUSE y LOST_FOCUS con reset)
+y Java (onPause/onDestroy -> cancelRumble). Manifiesto VIBRATE
++ vibrator required=false; VibratorManager API 31+ con fallback
+API 26-30, javac contra android.jar API 34 con 0 warnings.
+Test host fase B TODO OK (18 checks), fase A intacta. Pendiente
+hardware: prueba en Tab S8 (que vibre, que STOP pare, que
+pausar/salir detenga el motor, y si la tablet tiene vibrador).
+
+**MusyX — primer pase audible offline, SIN cableado en el port:**
+verificación huésped nota->muestra track 5 completa EXACTA
+(281/281 capturas, tablas M 595 macros/98 layers); secuenciador
+generalizado exacto (track 0 bucle 73.223 pasos 16/16, track 30
+16/16); renders offline track 99 (6 notas, 23,99 s, pico 0,670)
+y track 74 (15 notas, 41,99 s, pico 0,969) con pitch verificado
+(ratio 1,2616 vs 1,2599, error 0,13 %); calibración medida
+ticks/s = BPM×6,4 = (BPM/60)×384 (corrige BPM×51,2 de la Fase
+18). Diseño de cableado sndSeqPlayEx 0x8027C34C hecho, NO
+implementado: sin él, la música NO suena dentro del juego.
+Trabajo en work-port/tramo5-musyx/ (TRAMO5.md, seq_host.py,
+render_musyx.py, WAV 99/74); NO se copió el parche chassis
+harness al repo.
+
+**Datos:** sin cambios en este tramo (Tier 0 257,40 MiB, Tier 1
+365,24 MiB, Completo-ADP 778,40 MiB; Pack B 240 MB). La cuestión
+1367 sigue abierta.
+
+## APK de prueba GX19 (Tramo 5, PRUEBA — NO jugable)
+
+`android-port-base/app-debug-gx19-test.apk`, 12.673.702 B,
+SHA-256 `7e9b8a6702f0080f0802616733f015047934f3fa794a15324d295e252a662539`
+(commit de este tramo, push verificado con `git ls-remote`):
+`com.starfox.port` v10 / `0.10.0-gx19-test`, apksigner Verifies
+(v2+v3, 1 firmante, alias test), zipalign OK, manifiesto
+minSdk 26 / targetSdk 34 / arm64-v8a / debuggable (build de
+prueba expresa), permiso VIBRATE, vibrador no obligatorio,
+`lib/arm64-v8a/libstarfox.so` interior 27.792.464 B, SHA-256
+`01714e0439da6f52695fb32e826c289471ff92ee4a367b1ce748807a7f71379d`
+(idéntico al build NDK de este tramo: 0 errores, 0 símbolos
+mem_/ppc_/func_/dolrecomp_ sin resolver, 213 undefined solo de
+sistema, `android_main` y `func_80003100` en T).
+Build manual (Gradle daemon con fallo conocido): javac
+--release 17, d8, aapt2 link --min-sdk-version 26
+--target-sdk-version 34 --version-code 10 --version-name
+0.10.0-gx19-test, libstarfox.so + libc++_shared.so, zipalign -f
+4, firma keystore de prueba alias test. Sin datos del juego
+dentro.
+Etiqueta: PRUEBA — arranca, clear + quad + TEV multi-etapa por
+generador con TEV de mundo anclado (con las limitaciones
+documentadas: indirecto real no implementado, texgen-POS
+pendiente, Fog solo contador, EFB sin implementar), SAF + táctil
++ CARD + bridge con FX real por tabla (OnSfxTrigger corregido),
+streams por WAV o ADP por bloques con caché PCM, mezcla de
+voces y bucles en host, rumble JNI (pendiente de prueba en
+hardware). NO es la APK jugable al 100 %: sin secuenciador
+MusyX audible en el juego (renders offline 99/74 sí suenan,
+cableado sndSeqPlayEx pendiente), sin juego real con input y
+audio verificado en Tab S8, sin datos dentro (inerte sin
+sfa-data/). La cuestión 1367 sigue abierta.

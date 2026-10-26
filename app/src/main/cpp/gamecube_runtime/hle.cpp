@@ -2064,12 +2064,14 @@ bool Hle::HandleHostCall(CpuState* cpu, uint32_t address) {
     case kPadRecalibrate:
       return Return(cpu, 0);
     case kPadControlMotor: {
-      // Rumble fase A (ver rumble.h): r3 = chan, r4 = command
+      // Rumble fase A + B (ver rumble.h y rumble_jni.h): r3 = chan, r4 = command
       // (0=STOP, 1=RUMBLE, 2=STOP_HARD=STOP). Solo-en-transicion
       // via RumbleTracker: padUpdate llama cada frame y un
       // RUMBLE sostenido no debe re-disparar sink ni log por
-      // frame. Chan/cmd fuera de rango: aviso, sin estado y
-      // sin crash. Retorno void en libogc: se devuelve 0 y
+      // frame. En fase B el sink es JniVibratorSink (chan 0
+      // al Vibrator fisico; resto, solo registro). Chan/cmd
+      // fuera de rango: aviso, sin estado y sin crash.
+      // Retorno void en libogc: se devuelve 0 y
       // los wrappers no usan r3 tras la llamada.
       uint32_t chan = cpu->gpr[3];
       uint32_t cmd = cpu->gpr[4];
