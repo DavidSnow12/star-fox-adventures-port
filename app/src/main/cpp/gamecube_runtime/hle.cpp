@@ -831,6 +831,56 @@ int Hle::DvdOpen(CpuState* cpu, uint32_t filename_guest,
       ::closedir(dir);
     }
   }
+  if (file == nullptr &&
+      name.find('/') != std::string::npos) {
+    // Fallback sin distincion de mayusculas POR COMPONENTES
+    // (Tramo 18, verificado en harness): el fallback de Fase 5
+    // solo cubre nombres planos (sin '/'); el juego pide en
+    // minusculas 'gamefront/shipbattle/warlock' x
+    // 'animcurv.bin/.tab, voxmap.bin/.tab' y en disco existen
+    // como 'ANIMCURV.bin/.tab, VOXMAP.bin/.tab' (tronco en
+    // mayusculas, extension en minusculas: un simple "pasar
+    // el nombre a mayusculas" daria ANIMCURV.BIN, que TAMPOCO
+    // existe). Se resuelve cada componente por separado con
+    // strcasecmp, de modo que cubre variantes de caso tanto
+    // del directorio como del fichero, en cualquier
+    // subdirectorio, no solo en los tres citados. Solo se
+    // aplica cuando la apertura exacta ya fallo; no cambia
+    // ninguna ruta que antes resolvia.
+    std::string cur = disc_root_;
+    bool ok = true;
+    size_t pos = 0;
+    while (ok) {
+      size_t slash = name.find('/', pos);
+      std::string comp = (slash == std::string::npos)
+                             ? name.substr(pos)
+                             : name.substr(pos, slash - pos);
+      DIR* dir = ::opendir(cur.c_str());
+      if (dir == nullptr) { ok = false; break; }
+      bool found = false;
+      while (!found) {
+        struct dirent* ent = ::readdir(dir);
+        if (ent == nullptr) break;
+        if (::strcasecmp(ent->d_name, comp.c_str()) == 0) {
+          cur = cur + "/" + ent->d_name;
+          found = true;
+        }
+      }
+      ::closedir(dir);
+      if (!found) { ok = false; break; }
+      if (slash == std::string::npos) break;
+      pos = slash + 1;
+    }
+    if (ok) {
+      file = std::fopen(cur.c_str(), "rb");
+      if (file != nullptr) {
+        used = cur;
+        SFA_LOGI("hle: DVDOpen '%s': resuelto sin distinguir "
+                 "mayusculas por componentes como '%s'",
+                 name.c_str(), cur.c_str());
+      }
+    }
+  }
   if (file == nullptr) {
     SFA_LOGE("hle: DVDOpen '%s': no encontrado bajo '%s'", name.c_str(),
              disc_root_.c_str());
