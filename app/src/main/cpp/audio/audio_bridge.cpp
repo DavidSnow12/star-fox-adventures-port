@@ -217,6 +217,129 @@ uint32_t AudioBridge::SeqCc19Of(uint32_t handle, uint32_t midi) const {
   if (slot == nullptr || midi >= 16) return 0;
   return slot->cc19[midi];
 }
+// Tramo 13 (RETENIDO, verificado contra los bytes de macro del
+// pool S, starfoxs.poo): 966 (803, 95 sec0/1), 1298 (1017, 95
+// sec2) y 1300 (1019, 95 sec4) empiezan con 0x27101347 (opcode
+// 0x47, ctrl 19, valor 0); 949 (797, 99) y 674 (1173, 74) igual;
+// 1299 (1018, 95 sec3), 675 y 676 no tienen 0x47 ni 0x15
+// (panning[1] = 0 en el setup de voz), asi que su lastSPan
+// huesped es 0 aunque el canal lleve CC19. La clave es (gid,
+// midi) porque en estas tablas midi == seccion y muestra <->
+// macro es 1:1 (ver INFORME.md). Todo lo demas (incluidas
+// 22/5, macros sin auditar en su momento) da false: en STEREO
+// eso no cambia nada audible y en un futuro modo SURROUND
+// exigiria auditar esas macros antes de poner true.
+bool AudioBridge::ReadsSurround(uint32_t group_id, uint32_t midi) {
+  switch (group_id) {
+    case 49:  // 95: sec0/1 (966), sec2 (1298), sec4 (1300) si;
+              // sec3 (1299) NO.
+      return midi == 0 || midi == 1 || midi == 2 || midi == 4;
+    case 54:  // 99: 949 en ambas secciones.
+      return midi == 0 || midi == 1;
+    case 18:  // 74: 674 en las 3 secciones.
+      return midi == 0 || midi == 1 || midi == 2;
+    default:
+      return false;
+  }
+}
+// Tramo 14 (RETENIDO): flag por macro con clave por TRACK para
+// las canciones gid 0 auditadas este tramo (pool M,
+// starfoxm.poo; simulacion huesped SeqHost primer pase +
+// censo completo de macros del pool). NO usar (0, midi): 22 y
+// 5 comparten gid 0 y colisionarian (ver INFORME.md, tabla
+// completa). Escala 100x en todos los casos (0x27101347).
+//   22 (1886 notas, 12 secciones, CC19 = 0 en todas las
+//     vueltas): solo midi 4 (macro 226) y midi 15 (macro 72)
+//     leen ctrl 19; con CC19 = 0 su span es 0 frontal.
+//   5 (281 notas, 1 seccion): midi 0/1/2/3 (macros 398/397),
+//     9 (216/219/222) y 10 (223/224) leen ctrl 19 con CC19 =
+//     0 (span 0); midi 6 lleva el unico CC19 != 0 (127) pero
+//     sus 9 macros (111/112/113/114/117/118/122/123/124) NO
+//     leen ctrl 19: inerte, como 95 sec3. Midi 4/5/8/11 no
+//     leen y llevan CC19 = 0.
+// En modo SURROUND huesped, 22 y 5 dan S = 0 en TODAS sus
+// voces (inertes o frontales): su render estereo actual ya es
+// fiel tambien en ese modo (ver INFORME.md).
+bool AudioBridge::ReadsSurroundTrack(uint32_t track_id, uint32_t midi) {
+  switch (track_id) {
+    case 22:
+      return midi == 4 || midi == 15;
+    case 5:
+      return midi == 0 || midi == 1 || midi == 2 || midi == 3 ||
+             midi == 9 || midi == 10;
+    default:
+      return false;
+  }
+}
+// Tramo 13/14 (RETENIDO): CC19 -> spanPos huesped con la escala
+// 0x2710 (100x) de estas macros y la aritmetica literal de
+// SFA-Decomp: rama unsigned de _GetInputValue (ctrl 19 no
+// esta en la lista signed), mul s32 (wrap en el PPC),
+// clamp solo superior a 0x3FFF, retorno u16, synth
+// lastSPan = valor * 0x200 con clamp 0x7F0000, y sal
+// spanPos = (lastSPan - 0x10000) * 2.4220301e-07 si
+// lastSPan > 0x10000, si no 0. Implementado con aritmetica
+// entera definida (sin depender del UB de overflow con signo
+// en C++): el wrap se emula con uint32_t. Verificado contra
+// el programa C de referencia (scale_check.c, -fwrapv) para
+// los 128 valores: 0 divergencias. Tramo 14: el wrap queda
+// CONFIRMADO contra el DOL retail (desensamblado de
+// _GetInputValue en 0x802829E0: lista signed en
+// 0x80282a48-0x80282a78, rama unsigned con mullw plano en
+// 0x80282cf4, clamp solo superior en 0x80282cfc-0x80282d04,
+// retorno u16 con clrlwi en 0x80282e50; ningun mullwo,
+// mulhw, bov ni mcrxr en las 290 instrucciones): cc19 = 16
+// es centro (1.0) en retail, sin caveat residual.
+float AudioBridge::SurroundSpan(uint32_t cc19) {
+  if (cc19 > 127) cc19 = 127;
+  const uint32_t cc14 = cc19 * 128;  // LSB cc51 = 0 en estas tablas.
+  const uint32_t scale_half = 0x640000u >> 1;  // (0x2710 << 16) / 100 / 2.
+  const uint32_t prod32 = cc14 * scale_half;   // Wrap uint32 = wrap PPC.
+  const int32_t prod = static_cast<int32_t>(prod32);
+  // Desplazamiento aritmetico >> 15 (division con suelo).
+  int64_t tmp = prod >= 0 ? (prod >> 15)
+                          : -((-(int64_t)prod + 32767) / 32768);
+  if (tmp > 0x3FFF) tmp = 0x3FFF;
+  const uint32_t eff = static_cast<uint16_t>(tmp);  // Retorno u16.
+  uint32_t last_span = eff * 0x200u;
+  if (last_span > 0x7F0000u) last_span = 0x7F0000u;
+  if (last_span <= 0x10000u) return 0.0f;
+  return static_cast<float>(last_span - 0x10000u) * 2.4220301e-07f;
+}
+bool AudioBridge::MusicVoiceSurround(size_t index, uint32_t* midi_out,
+                                     size_t* note_index_out,
+                                     bool* reads_out,
+                                     float* span_out) const {
+  if (index >= music_voices_.size()) return false;
+  const MusicVoice& v = music_voices_[index];
+  if (!v.active) return false;
+  if (midi_out != nullptr) *midi_out = v.midi;
+  if (note_index_out != nullptr) *note_index_out = v.note_index;
+  if (reads_out != nullptr) *reads_out = v.reads_surround;
+  if (span_out != nullptr) *span_out = v.surround_span;
+  return true;
+}
+// Tramo 16: espejo salCalcVolume. Fuente: SFA-Decomp
+// src/musyx/runtime/sal_volume.c — salCalcVolume convierte
+// spanPos en espejo (spanPos = 2 - spanPos, lineas 165-172)
+// y CalcBus interpola linealmente sobre la tabla pan
+// {0, 0.7079, 1, 1} (linea 32): factor = (1-frac)*pan[i] +
+// frac*pan[i+1] con i = floor(t), frac = t - i. Aqui t =
+// 2 - span, asi que: span en [0,1] -> t en [1,2] ->
+// 0.7079 + (1-span)*0.2921; span en [1,2] -> t en [0,1] ->
+// 0.7079*(2-span). Valores de control (Tramo 13, §1.3):
+// span 0 -> 1; span 1 -> 0.7079; span 1.381 -> 0.4382;
+// span 2 -> 0. Es un factor COMUN a L y R (en CalcBus el
+// nivel ya espejado se reparte despues por pan_i/pan_im);
+// NO es el bus S (0.7079*level*interp(span)): S se
+// descarta en este modo (Tramo 15) y no aparece aqui.
+float AudioBridge::SurroundMirror(float span) {
+  if (span <= 0.0f) return 1.0f;
+  if (span >= 2.0f) return 0.0f;
+  float t = 2.0f - span;
+  if (t <= 1.0f) return 0.7079f * t;
+  return 0.7079f + 0.2921f * (t - 1.0f);
+}
 bool AudioBridge::SlotMusicActive(const SongSlot* slot) const {
   if (slot == nullptr) return false;
   size_t idx = static_cast<size_t>(slot - song_slots_.data());
@@ -643,6 +766,47 @@ bool AudioBridge::StartMusicNote(const MusyxNote& note,
     gl = static_cast<double>(127 - pan) / 63.0;
     gr = 1.0;
   }
+  // Tramo 13/14 (captura, calculada ANTES del render para
+  // poder consumirla aqui): flag por macro + span en el
+  // note-on, desde el CC19 vigente del slot (los CC19 de
+  // cada seccion preceden a su primera nota, Tramo 12, asi
+  // que la captura coincide con el valor huesped de la
+  // seccion; el CC19 es constante dentro de cada seccion de
+  // 95/99/74, luego equivale al valor vivo huesped para
+  // estas canciones). Tramo 14: para 22/5 la clave es el
+  // TRACK (gid 0 compartido, ver ReadsSurroundTrack); para
+  // el resto se mantiene la clave (gid, midi) de Tramo 13.
+  bool note_reads_surround = false;
+  float note_surround_span = 0.0f;
+  if (note.midi < 16 && slot_idx < song_slots_.size() &&
+      song != nullptr) {
+    bool reads = false;
+    if (song->track_id == 22 || song->track_id == 5) {
+      reads = ReadsSurroundTrack(song->track_id, note.midi);
+    } else {
+      reads = ReadsSurround(song->group_id, note.midi);
+    }
+    if (reads) {
+      note_reads_surround = true;
+      note_surround_span =
+          SurroundSpan(song_slots_[slot_idx].cc19[note.midi]);
+    }
+  }
+  // Tramo 16 (modo surround CON PUERTA, opt-in): solo con
+  // el modo ON y solo en voces que leen ctrl 19, gl/gr se
+  // multiplican por el espejo salCalcVolume (factor COMUN
+  // a L y R: no cambia el balance CC10, solo el nivel de
+  // la voz). Con el modo OFF este bloque es identidad
+  // (mirror = 1) y el PCM es bit-identico al pristino.
+  // El bus S huesped se DESCARTA: nada se suma a L/R
+  // (Tramo 15: cmd14 del microcodigo DSP jamas lee la
+  // seccion S; plegarla seria infiel al huesped). Tick()
+  // NO se toca: el PCM ya va horneado en el note-on.
+  if (surround_enabled_ && note_reads_surround) {
+    double mirror = SurroundMirror(note_surround_span);
+    gl *= mirror;
+    gr *= mirror;
+  }
   std::vector<int16_t> pcm;
   pcm.reserve(dur_frames * 2);
   double pos = 0.0;
@@ -710,6 +874,11 @@ bool AudioBridge::StartMusicNote(const MusyxNote& note,
   slot->midi = note.midi;
   slot->note_index = note_index;
   slot->slot = slot_idx;
+  // Tramo 13/14/16: la captura calculada antes del render
+  // (ver arriba) se guarda en la voz; con el modo ON ya
+  // fue consumida por el espejo al hornear el PCM.
+  slot->reads_surround = note_reads_surround;
+  slot->surround_span = note_surround_span;
   slot->active = true;
   ++musyx_started_;
   return true;
@@ -737,9 +906,11 @@ void AudioBridge::PumpSlot(SongSlot* slot, double dt_seconds) {
       if (e.cc->midi < 16) {
         if (e.cc->cc == 7) slot->cc7[e.cc->midi] = e.cc->value;
         if (e.cc->cc == 10) slot->cc10[e.cc->midi] = e.cc->value;
-        // Tramo 11: CC19 (pan surround) se guarda como estado; NO
-        // se aplica a la mezcla estereo (el mezclador no tiene
-        // bus surround; ver INFORME.md).
+        // Tramo 11: CC19 (pan surround) se guarda como estado;
+        // Tramo 16: se consume en el render del note-on SOLO
+        // con el modo surround ON (espejo en gl/gr); con el
+        // modo OFF no afecta a la mezcla. Nunca hay bus S:
+        // el bus S huesped se descarta (Tramo 15).
         if (e.cc->cc == 19) slot->cc19[e.cc->midi] = e.cc->value;
       }
     } else if (e.kind == MusyxSequencer::Event::kLoop) {

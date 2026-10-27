@@ -900,12 +900,12 @@ inline bool PlanTexCopyZ8(const EfbCopyDecoded& d,
 // trunc(avg * 255) con clamp: para d = k/255 exacto da k
 // (Z24 = k*65793, Z24>>16 = k), y en general es la
 // truncacion estandar Z24->Z8. La alternativa (byte bajo)
-// queda descartada por argumento, no por medida: un byte
-// bajo seria ruido casi aleatorio frente a cambios
-// infinitesimales de profundidad y no serviria como fade
-// de reflexion; el discriminador de rampa del INFORME
-// Tramo 11 permite falsarlo en dispositivo (rampa
-// monotonica = byte alto; diente de sierra = byte bajo).
+// queda descartada por medida en Dolphin (Tramo 15):
+// rampa de profundidad con perfil monotonico 0->255,
+// sin saltos |d|>16 en 639 transiciones, con acuerdo
+// punto a punto H0; el diente de sierra H1 queda
+// descartado. Certeza HW pendiente; el port ya
+// implementa byte alto.
 // No escribe nada en RAM si el plan o el rectangulo fallan.
 inline bool ExecuteEfbCopyZ8(const EfbCopyDecoded& d,
                              const EfbCopyFormat& f,

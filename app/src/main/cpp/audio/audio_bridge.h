@@ -277,11 +277,57 @@ class AudioBridge {
   uint32_t SeqCc10Of(uint32_t handle, uint32_t midi) const;
   // Tramo 11: CC19 vigente del slot (pan surround huesped, op macro
   // 0x47 ctrl 19; ver musyx_sections.h v3 e INFORME.md). Solo
-  // estado: el mezclador estereo NO renderiza surround, asi que
-  // no afecta a la mezcla. Sin slot, 0 (preset huesped: el
-  // FULL_PRESET pone CC19 = 0; el primer pase NO trae CC19 en
-  // las tablas planas, ver INFORME.md).
+  // estado en si mismo: con el modo surround OFF (por
+  // defecto) no afecta a la mezcla; con el modo ON alimenta
+  // el espejo del note-on (Tramo 16). Sin slot, 0 (preset
+  // huesped: el FULL_PRESET pone CC19 = 0; el primer pase NO
+  // trae CC19 en las tablas planas, ver INFORME.md).
   uint32_t SeqCc19Of(uint32_t handle, uint32_t midi) const;
+  // Tramo 13/14 (captura) + Tramo 16 (consumo con puerta):
+  // voz de musica activa nº index: midi, note_index, flag
+  // por macro y span capturados en su note-on. false si el
+  // indice esta fuera de rango o la voz inactiva.
+  bool MusicVoiceSurround(size_t index, uint32_t* midi_out,
+                          size_t* note_index_out, bool* reads_out,
+                          float* span_out) const;
+  // Tramo 16 — MODO SURROUND DEL PORT, CON PUERTA (opt-in).
+  // OFF por defecto: comportamiento estereo actual exacto.
+  // ON: en el render del note-on, solo las voces con
+  // reads_surround = true multiplican sus ganancias L/R
+  // (gl/gr del pan CC10) por SurroundMirror(span); el bus
+  // S huesped se DESCARTA (nada se suma a L/R, Tramo 15).
+  // El flag solo afecta a notas que empiezan despues de
+  // activarlo: el PCM de una voz ya renderizada no cambia
+  // (igual que el huesped, que calcula volL/volR por voz
+  // en su setup). La plomeria Java/JNI que alimenta este
+  // setter NO esta en este diff (ver INFORME.md, §5):
+  // en host el test lo llama directamente.
+  void SetSurroundEnabled(bool enabled) { surround_enabled_ = enabled; }
+  bool SurroundEnabled() const { return surround_enabled_; }
+  // Espejo salCalcVolume (SFA-Decomp sal_volume.c: CalcBus
+  // con span espejado: spanPos -> 2 - spanPos, interpolado
+  // sobre la tabla pan {0, 0.7079, 1, 1}): factor comun
+  // aplicado a L y R por voz. span 0 -> 1; span 1 -> 0.7079;
+  // span 2 -> 0. Fuera de [0, 2] se satura a los extremos.
+  static float SurroundMirror(float span);
+  // Tramo 13/14 (captura): tabla flag por macro (gid, midi) y
+  // mapa CC19 -> spanPos huesped (escala 0x2710 de las macros
+  // 966/1298/1300/949/674 y de las de 22/5 que leen ctrl 19,
+  // aritmetica literal SFA-Decomp con wrap s32 del PPC;
+  // Tramo 14: el wrap esta CONFIRMADO en el DOL retail
+  // (_GetInputValue 0x802829E0: mullw plano, sin saturacion;
+  // ver INFORME.md). Tramo 16: esta captura se consume en
+  // el render del note-on solo con el modo surround ON.
+  static bool ReadsSurround(uint32_t group_id, uint32_t midi);
+  // Tramo 14 (captura): tabla flag por macro con clave por
+  // TRACK (no por gid): las canciones 22 y 5 comparten gid 0
+  // con otras 72 pistas, y una clave (0, midi) colisionaria
+  // entre canciones (p. ej. (0,4): 22 lee via macro 226,
+  // 5 NO lee). Solo 22 y 5 estan auditadas; resto false.
+  // Tramo 16: se consume igual que la tabla por gid, solo
+  // con el modo surround ON (ver SetSurroundEnabled).
+  static bool ReadsSurroundTrack(uint32_t track_id, uint32_t midi);
+  static float SurroundSpan(uint32_t cc19);
   uint64_t SeqSlotsFull() const { return seq_slots_full_; }
   // Canciones activas (tracks) y nº de slots ocupados.
   std::vector<int> ActiveSeqTracks() const;
@@ -555,6 +601,21 @@ class AudioBridge {
     size_t note_index = 0;
     size_t slot = 0;  // Tramo 9: indice en song_slots_.
     bool active = false;
+    // Tramo 13/14 (captura) + Tramo 16 (consumo con puerta):
+    // flag por macro + span capturados en el note-on.
+    // reads_surround = la macro de la voz ejecuta SelectSource
+    // 0x47 con ctrl 19; surround_span = spanPos huesped (0
+    // frontal - 1 centro - 2 trasero) segun el CC19 vigente en
+    // el note-on. Se consumen SOLO si el modo surround del
+    // port esta activado (AudioBridge::SetSurroundEnabled):
+    // entonces el render del note-on multiplica gl/gr por
+    // SurroundMirror(span) (espejo salCalcVolume, ver .cpp).
+    // Con el modo OFF (por defecto) no afectan a la mezcla:
+    // en STEREO el huesped pone lastSPan = 0 y el bus S
+    // huesped se descarta (Tramo 15: cmd14 jamas lee S);
+    // este modo NO codifica S ni es Dolby Pro Logic.
+    bool reads_surround = false;
+    float surround_span = 0.0f;
     size_t Total() const { return pcm.size() / 2; }
   };
   std::array<MusicVoice, kMaxMusicVoices> music_voices_;
@@ -563,6 +624,10 @@ class AudioBridge {
   uint64_t musyx_started_ = 0;
   uint64_t musyx_ended_ = 0;
   uint64_t musyx_stolen_ = 0;
+  // Tramo 16: puerta del modo surround del port (OFF por
+  // defecto). Solo la consultan el render del note-on y el
+  // test host; Tick() no la lee (el PCM ya va horneado).
+  bool surround_enabled_ = false;
   Voice stream_voice_;  // Solo para el fallback WAV en memoria.
   // Voz de stream en streaming (cache o ADP). Excluyente
   // con stream_voice_: solo una de las dos esta activa.
