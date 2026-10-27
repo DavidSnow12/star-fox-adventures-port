@@ -181,6 +181,15 @@ GxParser::StreamResult GxParser::ParseStream(const uint8_t* data, size_t len,
                                              uint64_t base_offset,
                                              size_t* consumed_io) {
   size_t pos = 0;
+  // Tramo 11: adyacencia PE_CONTROL (ver gx.h: reg00_adjacent).
+  // true desde una escritura BP 0x00 hasta el proximo draw,
+  // llamada a DL o disparo de copia (que la consume). Local
+  // por invocacion: un DL recursivo empieza en false (una
+  // escritura del stream principal no marca copias dentro
+  // del DL) y un Feed nuevo tambien (sin fugas entre
+  // rebanadas: el grupo de emision de un GXCopyTex es
+  // contiguo dentro de una misma rebanada).
+  bool bp00_adjacent = false;
   // En un DL, la truncacion es un error (el DL viene completo
   // de RAM); en el stream principal, es kTrunc (Feed retiene
   // el resto). El helper traduce el caso.
@@ -249,6 +258,10 @@ GxParser::StreamResult GxParser::ParseStream(const uint8_t* data, size_t len,
       uint32_t v = ReadBe32(data + pos + 1);
       bp_[v >> 24] = v & 0xFFFFFF;
       ++stats_.n_bp;
+      // Tramo 11: una escritura BP 0x00 abre la ventana de
+      // adyacencia (su propio grupo de emision la cierra al
+      // disparar, o el proximo draw/DL si no hay copia).
+      if ((v >> 24) == 0x00) bp00_adjacent = true;
       // Tramo 6: disparo de copia EFB = escritura BP 0x52 en
       // el propio FIFO (GXCopyDisp/GXCopyTex; correccion a la
       // nota Tramo 5 que lo situaba en MMIO PE). Se registra
@@ -274,6 +287,17 @@ GxParser::StreamResult GxParser::ParseStream(const uint8_t* data, size_t len,
         take(0x54, &c.reg54, &c.has54);
         // Tramo 9: escala Y BP 0x4E vigente en el disparo.
         take(0x4E, &c.reg4e, &c.has4e);
+        // Tramo 11: PE_CONTROL vigente (BP 0x00, ver gx.h):
+        // distingue copias Z8 (fmt 17) de copias I8 (fmt 1).
+        // Esta escritura es 0x52, asi que no toca la entrada
+        // 0x00: la vigente es la ultima escritura 0x00
+        // ANTERIOR a este disparo. Solo vale si es adyacente
+        // (sin draws ni DL entre medias: pertenece al grupo
+        // de emision de este GXCopyTex) y se consume aqui:
+        // una copia Z no marca a la copia siguiente.
+        take(0x00, &c.reg00, &c.has00);
+        c.reg00_adjacent = bp00_adjacent;
+        bp00_adjacent = false;
         copies_.push_back(c);
         fed_copies_.push_back(c);  // Tramo 10: drenaje por frame.
       }
@@ -281,6 +305,9 @@ GxParser::StreamResult GxParser::ParseStream(const uint8_t* data, size_t len,
       continue;
     }
     if (op == 0x40) {
+      // Tramo 11: una llamada a DL cierra la ventana de
+      // adyacencia (el DL recursivo empieza en false).
+      bp00_adjacent = false;
       if (pos + 9 > len) return trunc_or_fail(pos);
       uint32_t addr = ReadBe32(data + pos + 1);
       uint32_t size = ReadBe32(data + pos + 5);
@@ -329,6 +356,8 @@ GxParser::StreamResult GxParser::ParseStream(const uint8_t* data, size_t len,
       continue;
     }
     if (op >= 0x80 && op <= 0xBF) {
+      // Tramo 11: un draw cierra la ventana de adyacencia.
+      bp00_adjacent = false;
       size_t draw_start = pos;
       trunc_ = false;
       if (!ParseDraw(data, len, &pos, op & 0xF8, op & 0x07,

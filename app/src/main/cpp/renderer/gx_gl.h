@@ -135,6 +135,18 @@ class GxGlRenderer {
   // incompleto.
   bool ReadEfbRgba(std::vector<uint8_t>* out, int* width_out,
                    int* height_out);
+  // Tramo 11: lee la profundidad del target EFB vigente a
+  // float top-down (0.0 = cerca, 1.0 = lejos), con el mismo
+  // flip vertical que ReadEfbRgba. Solo la usan las copias
+  // Z8 (fmt 17): el FBO ya tiene renderbuffer
+  // DEPTH_COMPONENT24, asi que no hay que recrear nada.
+  // Devuelve false sin tocar `out` si no hay target.
+  // Nota de portabilidad: se lee con GL_DEPTH_COMPONENT +
+  // GL_FLOAT (GLES3); si un driver lo rechazara, la
+  // alternativa es GL_UNSIGNED_INT (valor 24 bits directo:
+  // byte alto = (v >> 16) & 0xFF) adaptando el llamador.
+  bool ReadEfbDepth(std::vector<float>* out, int* width_out,
+                    int* height_out);
   // Ejecuta UNA copia EFB (evento GxCopy del parser) desde el
   // target EFB vigente a la RAM huesped (`guest_ram`,
   // ram_size bytes, base 0x80000000). La decision de formato
@@ -148,12 +160,16 @@ class GxGlRenderer {
   // textura 1:1 -> tiled; con downsample entero uniforme
   // (p. ej. 640x480 -> 320x240) -> modelo box average
   // (ExecuteEfbCopyTiledDownsampled, motivo
-  // downsample-rechazado si falla).
+  // downsample-rechazado si falla). Tramo 11: copia Z8
+  // (fmt 17, ReflectionDepthTexture) -> profundidad del FBO
+  // a tiles I8 (ExecuteEfbCopyZ8, motivo z8-rechazada si
+  // falla; depth-readback-fallo si no se pudo leer el FBO).
   // `reject_reason` (si no es nulo) recibe el motivo del
   // rechazo, para boot.log: sin-target-EFB, ram-nula,
   // sin-evento-0x52, readback-fallo, escala-sin-filtro,
   // escala-modelo-rechazada, lineal-rechazada,
   // tiled-rechazada, downsample-rechazado,
+  // depth-readback-fallo, z8-rechazada,
   // formato-desconocido. No escribe nada en RAM si rechaza.
   bool CopyEfbToGuestRam(const GxCopy& copy, uint8_t* guest_ram,
                          uint32_t ram_size, std::string* reject_reason);
@@ -263,6 +279,15 @@ class GxGlRenderer {
   std::vector<uint8_t> efb_readback_;
   int efb_readback_w_ = 0;
   int efb_readback_h_ = 0;
+  // Tramo 11: cache de profundidad del frame vigente,
+  // espejo de la de color y con sus mismas reglas de
+  // invalidacion (DrawDraws, BeginEfbTarget). Solo la usan
+  // las copias Z8; un frame sin copias Z8 nunca lee la
+  // profundidad (coste cero en el camino antiguo).
+  bool efb_depth_valid_ = false;
+  std::vector<float> efb_depth_;
+  int efb_depth_w_ = 0;
+  int efb_depth_h_ = 0;
 
   GLuint program_ = 0;
   GLuint vbo_ = 0;

@@ -212,8 +212,8 @@ class AudioBridge {
   // con el gid de la tabla, arranca igualmente y lo deja
   // en el log (equivalencia sgid<->gid sin verificar salvo
   // 99, confirmada en el Tramo 7). Canciones con tabla:
-  // 99, 74, 5, 22, 95 (Tramo 8); 99/74 con bucle, resto en
-  // primer pase.
+  // 99, 74, 5, 22, 95; Tramo 11: 99/74/22/95 por secciones, 5 en
+  // primer pase (el bucle de segmento de 99/74 queda retirado).
   // Devuelve 1 si arranco, 0 si la cancion no tiene tabla
   // verificada (unresolved "musyx_cancion") o no hay audio.
   // Tramo 9: ya NO sustituye otras canciones (limite v1 roto):
@@ -275,6 +275,13 @@ class AudioBridge {
   // (preset huesped).
   uint32_t SeqCc7Of(uint32_t handle, uint32_t midi) const;
   uint32_t SeqCc10Of(uint32_t handle, uint32_t midi) const;
+  // Tramo 11: CC19 vigente del slot (pan surround huesped, op macro
+  // 0x47 ctrl 19; ver musyx_sections.h v3 e INFORME.md). Solo
+  // estado: el mezclador estereo NO renderiza surround, asi que
+  // no afecta a la mezcla. Sin slot, 0 (preset huesped: el
+  // FULL_PRESET pone CC19 = 0; el primer pase NO trae CC19 en
+  // las tablas planas, ver INFORME.md).
+  uint32_t SeqCc19Of(uint32_t handle, uint32_t midi) const;
   uint64_t SeqSlotsFull() const { return seq_slots_full_; }
   // Canciones activas (tracks) y nº de slots ocupados.
   std::vector<int> ActiveSeqTracks() const;
@@ -487,6 +494,7 @@ class AudioBridge {
     MusyxSequencer seq;
     std::array<uint32_t, 16> cc7{};
     std::array<uint32_t, 16> cc10{};
+    std::array<uint32_t, 16> cc19{};  // Tramo 11: pan surround (estado).
     uint32_t handle = 0;
     uint32_t group_id = 0;
     uint32_t track_id = 0;

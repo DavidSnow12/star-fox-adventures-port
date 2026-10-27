@@ -117,19 +117,26 @@
 //    exactamente f1 = 256.0/arg (0x80259934-0x80259940) y
 //    r6 = int & 0x1FF; (c) la cola de GXSetDispCopyYScale
 //    (0x80259998-0x802599E0) devuelve ~src_h*256/yscale
-//    (480,232 -> 530; 480,256 -> 480), NO src_h*yscale/256
+//    (480,232 -> 529; 480,256 -> 480), NO src_h*yscale/256
 //    (435): ver CopyYScaleLines, que reproduce esa cola
 //    literalmente. Con yscale 232, una copia 640x480 produce
-//    dst_h = 530 filas desde 480 filas de origen: el
-//    readback necesario es src_h (480), no 533. Residuo
-//    honesto: el conteo exacto de filas tiene +-2 lineas de
-//    incertidumbre (el espaciado XFB en trazas es 676.864 B
-//    = 528 filas + 1024 de guarda; ver INFORME Tramo 10):
-//    se usa la formula del SDK (CopyYScaleLines) y el caso
-//    queda acotado (RAM verificada, sin crash, XFB no se
-//    presenta en pantalla en este port, asi que el conteo no
-//    cambia la imagen visible; solo el contenido RAM del
-//    XFB, que el juego no relee como textura).
+//    dst_h = 529 filas desde 480 filas de origen: el
+//    readback necesario es src_h (480), no 533.
+//  - CORRECCION Tramo 11 (residuo 530/528 RESUELTO a 529):
+//    Tramo 10 leia la condicion del +1 al reves (!= 0) y
+//    daba 530; el valor correcto es 529 (condicion == 0).
+//    Tres cierres independientes: (a) la cola del SDK con
+//    la polaridad corregida; (b) el modo PAL real en el DOL
+//    (0x802CBC68: efbHeight 480, xfbHeight 528) da
+//    yscale_int = 232 y ((479*256)/232)+1 = 529, sin +1
+//    porque 480 % 29 = 16 != 0; (c) los buffers XFB
+//    alternan 0x80400000 / 0x804A5500: diferencia 0xA5500
+//    = 529*1280 exactos (el "528*1280 + 1024 de guarda" de
+//    Tramo 10 era aritmetica incorrecta). GX24 escribia 530
+//    filas: una linea de mas sobre el primer renglon del
+//    otro buffer, invisible en pantalla (el frame siguiente
+//    la reescribe; la presentacion es el quad del FBO, no
+//    la RAM XFB) pero contenido XFB incorrecto en RAM.
 //  - Copias a textura con src != dst (Tramo 10, geometria
 //    RESUELTA, kernel MODELO): el DOL lo pide literalmente
 //    (funcion 0x8006CA14: TexCopySrc(0,0,640,480) y luego
@@ -141,9 +148,41 @@
 //    esta probado: se implementa como MODELO de media de
 //    bloque (box average) para ratios enteros uniformes
 //    (src_w/dst_w = src_h/dst_h entero, p. ej. 2), solo para
-//    RGB565/RGBA8; fmt 0x11 sigue rechazado (semantica de
-//    pixel sin confirmar) y los ratios no enteros o no
-//    uniformes se rechazan con contador, no se inventan.
+//    RGB565/RGBA8; los ratios no enteros o no uniformes se
+//    rechazan con contador, no se inventan.
+//  - Formato 0x11 RESUELTO Tramo 11 (copia Z8, no I8): el
+//    llamador es newshadows_captureReflectionTextures
+//    (0x8006CA14): segunda copia con TexCopyDst(320,240,
+//    fmt 17, mipmap 1) cuyo destino es la ReflectionDepth-
+//    Texture (la devuelve newshadows_getReflectionDepth-
+//    Texture 0x8006C7BC). GXSetTexCopyDst (0x80259710) marca
+//    fmt bit 4 en el estado (+512) y GXCopyTex (0x80259E18)
+//    fuerza entonces el formato de pixel PE a 3 = Z24
+//    (YAGCD PE_CONTROL 0x43: bits 0-2: 3 = Z24) antes de
+//    disparar. La geometria FIFO es identica a I8 (tiles
+//    8x4, 32 B, 1 BPP, stride 1280 a 320 de ancho): desde el
+//    FIFO solo NO se distinguen fmt 17 y fmt 1; el
+//    discriminador es la escritura PE_CONTROL (BP 0x00 con
+//    bits 0-2 == 3) que GXCopyTex emite justo antes de la
+//    copia (ver gx.h: GxCopy.reg00) Y adyacente a ella (sin
+//    draws ni DL entre medias: GxCopy.reg00_adjacent). La
+//    adyacencia es lo que hace la regla exacta aunque el
+//    byte de registro 0x00 admita otra lectura (GENMODE):
+//    una escritura de material nunca es adyacente a una
+//    copia, y la emision de un GXCopyTex siempre lo es.
+//    muestrea como I8 real (textureAlloc la crea con fmt 1:
+//    allocLotsOfTextures 0x8006D900 -> textureInitGXTexObj
+//    0x80053F3C pasa el fmt del struct como fmt GX), asi
+//    que el decodificador I8 existente la muestrea sin
+//    cambios. Byte de profundidad: byte ALTO de Z24
+//    (Z>>16; ver ExecuteEfbCopyZ8: es la unica opcion
+//    coherente con un fade de reflexion suave — el byte
+//    bajo seria ruido casi aleatorio — y con la
+//    truncacion estandar Z24->Z8; falsable en dispositivo
+//    con la rampa de profundidad del INFORME Tramo 11).
+//    La lectura de profundidad del FBO es nueva (el FBO
+//    ya tiene renderbuffer DEPTH_COMPONENT24): el camino
+//    de color NO cambia.
 
 #include <cstdint>
 #include <cstring>
@@ -188,6 +227,13 @@ enum class EfbPixelKind {
   kXfbLinear2Bpp,  // Display: lineal, stride, 2 BPP (YUY2 asumido).
   kTexRgb565Tiled,  // Textura RGB565 (fmt_low 4): tiles 4x4, 32 B.
   kTexRgba8Tiled,  // Textura RGBA8 (fmt_low 6): tiles 4x4, 64 B.
+  // Tramo 11: copia Z8 (fmt 17, antes rechazada): geometria
+  // I8 (tiles 8x4, 32 B, 1 BPP) pero fuente = profundidad
+  // EFB, no color. Solo se asigna cuando el marcador
+  // PE_CONTROL (EfbCopyDecoded.has_pe_ctrl, bits 0-2 == 3)
+  // lo distingue de una copia I8 de color real; sin
+  // marcador, fmt_low 1 sigue siendo kUnknown (rechazo).
+  kTexZ8Tiled,  // Textura Z8 (fmt 17): tiles 8x4, 32 B.
 };
 
 struct EfbCopyFormat {
@@ -246,6 +292,16 @@ inline EfbCopyFormat DecodeCopyFormat(const EfbCopyDecoded& d) {
       f.kind = EfbPixelKind::kTexRgba8Tiled;
       f.tile_bytes = 64;
       f.tile_w = 4;
+      f.tile_h = 4;
+    } else if (f.tex_fmt_low == 1 && d.has_pe_ctrl &&
+               d.pe_ctrl_adjacent && (d.pe_ctrl & 0x7u) == 3) {
+      // Tramo 11: fmt_low 1 + PE_CONTROL Z24 ADYACENTE =
+      // copia Z8 (fmt 17). Sin marcador o sin adyacencia
+      // es I8 de color: kUnknown, como antes (no se acepta
+      // nada nuevo por error).
+      f.kind = EfbPixelKind::kTexZ8Tiled;
+      f.tile_bytes = 32;
+      f.tile_w = 8;
       f.tile_h = 4;
     }
   }
@@ -565,8 +621,10 @@ inline bool ApplyVerticalCopyFilterModel(const uint8_t* src_rows,
 //   r += 1;  r se acota a 1024.
 // (La parte impar es yscale sin factores 2: el bucle del DOL
 // en 0x802599C0 desplaza a la derecha hasta que es impar.)
-// Valores: (480,232)->530, (480,256)->480, (522,232)->575,
-// (528,234)->578. Es el conteo que el propio juego pasa
+// Valores SIN corregir (Tramo 10): (480,232)->530, (480,256)->480,
+// (522,232)->575, (528,234)->578. Tramo 11 corrige la polaridad
+// del +1: (480,232)->529, (522,232)->576, (528,234)->577 (ver
+// CopyYScaleLines abajo). Es el conteo que el propio juego pasa
 // como alto a GXSetDispCopyDst (0x80049FE8-0x80049FF0) y,
 // sobre todo, su magnitud (~530, no 435) es la prueba de
 // la direccion: dst = src*256/yscale, no src*yscale/256.
@@ -583,7 +641,18 @@ inline int CopyYScaleLines(int src_h, int yscale_int) {
   if (src_h <= 0 || yscale_int <= 0) return 0;
   int r = ((src_h - 1) * 256) / yscale_int + 1;
   if (yscale_int > 128 && yscale_int < 256) {
-    if (src_h % CopyYScaleOddPart(yscale_int) != 0) ++r;
+    // CORRECCION Tramo 11 (polaridad Tramo 10 invertida): la
+    // cola de GXSetDispCopyYScale (DOL 0x80259998-0x802599E0)
+    // suma 1 SOLO si H % parte_impar(yscale) == 0, no si es
+    // distinto de 0. Caso real PAL: (480,232) -> 529 (no 530);
+    // (522,232) -> 576 (no 575); (480,256) -> 480 (igual).
+    // Verificacion independiente: los buffers XFB alternan
+    // 0x80400000 / 0x804A5500, diferencia 0xA5500 =
+    // 529*1280 (censo run39/run43); GX24 escribia 530 filas
+    // (una linea de mas en el primer renglon del otro buffer,
+    // invisible en pantalla porque el frame siguiente la
+    // reescribe, pero contenido XFB incorrecto en RAM).
+    if (src_h % CopyYScaleOddPart(yscale_int) == 0) ++r;
   }
   if (r > 1024) r = 1024;
   return r;
@@ -766,6 +835,133 @@ inline bool ExecuteEfbCopyTiledDownsampled(const EfbCopyDecoded& d,
   if (!Rgba8ToGxTiled(small.data(), plan.dst_w, plan.dst_h, gx_fmt,
                       tiled.data()))
     return false;
+  std::memcpy(ram + plan.dest_offset, tiled.data(), tiled.size());
+  return true;
+}
+
+// --- Copia Z8 Tramo 11 (fmt 17, ReflectionDepthTexture) ---
+//
+// Plan: igual patron que PlanTexCopyDownsampled pero con
+// geometria I8 (tiles 8x4, 32 B) y escala >= 1 (1:1 y
+// downsample entero uniforme; el caso observado es 2:1:
+// 640x480 -> 320x240, stride 1280). La altura destino debe
+// ser multiplo exacto (dst_h = height / scale, sin resto);
+// el acolchado de tiles en Y (dst_h no multiplo de 4) se
+// deja a cero (los tiles se escriben completos desde el
+// buffer `small`, que solo cubre dst_h filas: las filas de
+// acolchado quedan en 0, igual que Rgba8ToGxTiled).
+struct TexCopyZ8Plan {
+  uint32_t dest_offset = 0;
+  int dst_w = 0;
+  int dst_h = 0;
+  int scale = 0;
+  int total_bytes = 0;
+};
+
+inline bool PlanTexCopyZ8(const EfbCopyDecoded& d,
+                          const EfbCopyFormat& f, uint32_t ram_size,
+                          TexCopyZ8Plan* plan) {
+  if (plan == nullptr) return false;
+  if (f.kind != EfbPixelKind::kTexZ8Tiled) return false;
+  if (!d.has_dest || !d.has_size || !d.has_stride) return false;
+  if (d.dest_guest < 0x80000000u || d.dest_guest >= 0x81800000u)
+    return false;
+  if (d.width <= 0 || d.height <= 0) return false;
+  if (d.stride_bytes <= 0 || (d.stride_bytes % f.tile_bytes) != 0)
+    return false;
+  int dst_tiles_x = d.stride_bytes / f.tile_bytes;
+  int dst_w = dst_tiles_x * f.tile_w;
+  if (dst_w <= 0 || dst_w > d.width) return false;
+  if ((d.width % dst_w) != 0) return false;
+  int scale = d.width / dst_w;
+  if (scale < 1) return false;
+  if ((d.height % scale) != 0) return false;
+  int dst_h = d.height / scale;
+  int tiles_y = (dst_h + f.tile_h - 1) / f.tile_h;
+  uint32_t off = d.dest_guest - 0x80000000u;
+  uint64_t total = static_cast<uint64_t>(d.stride_bytes) *
+                   static_cast<uint64_t>(tiles_y);
+  if (off + total > ram_size) return false;
+  plan->dest_offset = off;
+  plan->dst_w = dst_w;
+  plan->dst_h = dst_h;
+  plan->scale = scale;
+  plan->total_bytes = static_cast<int>(total);
+  return true;
+}
+
+// Ejecuta una copia Z8 desde un plano de profundidad float
+// top-down (0.0 = cerca, 1.0 = lejos, mismo convenio que
+// la profundidad GL del FBO y que el Z lineal GX del juego)
+// a tiles I8 en RAM huesped. Downsample: media de bloque
+// scale x scale sobre floats (MODELO, igual que el de
+// color; el kernel HW de profundidad no esta medido).
+// Byte de profundidad: byte ALTO de Z24, es decir
+// trunc(avg * 255) con clamp: para d = k/255 exacto da k
+// (Z24 = k*65793, Z24>>16 = k), y en general es la
+// truncacion estandar Z24->Z8. La alternativa (byte bajo)
+// queda descartada por argumento, no por medida: un byte
+// bajo seria ruido casi aleatorio frente a cambios
+// infinitesimales de profundidad y no serviria como fade
+// de reflexion; el discriminador de rampa del INFORME
+// Tramo 11 permite falsarlo en dispositivo (rampa
+// monotonica = byte alto; diente de sierra = byte bajo).
+// No escribe nada en RAM si el plan o el rectangulo fallan.
+inline bool ExecuteEfbCopyZ8(const EfbCopyDecoded& d,
+                             const EfbCopyFormat& f,
+                             const float* depth, int depth_w,
+                             int depth_h, uint8_t* ram,
+                             uint32_t ram_size) {
+  if (depth == nullptr || ram == nullptr) return false;
+  TexCopyZ8Plan plan;
+  if (!PlanTexCopyZ8(d, f, ram_size, &plan)) return false;
+  if (!d.has_src) return false;
+  if (d.src_x < 0 || d.src_y < 0 ||
+      d.src_x + d.width > depth_w ||
+      d.src_y + d.height > depth_h)
+    return false;
+  std::vector<uint8_t> small(
+      static_cast<size_t>(plan.dst_w) * plan.dst_h);
+  for (int y = 0; y < plan.dst_h; ++y) {
+    for (int x = 0; x < plan.dst_w; ++x) {
+      float acc = 0.0f;
+      for (int dy = 0; dy < plan.scale; ++dy) {
+        for (int dx = 0; dx < plan.scale; ++dx) {
+          int sx = d.src_x + x * plan.scale + dx;
+          int sy = d.src_y + y * plan.scale + dy;
+          acc += depth[static_cast<size_t>(sy) * depth_w + sx];
+        }
+      }
+      float avg = acc / static_cast<float>(plan.scale * plan.scale);
+      int v = static_cast<int>(avg * 255.0f);
+      if (v < 0) v = 0;
+      if (v > 255) v = 255;
+      small[static_cast<size_t>(y) * plan.dst_w + x] =
+          static_cast<uint8_t>(v);
+    }
+  }
+  // Tiles I8 8x4 fila-mayor dentro del tile, inverso exacto
+  // de GxDecodeTexture fmt 1 (gx_texture.cpp): tile[row*8 +
+  // col] = small[y*dst_w + x]. Las filas de acolchado de
+  // tile (dst_h no multiplo de 4) quedan a cero.
+  std::vector<uint8_t> tiled(plan.total_bytes, 0);
+  int tiles_x = plan.dst_w / f.tile_w;
+  for (int ty = 0; ty < (plan.dst_h + f.tile_h - 1) / f.tile_h; ++ty) {
+    for (int tx = 0; tx < tiles_x; ++tx) {
+      uint8_t* tile = tiled.data() +
+                      (static_cast<size_t>(ty) * tiles_x + tx) *
+                          f.tile_bytes;
+      for (int row = 0; row < f.tile_h; ++row) {
+        int y = ty * f.tile_h + row;
+        if (y >= plan.dst_h) break;
+        for (int col = 0; col < f.tile_w; ++col) {
+          tile[row * f.tile_w + col] =
+              small[static_cast<size_t>(y) * plan.dst_w +
+                    tx * f.tile_w + col];
+        }
+      }
+    }
+  }
   std::memcpy(ram + plan.dest_offset, tiled.data(), tiled.size());
   return true;
 }

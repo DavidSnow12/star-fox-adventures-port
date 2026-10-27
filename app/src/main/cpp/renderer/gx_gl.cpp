@@ -676,8 +676,10 @@ int GxGlRenderer::DrawDraws(const std::vector<GxDraw>& draws,
                             const TexResolver& resolver) {
   if (program_ == 0) return 0;
   // Tramo 10: cualquier draw invalida la cache de readback
-  // EFB (el contenido del FBO cambia).
+  // EFB (el contenido del FBO cambia). Tramo 11: tambien
+  // la de profundidad (misma razon).
   efb_readback_valid_ = false;
+  efb_depth_valid_ = false;
   // Altura del viewport GL (una vez por llamada) para el
   // flip vertical del scissor.
   {
@@ -821,8 +823,10 @@ bool GxGlRenderer::BeginEfbTarget(int width, int height) {
     glBindFramebuffer(GL_FRAMEBUFFER, efb_fbo_);
     glViewport(0, 0, width, height);
     // Tramo 10: nuevo frame sobre el mismo target: la cache
-    // del frame anterior ya no vale.
+    // del frame anterior ya no vale. Tramo 11: idem para
+    // la profundidad.
     efb_readback_valid_ = false;
+    efb_depth_valid_ = false;
     return true;
   }
   DeleteEfbTarget(&efb_fbo_, &efb_tex_, &efb_rbo_);
@@ -854,6 +858,7 @@ bool GxGlRenderer::BeginEfbTarget(int width, int height) {
   }
   glViewport(0, 0, width, height);
   efb_readback_valid_ = false;
+  efb_depth_valid_ = false;
   return true;
 }
 
@@ -887,6 +892,31 @@ bool GxGlRenderer::ReadEfbRgba(std::vector<uint8_t>* out, int* width_out,
   return true;
 }
 
+// Tramo 11: lectura de profundidad del FBO EFB (ver gx_gl.h).
+// glReadPixels es bottom-up como en color: se invierte por
+// filas para entregar top-down (fila 0 = arriba), el mismo
+// convenio que el plano de profundidad que espera
+// ExecuteEfbCopyZ8.
+bool GxGlRenderer::ReadEfbDepth(std::vector<float>* out,
+                                int* width_out, int* height_out) {
+  if (out == nullptr || efb_fbo_ == 0 || efb_w_ <= 0 || efb_h_ <= 0)
+    return false;
+  std::vector<float> raw(static_cast<size_t>(efb_w_) * efb_h_);
+  glReadPixels(0, 0, efb_w_, efb_h_, GL_DEPTH_COMPONENT, GL_FLOAT,
+               raw.data());
+  out->assign(raw.size(), 0.0f);
+  size_t row_floats = static_cast<size_t>(efb_w_);
+  for (int y = 0; y < efb_h_; ++y) {
+    std::memcpy(out->data() + static_cast<size_t>(y) * row_floats,
+                raw.data() +
+                    static_cast<size_t>(efb_h_ - 1 - y) * row_floats,
+                row_floats * sizeof(float));
+  }
+  if (width_out != nullptr) *width_out = efb_w_;
+  if (height_out != nullptr) *height_out = efb_h_;
+  return true;
+}
+
 bool GxGlRenderer::CopyEfbToGuestRam(const GxCopy& copy,
                                      uint8_t* guest_ram,
                                      uint32_t ram_size,
@@ -901,60 +931,89 @@ bool GxGlRenderer::CopyEfbToGuestRam(const GxCopy& copy,
   if (guest_ram == nullptr) return reject("ram-nula");
   EfbCopyDecoded d0 = DecodeEfbCopy(copy);
   if (!d0.execute) return reject("sin-evento-0x52");
-  // Tramo 10: readback con cache por frame (ver gx_gl.h). La
-  // primera copia del frame lee el FBO; las siguientes
-  // reutilizan el buffer (DrawDraws ya invalido la cache si
-  // hubo draws entre medias).
-  if (!efb_readback_valid_) {
-    std::vector<uint8_t> fresh;
-    int fw = 0, fh = 0;
-    if (!ReadEfbRgba(&fresh, &fw, &fh)) return reject("readback-fallo");
-    efb_readback_ = std::move(fresh);
-    efb_readback_w_ = fw;
-    efb_readback_h_ = fh;
-    efb_readback_valid_ = true;
-  }
-  const uint8_t* rgba_data = efb_readback_.data();
-  int rw = efb_readback_w_, rh = efb_readback_h_;
   EfbCopyDecoded d = d0;
   EfbCopyFormat f = DecodeCopyFormat(d);
   bool ok = false;
-  if (f.kind == EfbPixelKind::kXfbLinear2Bpp) {
-    if (f.yscale_flag && (!d.has_yscale || d.yscale_int != 256)) {
-      // Copia con escala: solo con filtro capturado (modelo).
-      if (!d.has_filter) return reject("escala-sin-filtro");
-      int taps[7];
-      DecodeCopyFilter(d.filter53, d.filter54, taps);
-      ok = ExecuteEfbCopyScaledModel(d, f, rgba_data, rw, rh, taps,
-                                     guest_ram, ram_size);
-      if (!ok) return reject("escala-modelo-rechazada");
-    } else {
-      ok = ExecuteEfbCopyLinear(d, f, rgba_data, rw, rh, guest_ram,
-                                ram_size);
-      if (!ok) return reject("lineal-rechazada");
+  if (f.kind == EfbPixelKind::kTexZ8Tiled) {
+    // Tramo 11: copia Z8 (fmt 17): NO usa el readback de
+    // color (la fuente es la profundidad EFB). Cache de
+    // profundidad por frame, espejo de la de color:
+    // DrawDraws la invalida si hubo draws entre medias.
+    // (Nota: antes de este tramo, toda copia pasaba por el
+    // readback de color antes de decidir el formato; ahora
+    // una copia Z8 o de formato desconocido ya no fuerza
+    // esa lectura. El motivo de rechazo no cambia para
+    // copias validas; en un frame solo con copias
+    // rechazadas por formato, el ultimo motivo pasa de
+    // "readback-fallo" a "formato-desconocido", que es el
+    // motivo real.)
+    if (!efb_depth_valid_) {
+      std::vector<float> fresh;
+      int fw = 0, fh = 0;
+      if (!ReadEfbDepth(&fresh, &fw, &fh))
+        return reject("depth-readback-fallo");
+      efb_depth_ = std::move(fresh);
+      efb_depth_w_ = fw;
+      efb_depth_h_ = fh;
+      efb_depth_valid_ = true;
     }
-  } else if (f.kind == EfbPixelKind::kTexRgb565Tiled ||
-             f.kind == EfbPixelKind::kTexRgba8Tiled) {
-    // Tramo 10: primero el camino 1:1 probado; si el plan
-    // 1:1 falla SOLO por mismatch de ancho (caso src != dst),
-    // probar el downsample entero uniforme (modelo). Otros
-    // fallos del plan 1:1 (RAM, stride, destino) no se
-    // reintentan como downsample: se rechazan como tiled.
-    TexCopyDownsamplePlan dplan;
-    EfbCopyPlan plan1;
-    if (PlanTexCopy(d, f, ram_size, &plan1)) {
-      ok = ExecuteEfbCopyTiled(d, f, rgba_data, rw, rh, guest_ram,
-                               ram_size);
-      if (!ok) return reject("tiled-rechazada");
-    } else if (PlanTexCopyDownsampled(d, f, ram_size, &dplan)) {
-      ok = ExecuteEfbCopyTiledDownsampled(d, f, rgba_data, rw, rh,
-                                          guest_ram, ram_size);
-      if (!ok) return reject("downsample-rechazado");
-    } else {
-      return reject("tiled-rechazada");
-    }
+    ok = ExecuteEfbCopyZ8(d, f, efb_depth_.data(), efb_depth_w_,
+                          efb_depth_h_, guest_ram, ram_size);
+    if (!ok) return reject("z8-rechazada");
   } else {
-    return reject("formato-desconocido");
+    // Tramo 10: readback con cache por frame (ver gx_gl.h).
+    // La primera copia del frame lee el FBO; las siguientes
+    // reutilizan el buffer (DrawDraws ya invalido la cache
+    // si hubo draws entre medias).
+    if (!efb_readback_valid_) {
+      std::vector<uint8_t> fresh;
+      int fw = 0, fh = 0;
+      if (!ReadEfbRgba(&fresh, &fw, &fh))
+        return reject("readback-fallo");
+      efb_readback_ = std::move(fresh);
+      efb_readback_w_ = fw;
+      efb_readback_h_ = fh;
+      efb_readback_valid_ = true;
+    }
+    const uint8_t* rgba_data = efb_readback_.data();
+    int rw = efb_readback_w_, rh = efb_readback_h_;
+    if (f.kind == EfbPixelKind::kXfbLinear2Bpp) {
+      if (f.yscale_flag && (!d.has_yscale || d.yscale_int != 256)) {
+        // Copia con escala: solo con filtro capturado (modelo).
+        if (!d.has_filter) return reject("escala-sin-filtro");
+        int taps[7];
+        DecodeCopyFilter(d.filter53, d.filter54, taps);
+        ok = ExecuteEfbCopyScaledModel(d, f, rgba_data, rw, rh, taps,
+                                       guest_ram, ram_size);
+        if (!ok) return reject("escala-modelo-rechazada");
+      } else {
+        ok = ExecuteEfbCopyLinear(d, f, rgba_data, rw, rh, guest_ram,
+                                  ram_size);
+        if (!ok) return reject("lineal-rechazada");
+      }
+    } else if (f.kind == EfbPixelKind::kTexRgb565Tiled ||
+               f.kind == EfbPixelKind::kTexRgba8Tiled) {
+      // Tramo 10: primero el camino 1:1 probado; si el plan
+      // 1:1 falla SOLO por mismatch de ancho (caso src != dst),
+      // probar el downsample entero uniforme (modelo). Otros
+      // fallos del plan 1:1 (RAM, stride, destino) no se
+      // reintentan como downsample: se rechazan como tiled.
+      TexCopyDownsamplePlan dplan;
+      EfbCopyPlan plan1;
+      if (PlanTexCopy(d, f, ram_size, &plan1)) {
+        ok = ExecuteEfbCopyTiled(d, f, rgba_data, rw, rh, guest_ram,
+                                 ram_size);
+        if (!ok) return reject("tiled-rechazada");
+      } else if (PlanTexCopyDownsampled(d, f, ram_size, &dplan)) {
+        ok = ExecuteEfbCopyTiledDownsampled(d, f, rgba_data, rw, rh,
+                                            guest_ram, ram_size);
+        if (!ok) return reject("downsample-rechazado");
+      } else {
+        return reject("tiled-rechazada");
+      }
+    } else {
+      return reject("formato-desconocido");
+    }
   }
   ++efb_copies_ok_;
   efb_last_reject_.clear();

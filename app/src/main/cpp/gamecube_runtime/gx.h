@@ -422,6 +422,35 @@ struct GxCopy {
   // previo, has4e = false y la escala es desconocida.
   uint32_t reg4e = 0;
   bool has4e = false;
+  // Tramo 11: escritura BP 0x00 vigente en el disparo. La
+  // libreria GX emite por FIFO las palabras de estado
+  // +472/+476 SIN byte de registro (stb 0x61 + stw del valor
+  // crudo: GXCopyTex 0x80259E18, GXCopyDisp 0x80259CA8,
+  // GXPixModeSync 0x80258E30), asi que aparecen como BP
+  // 0x00; +476 es PE_CONTROL (YAGCD 0x43: bits 0-2 formato
+  // de pixel, 3-5 formato Z, 6 Z comp loc). GXCopyTex
+  // fuerza bits 0-2 = 3 (Z24) cuando el fmt de copia tiene
+  // bit 4 (fmt 17/19) y lo emite justo antes de la copia:
+  // en traza run39, las 23 copias fmt 0x11 van precedidas
+  // de `61 00 000003` y las RGB565 de `61 00 000000`.
+  // reg00/has00 es ese valor: (reg00 & 7) == 3 distingue
+  // una copia Z8 de una copia I8 de color, que en FIFO son
+  // identicas (misma geometria 8x4/32 B). Misma robustez
+  // que reg53/54/4e (mismo mecanismo bp_); sin 0x00 previo
+  // has00 = false y la copia NO se trata como Z (rechazo
+  // conservador, nunca bytes inventados).
+  // reg00_adjacent: true SOLO si entre esa escritura 0x00
+  // y este disparo no hubo ningun draw ni llamada a DL
+  // (es decir, la escritura pertenece al propio grupo de
+  // emision de este GXCopyTex, que emite 0x00, 0x49, 0x4A,
+  // 0x4D, 0x4B y 0x52 contiguos). Sin adyacencia, un valor
+  // 3 heredado de una copia Z anterior o de un material
+  // no puede marcar esta copia: la regla Z exige
+  // adyacencia (ver efb_copy.h). El flag se consume con
+  // cada disparo (una copia Z no marca a la siguiente).
+  uint32_t reg00 = 0;
+  bool has00 = false;
+  bool reg00_adjacent = false;
   // Tramo 8: filtro de copia BP 0x53/0x54 vigente en el
   // disparo (GXSetCopyFilter 0x80259A64; YAGCD: 0x53/0x54
   // = copy filter). Valores crudos, sin decodificar a
@@ -507,6 +536,12 @@ struct EfbCopyDecoded {
   // Tramo 9: escala Y BP 0x4E vigente (si se capturo).
   bool has_yscale = false;
   int yscale_int = 0;  // 9 bits; flag bit10 = (256 - x) > 0.
+  // Tramo 11: PE_CONTROL vigente (BP 0x00, ver GxCopy).
+  // bits 0-2 == 3 (Z24) + fmt_low 1 + adyacencia = copia Z8
+  // (fmt 17). Sin adyacencia no hay Z aunque el valor sea 3.
+  bool has_pe_ctrl = false;
+  uint32_t pe_ctrl = 0;
+  bool pe_ctrl_adjacent = false;
 };
 
 inline EfbCopyDecoded DecodeEfbCopy(const GxCopy& c) {
@@ -549,6 +584,11 @@ inline EfbCopyDecoded DecodeEfbCopy(const GxCopy& c) {
   if (c.has4e) {
     d.has_yscale = true;
     d.yscale_int = static_cast<int>(c.reg4e & 0x1FFu);
+  }
+  if (c.has00) {
+    d.has_pe_ctrl = true;
+    d.pe_ctrl = c.reg00;
+    d.pe_ctrl_adjacent = c.reg00_adjacent;
   }
   return d;
 }

@@ -1,5 +1,8 @@
 #include "gamecube_runtime/runtime.h"
 
+#include <algorithm>
+
+#include "gamecube_runtime/gx_merge.h"
 #include "cpu/cpu.h"
 #include "gamecube_runtime/dol_loader.h"
 #include "log.h"
@@ -275,9 +278,14 @@ void GameCubeRuntime::Frame(Renderer* renderer) {
   // Tramo 10: camino EFB. Renderizar UNA vez al target EFB
   // y presentar con el quad texturado existente (ver
   // renderer.h): sin dibujar dos veces y sin inventar un
-  // blit. Las copias se ejecutan tras los draws del frame
-  // (deferidas un frame para texturas; exactas para XFB,
-  // que son de fin de frame). Si el FBO falla, se usa el
+  // blit. Tramo 11: draws y copias se ejecutan
+  // ENTRELAZADOS por fifo_offset (ver gx_merge.h): una
+  // copia a textura del frame ya esta disponible para los
+  // draws posteriores del MISMO frame (antes, todas las
+  // copias iban tras todos los draws: la textura copiada
+  // solo servia el frame siguiente). Las copias XFB son
+  // de fin de frame y no se ven afectadas (su segmento va
+  // el ultimo, como antes). Si el FBO falla, se usa el
   // camino de pantalla de siempre y las copias DE ESTE
   // frame se descartan (el proximo frame trae copias
   // nuevas; un FBO que falla sistematicamente deja el
@@ -290,19 +298,72 @@ void GameCubeRuntime::Frame(Renderer* renderer) {
       (!pending_gx_draws_.empty() || !pending_gx_copies_.empty())) {
     bool efb_ok = renderer->BeginEfbFrame(640, 480);
     if (efb_ok) {
-      if (!pending_gx_draws_.empty()) {
-        renderer->DrawGxFrame(pending_gx_draws_, memory_.RamData(),
-                              memory_.RamSize());
-      }
-      if (!pending_gx_copies_.empty()) {
-        auto counts = renderer->CopyEfbCopies(
-            pending_gx_copies_, memory_.RamData(), memory_.RamSize());
-        if (counts.second > 0) {
-          SFA_LOGI("runtime: efb-copy: frame ok=%d rechazadas=%d "
-                   "ultimo=%s",
-                   counts.first, counts.second,
-                   renderer->EfbLastReject().c_str());
+      // Tramo 11: ejecucion ENTRELAZADA por fifo_offset (ver
+      // gamecube_runtime/gx_merge.h): las copias a textura
+      // se ejecutan en cuanto los draws que las preceden
+      // estan en el EFB, asi que los draws posteriores del
+      // MISMO frame ya ven la textura copiada (antes, las
+      // copias iban todas tras todos los draws y la textura
+      // solo estaba disponible el frame siguiente). Las
+      // listas del parser vienen en orden FIFO; el
+      // stable_sort defensivo es no-op con la entrada bien
+      // formada y preserva el orden de parseo en empates
+      // (draws dentro de un mismo DL). Sin copias, el plan
+      // es un unico segmento de draws: orden identico al
+      // antiguo. Sin draws, solo segmentos de copias. Con
+      // copias todas tras los draws (caso observado en
+      // trazas), un segmento de draws + copias: orden
+      // antiguo exacto. El FBO sigue enlazado durante todo
+      // el bucle (DrawGxFrame dibuja donde este enlazado;
+      // CopyEfbCopies solo lee con glReadPixels): no se
+      // reenlaza ni se cambia el viewport entre segmentos.
+      // Coste: cada segmento de draws re-resuelve sus
+      // texturas (frame_tex local por DrawGxFrame) y cada
+      // DrawDraws invalida la cache de readback (correcto).
+      std::stable_sort(pending_gx_draws_.begin(),
+                       pending_gx_draws_.end(),
+                       [](const GxDraw& a, const GxDraw& b) {
+                         return a.fifo_offset < b.fifo_offset;
+                       });
+      std::stable_sort(pending_gx_copies_.begin(),
+                       pending_gx_copies_.end(),
+                       [](const GxCopy& a, const GxCopy& b) {
+                         return a.fifo_offset < b.fifo_offset;
+                       });
+      std::vector<uint64_t> draw_off;
+      draw_off.reserve(pending_gx_draws_.size());
+      for (const GxDraw& d : pending_gx_draws_)
+        draw_off.push_back(static_cast<uint64_t>(d.fifo_offset));
+      std::vector<uint64_t> copy_off;
+      copy_off.reserve(pending_gx_copies_.size());
+      for (const GxCopy& c : pending_gx_copies_)
+        copy_off.push_back(c.fifo_offset);
+      std::vector<GxSegment> plan = GxMergeSegments(
+          draw_off.size(), draw_off.data(), copy_off.size(),
+          copy_off.data());
+      int ok_total = 0, rej_total = 0;
+      for (const GxSegment& seg : plan) {
+        if (!seg.is_copy) {
+          std::vector<GxDraw> draws(
+              pending_gx_draws_.begin() + seg.begin,
+              pending_gx_draws_.begin() + seg.end);
+          renderer->DrawGxFrame(draws, memory_.RamData(),
+                                memory_.RamSize());
+        } else {
+          std::vector<GxCopy> copies(
+              pending_gx_copies_.begin() + seg.begin,
+              pending_gx_copies_.begin() + seg.end);
+          auto counts = renderer->CopyEfbCopies(
+              copies, memory_.RamData(), memory_.RamSize());
+          ok_total += counts.first;
+          rej_total += counts.second;
         }
+      }
+      if (rej_total > 0) {
+        SFA_LOGI("runtime: efb-copy: frame ok=%d rechazadas=%d "
+                 "ultimo=%s",
+                 ok_total, rej_total,
+                 renderer->EfbLastReject().c_str());
       }
       if (!renderer->PresentEfb()) {
         // Present fallo (sin readback): el frame ya esta

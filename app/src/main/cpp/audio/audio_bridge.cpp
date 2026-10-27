@@ -118,10 +118,12 @@ class AdpCachedReader : public NativeReader {
 }  // namespace
 
 AudioBridge::AudioBridge() {
-  // Preset huesped (Tramo 5, seq_host.py): CC7=127, CC10=64.
+  // Preset huesped (Tramo 5, seq_host.py): CC7=127, CC10=64,
+  // CC19=0 (FULL_PRESET[19]).
   for (SongSlot& slot : song_slots_) {
     slot.cc7.fill(127);
     slot.cc10.fill(64);
+    slot.cc19.fill(0);
   }
 }
 
@@ -209,6 +211,11 @@ uint32_t AudioBridge::SeqCc10Of(uint32_t handle, uint32_t midi) const {
   const SongSlot* slot = FindSlot(handle);
   if (slot == nullptr || midi >= 16) return 64;
   return slot->cc10[midi];
+}
+uint32_t AudioBridge::SeqCc19Of(uint32_t handle, uint32_t midi) const {
+  const SongSlot* slot = FindSlot(handle);
+  if (slot == nullptr || midi >= 16) return 0;
+  return slot->cc19[midi];
 }
 bool AudioBridge::SlotMusicActive(const SongSlot* slot) const {
   if (slot == nullptr) return false;
@@ -366,6 +373,7 @@ int AudioBridge::OnSeqPlay(uint32_t group_id, uint32_t seq_id,
   slot->vol_dur = 0.0;
   slot->cc7.fill(127);
   slot->cc10.fill(64);
+  slot->cc19.fill(0);
   slot->active = true;
   slot->seq.Start(song, speed);
   SeqStarted rec;
@@ -729,6 +737,10 @@ void AudioBridge::PumpSlot(SongSlot* slot, double dt_seconds) {
       if (e.cc->midi < 16) {
         if (e.cc->cc == 7) slot->cc7[e.cc->midi] = e.cc->value;
         if (e.cc->cc == 10) slot->cc10[e.cc->midi] = e.cc->value;
+        // Tramo 11: CC19 (pan surround) se guarda como estado; NO
+        // se aplica a la mezcla estereo (el mezclador no tiene
+        // bus surround; ver INFORME.md).
+        if (e.cc->cc == 19) slot->cc19[e.cc->midi] = e.cc->value;
       }
     } else if (e.kind == MusyxSequencer::Event::kLoop) {
       // Tramo 8: al envolver, los CC vuelven al snapshot

@@ -57,7 +57,9 @@ struct MusyxNote {
 struct MusyxCc {
   uint32_t time_ticks = 0;
   uint32_t midi = 0;
-  uint32_t cc = 0;  // 7 (volumen) o 10 (pan) en v1.
+  uint32_t cc = 0;  // 7 (volumen), 10 (pan) o 19 (pan surround,
+                      // Tramo 11: solo estado en el bridge, sin
+                      // render en el mezclador estereo).
   uint32_t value = 0;
 };
 
@@ -91,7 +93,7 @@ struct MusyxSection {
   // exactos (22: 49152; 95 sec0/1: 6144, sec2: 30624, sec3: 29088,
   // sec4: 27552). loop_note_indices = notas de la vuelta (las de
   // intro < loop_point NO se repiten en el huesped); loop_ccs =
-  // CC7/CC10 de la vuelta en tiempos absolutos huesped (dedup
+  // CC7/CC10/CC19 de la vuelta en tiempos absolutos huesped (dedup
   // consecutivos por (midi, cc)). Sin tablas de vuelta (nullptr),
   // la seccion no entra en fase de bucle.
   uint32_t loop_point = 0;
