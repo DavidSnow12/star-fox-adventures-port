@@ -3,6 +3,7 @@
 #include <GLES3/gl3.h>
 
 #include "input/audio_label.h"
+#include "input/surround_label.h"
 #include "log.h"
 
 namespace sfa {
@@ -139,10 +140,15 @@ void Renderer::DrawSurroundButton(bool enabled) {
   // Tramo 20: misma conversion fraccion->NDC que
   // DrawAudioButton y las mismas constantes de
   // surround_button.h (tactil y dibujo no se pueden
-  // desalinear). Sin etiqueta bitmap (como la pildora de
-  // audio antes del Tramo 7): color + boot.log comunican el
-  // estado; la etiqueta textual queda pendiente del futuro
-  // overlay de ajustes.
+  // desalinear). Tramo 21: etiqueta bitmap DENTRO de la
+  // pildora, despues del interior y antes del swap (mismo
+  // orden que DrawAudioButton). Solo pintura: no crea zona
+  // tactil nueva ni cambia la interceptacion de Input. Sin
+  // pantalla valida, o si la pildora es demasiado pequena
+  // para escala 1, se omite la etiqueta y la pildora queda
+  // como en el Tramo 20 (color solo). La textura es opaca
+  // (fondo = color de la pildora), asi que no necesita
+  // blending (el shader no lo activa).
   auto to_ndc_x = [](float fx) { return 2.0f * fx - 1.0f; };
   auto to_ndc_y = [](float fy) { return 1.0f - 2.0f * fy; };
   const float x0 = to_ndc_x(sfa::kSurroundBtnX0);
@@ -153,6 +159,21 @@ void Renderer::DrawSurroundButton(bool enabled) {
                        y_bot - 0.01f, 20, 20, 30);
   const SurroundButtonColor c = SurroundButtonColorFor(enabled);
   gx_gl_.DrawSolidQuad(x0, y_top, x1, y_bot, c.r, c.g, c.b);
+  const int pill_w_px = AudioLabelPillPx(x1 - x0, width_);
+  const int pill_h_px = AudioLabelPillPx(y_top - y_bot, height_);
+  AudioLabelLayout label_layout;
+  std::vector<uint8_t> label_rgba =
+      RasterizeSurroundLabel(enabled, pill_w_px, pill_h_px, &label_layout);
+  if (!label_rgba.empty() && label_layout.ok) {
+    const AudioLabelQuad q =
+        AudioLabelQuadFor(width_, height_, x0, x1, y_top, y_bot,
+                          label_layout.tex_w, label_layout.tex_h);
+    if (q.ok) {
+      gx_gl_.DrawTexturedQuadRect(label_rgba.data(), label_layout.tex_w,
+                                  label_layout.tex_h, q.x0, q.y_top, q.x1,
+                                  q.y_bot);
+    }
+  }
 }
 
 int Renderer::DrawGxFrame(const std::vector<GxDraw>& draws,
