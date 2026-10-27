@@ -221,6 +221,43 @@ public class MainActivity extends NativeActivity {
         });
     }
 
+    // ---- Preferencia surround, Tramo 20 (via B del Tramo 16) ----
+    // Fuente de verdad del modo surround del port. La lee el
+    // codigo nativo por JNI (getSurroundEnabled) tras
+    // TryLoadData() y la escribe al pulsar la pildora
+    // (setSurroundEnabled). Defecto OFF: con OFF, el PCM es
+    // bit-identico al de GX28 (el gate C++ del Tramo 16 tiene
+    // espejo = 1). No sigue a SaveData.soundMode de la
+    // partida (Fase B del Tramo 14, opcional y no hecha):
+    // este ajuste es del port, no del juego, y no debe
+    // presentarse como el modo de sonido de la partida.
+    // Son llamadas binder/IO breves (SharedPreferences), no
+    // necesitan runOnUiThread (al reves que los pickers SAF).
+    private static final String PREFS_SURROUND = "sfa_settings";
+    private static final String KEY_SURROUND_ENABLED = "audio_surround_enabled";
+
+    /** Llamado por JNI desde native-lib (ApplySurroundPreference). */
+    public boolean getSurroundEnabled() {
+        try {
+            return getSharedPreferences(PREFS_SURROUND, MODE_PRIVATE)
+                    .getBoolean(KEY_SURROUND_ENABLED, false);
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    /** Llamado por JNI desde native-lib (toggle de la pildora). */
+    public void setSurroundEnabled(boolean enabled) {
+        try {
+            getSharedPreferences(PREFS_SURROUND, MODE_PRIVATE)
+                    .edit()
+                    .putBoolean(KEY_SURROUND_ENABLED, enabled)
+                    .apply();
+        } catch (Exception e) {
+            Log.w(TAG, "surround: no se pudo persistir: " + e);
+        }
+    }
+
     /** Llamado por JNI desde native-lib ("anadir audio"). Abre el
      *  picker SAF para elegir la carpeta del overlay de audio
      *  (la carpeta audio/ en si, o su padre si contiene audio/).

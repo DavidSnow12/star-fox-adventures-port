@@ -37,6 +37,7 @@
 #include <cstdint>
 
 #include "input/audio_button.h"
+#include "input/surround_button.h"
 #include "input/pad_state.h"
 #include "input/touch_layout.h"
 
@@ -61,6 +62,16 @@ class Input {
   void SetAudioButtonState(AudioState state) {
     audio_button_.SetState(state);
   }
+  // Boton "surround" Tramo 20: Input lo posee, native-lib
+  // escribe su estado (preferencia Java) y el renderer lo lee
+  // para dibujar la pildora. TakeSurroundButtonTrigger() lo
+  // consume una sola vez (el bucle nativo invierte entonces
+  // la preferencia y el gate C++).
+  bool TakeSurroundButtonTrigger() { return surround_button_.TakeTrigger(); }
+  bool SurroundButtonEnabled() const { return surround_button_.Enabled(); }
+  void SetSurroundButtonEnabled(bool enabled) {
+    surround_button_.SetEnabled(enabled);
+  }
 
  private:
   bool HandleKey(AInputEvent* event);
@@ -71,6 +82,7 @@ class Input {
   PadState state_;
   TouchLayout touch_;
   AudioButton audio_button_;
+  SurroundButton surround_button_;
   int viewport_w_ = 0;
   int viewport_h_ = 0;
   bool logged_touch_ = false;

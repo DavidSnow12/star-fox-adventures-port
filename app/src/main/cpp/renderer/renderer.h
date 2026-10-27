@@ -16,6 +16,7 @@
 
 #include "gamecube_runtime/gx.h"
 #include "input/audio_button.h"
+#include "input/surround_button.h"
 #include "renderer/gx_gl.h"
 
 namespace sfa {
@@ -40,6 +41,12 @@ class Renderer {
   // y el rectangulo dibujado son las mismas constantes de
   // audio_button.h: tactil y dibujo no se pueden desalinear.
   void DrawAudioButton(AudioState state);
+  // Tramo 20: pildora "surround" (color segun enabled, sin
+  // etiqueta bitmap todavia). Se dibuja DESPUES de la de
+  // audio y ANTES del swap: queda por encima del juego a
+  // proposito (es UI, no arte). Sin contexto GX listo es
+  // no-op, igual que DrawAudioButton.
+  void DrawSurroundButton(bool enabled);
   // Fase 10: draws GX (parser host) con texturas decodificadas
   // desde la RAM huesped dada. Sin draws, no dibuja nada.
   int DrawGxFrame(const std::vector<GxDraw>& draws, const uint8_t* ram,

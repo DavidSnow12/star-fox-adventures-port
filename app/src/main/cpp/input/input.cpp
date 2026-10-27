@@ -31,6 +31,7 @@ void Input::Reset() {
   // estado (lo reescribe native-lib tras Init, ver
   // audio_button.h): aqui no se pierde un Ready previo.
   audio_button_.Reset();
+  surround_button_.Reset();
   logged_touch_ = false;
   logged_no_viewport_ = false;
 }
@@ -161,6 +162,13 @@ bool Input::HandleTouch(AInputEvent* event) {
         changed = true;
         continue;
       }
+      // Tramo 20 — pildora surround DESPUES de la de audio
+      // (rectangulos disjuntos: el orden entre pildoras no
+      // importa) y ANTES que TouchLayout, igual que audio.
+      if (surround_button_.HandleMove(ev.id, ev.x, ev.y)) {
+        changed = true;
+        continue;
+      }
       if (touch_.Handle(ev, state_)) changed = true;
     }
     return changed;
@@ -174,13 +182,17 @@ bool Input::HandleTouch(AInputEvent* event) {
   if (action_code == AMOTION_EVENT_ACTION_DOWN ||
       action_code == AMOTION_EVENT_ACTION_POINTER_DOWN) {
     ev.type = TouchLayout::EventType::kDown;
-    // Pildora primero: si la consume, el juego no ve el toque.
+    // Pildoras primero: si una la consume, el juego no ve el
+    // toque. Audio antes que surround (disjuntas: el orden
+    // entre ellas no importa).
     if (audio_button_.HandleDown(ev.id, ev.x, ev.y)) return true;
+    if (surround_button_.HandleDown(ev.id, ev.x, ev.y)) return true;
   } else if (action_code == AMOTION_EVENT_ACTION_UP ||
              action_code == AMOTION_EVENT_ACTION_POINTER_UP ||
              action_code == AMOTION_EVENT_ACTION_CANCEL) {
     ev.type = TouchLayout::EventType::kUp;
     if (audio_button_.HandleUp(ev.id, ev.x, ev.y)) return true;
+    if (surround_button_.HandleUp(ev.id, ev.x, ev.y)) return true;
   } else {
     return false;
   }

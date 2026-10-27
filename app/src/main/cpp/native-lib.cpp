@@ -246,6 +246,110 @@ bool RequestSafAudioPicker(struct android_app* app) {
   return ok;
 }
 
+// --- Preferencia surround, Tramo 20 (via B del Tramo 16) ---
+// Fuente de verdad: SharedPreferences Java ("sfa_settings",
+// clave "audio_surround_enabled", defecto false), leida por
+// JNI con el mismo patron que RequestSafPicker (asociar el
+// hilo si hace falta, GetMethodID sobre la clase de la
+// actividad, limpiar excepciones). Sin activity/JVM/metodo,
+// o ante excepcion, devuelve false (OFF): el modo surround
+// es opt-in y nunca se activa por un fallo de lectura.
+// El setter persiste la preferencia; devuelve false si no
+// pudo escribir (entonces el toggle conserva el estado viejo).
+// NINGUNA de estas funciones toca app->userData: la JNI no
+// lo alcanza (obstaculo documentado en Tramo 16); el llamador
+// (ApplySurroundPreference / drenaje de la pildora) aplica el
+// valor leido/escrito al bridge y al Input desde C++.
+bool GetSurroundPreference(struct android_app* app) {
+  if (app->activity == nullptr || app->activity->vm == nullptr ||
+      app->activity->clazz == nullptr) {
+    return false;
+  }
+  JavaVM* vm = app->activity->vm;
+  JNIEnv* env = nullptr;
+  bool attached = false;
+  if (vm->GetEnv(reinterpret_cast<void**>(&env), JNI_VERSION_1_6) !=
+      JNI_OK) {
+    if (vm->AttachCurrentThread(&env, nullptr) != JNI_OK || env == nullptr) {
+      SFA_LOGE("native: surround: no se pudo asociar el hilo a la JVM");
+      return false;
+    }
+    attached = true;
+  }
+  bool enabled = false;
+  jclass cls = env->GetObjectClass(app->activity->clazz);
+  if (cls == nullptr) {
+    SFA_LOGE("native: surround: sin clase de actividad");
+  } else {
+    jmethodID mid = env->GetMethodID(cls, "getSurroundEnabled", "()Z");
+    if (mid == nullptr) {
+      SFA_LOGE("native: surround: metodo getSurroundEnabled no encontrado");
+    } else {
+      enabled = env->CallBooleanMethod(app->activity->clazz, mid) == JNI_TRUE;
+      if (env->ExceptionCheck()) {
+        env->ExceptionClear();
+        SFA_LOGE("native: surround: excepcion al leer la preferencia");
+        enabled = false;
+      }
+    }
+  }
+  if (attached) vm->DetachCurrentThread();
+  return enabled;
+}
+
+bool SetSurroundPreference(struct android_app* app, bool enabled) {
+  if (app->activity == nullptr || app->activity->vm == nullptr ||
+      app->activity->clazz == nullptr) {
+    SFA_LOGE("native: surround: sin activity/JVM (no se persiste)");
+    return false;
+  }
+  JavaVM* vm = app->activity->vm;
+  JNIEnv* env = nullptr;
+  bool attached = false;
+  if (vm->GetEnv(reinterpret_cast<void**>(&env), JNI_VERSION_1_6) !=
+      JNI_OK) {
+    if (vm->AttachCurrentThread(&env, nullptr) != JNI_OK || env == nullptr) {
+      SFA_LOGE("native: surround: no se pudo asociar el hilo a la JVM");
+      return false;
+    }
+    attached = true;
+  }
+  bool ok = false;
+  jclass cls = env->GetObjectClass(app->activity->clazz);
+  if (cls == nullptr) {
+    SFA_LOGE("native: surround: sin clase de actividad");
+  } else {
+    jmethodID mid = env->GetMethodID(cls, "setSurroundEnabled", "(Z)V");
+    if (mid == nullptr) {
+      SFA_LOGE("native: surround: metodo setSurroundEnabled no encontrado");
+    } else {
+      env->CallVoidMethod(app->activity->clazz, mid,
+                          enabled ? JNI_TRUE : JNI_FALSE);
+      if (env->ExceptionCheck()) {
+        env->ExceptionClear();
+        SFA_LOGE("native: surround: excepcion al escribir la preferencia");
+      } else {
+        ok = true;
+      }
+    }
+  }
+  if (attached) vm->DetachCurrentThread();
+  return ok;
+}
+
+// Aplica la preferencia Java al gate C++ (Tramo 16, OFF por
+// defecto) y a la pildora. Se llama tras TryLoadData() en
+// INIT_WINDOW y en el camino SAF-done, y tras cada toggle
+// de la pildora (ahi el valor ya viene persistido). Con OFF,
+// el PCM es bit-identico al de GX28 (espejo = 1).
+void ApplySurroundPreference(struct android_app* app, AppState* state) {
+  bool enabled = GetSurroundPreference(app);
+  state->runtime.AudioBridgeState()->SetSurroundEnabled(enabled);
+  state->runtime.InputState()->SetSurroundButtonEnabled(enabled);
+  SFA_LOGI("native: surround: aplicado %s (preferencia Java)",
+           enabled ? "ON" : "OFF");
+}
+
 // --- Estado del boton de audio, Tramo 6 (sin bloquear) ---
 // IsAudioMediaFile / AudioDirHasMedia viven en
 // input/audio_state_fs.h (POSIX, sin Android): el mismo
@@ -424,6 +528,9 @@ void PollSafResult(struct android_app* app, AppState* state) {
       SFA_LOGI("native: SAF: copia verificada (.saf-copy-done), "
                "cargando el juego");
       TryLoadData(app, state);
+      // Tramo 20: tras la carga por SAF, aplicar la
+      // preferencia surround (igual que en INIT_WINDOW).
+      ApplySurroundPreference(app, state);
       return;
     }
     if (!state->saf_error_seen && FileExists(err)) {
@@ -466,6 +573,12 @@ void HandleCmd(struct android_app* app, int32_t cmd) {
               RequestSafPicker(app);
             }
           }
+          // Tramo 20: preferencia surround tras TryLoadData()
+          // (tras runtime.Init, que resetea Input sin borrar
+          // el estado de la pildora — ver surround_button.h
+          // — y tras la carga de datos). Con OFF (defecto),
+          // el PCM es bit-identico al de GX28.
+          ApplySurroundPreference(app, state);
           // Tramo 6: estado inicial de la pildora de audio
           // (tras runtime.Init, que resetea Input sin borrar
           // el estado — ver audio_button.h — y tras la carga
@@ -595,6 +708,44 @@ void android_main(struct android_app* app) {
         SetAudioState(&state, sfa::AudioState::kVerifying);
         if (!RequestSafAudioPicker(app)) {
           SetAudioState(&state, sfa::AudioState::kError);
+        }
+      }
+    }
+    // Tramo 20 — pildora "surround": drenar el disparo en
+    // CADA vuelta (respuesta inmediata, igual que audio).
+    // Sin ventana/foco el disparo se descarta (el usuario
+    // puede volver a pulsar con la app en primer plano).
+    // Al pulsar: se invierte la preferencia Java persistida
+    // y se aplica al gate C++ y a la pildora en vivo (sin
+    // reiniciar, sin recargar el juego). Si la escritura
+    // Java falla, el estado viejo se conserva (no se aplica
+    // un toggle que no sobreviviria al reinicio). La lectura
+    // previa es la preferencia Java; si la JNI falla al
+    // leer, se usa el valor vivo del bridge como respaldo.
+    if (state.runtime.InputState()->TakeSurroundButtonTrigger()) {
+      if (!state.window_ready || !state.has_focus) {
+        SFA_LOGI("native: surround: disparo descartado (sin "
+                 "ventana/foco; volver a pulsar con la app "
+                 "en primer plano)");
+      } else {
+        // El valor vivo ES el ultimo aplicado desde Java
+        // (Apply en arranque + cada toggle persiste antes
+        // de aplicar) y no hay otro escritor de la
+        // preferencia, asi que invertir el vivo equivale a
+        // invertir la preferencia. Se persiste primero y
+        // solo entonces se aplica.
+        bool current = state.runtime.AudioBridgeState()->SurroundEnabled();
+        bool next = !current;
+        if (SetSurroundPreference(app, next)) {
+          state.runtime.AudioBridgeState()->SetSurroundEnabled(next);
+          state.runtime.InputState()->SetSurroundButtonEnabled(next);
+          SFA_LOGI("native: surround: toggle a %s (pildora, "
+                   "persistido)",
+                   next ? "ON" : "OFF");
+        } else {
+          SFA_LOGE("native: surround: toggle NO persistido "
+                   "(se conserva %s)",
+                   current ? "ON" : "OFF");
         }
       }
     }

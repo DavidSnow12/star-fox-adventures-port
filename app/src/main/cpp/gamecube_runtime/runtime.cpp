@@ -402,6 +402,12 @@ void GameCubeRuntime::Frame(Renderer* renderer) {
   // (importar audio antes de jugar). Estado desde Input,
   // que native-lib mantiene por sondeo de marcadores.
   renderer->DrawAudioButton(input_.AudioButtonState());
+  // Tramo 20: pildora "surround" SIEMPRE por encima (UI, no
+  // arte), despues de la de audio: tambien sin juego, que es
+  // cuando el usuario puede activar el modo antes de jugar.
+  // Estado desde Input, que native-lib mantiene desde la
+  // preferencia Java (ver ApplySurroundPreference).
+  renderer->DrawSurroundButton(input_.SurroundButtonEnabled());
   renderer->RenderFrame();
 }
 

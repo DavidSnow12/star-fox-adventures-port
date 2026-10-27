@@ -134,6 +134,27 @@ void Renderer::DrawAudioButton(AudioState state) {
   }
 }
 
+void Renderer::DrawSurroundButton(bool enabled) {
+  if (display_ == EGL_NO_DISPLAY || !gx_gl_ready_) return;
+  // Tramo 20: misma conversion fraccion->NDC que
+  // DrawAudioButton y las mismas constantes de
+  // surround_button.h (tactil y dibujo no se pueden
+  // desalinear). Sin etiqueta bitmap (como la pildora de
+  // audio antes del Tramo 7): color + boot.log comunican el
+  // estado; la etiqueta textual queda pendiente del futuro
+  // overlay de ajustes.
+  auto to_ndc_x = [](float fx) { return 2.0f * fx - 1.0f; };
+  auto to_ndc_y = [](float fy) { return 1.0f - 2.0f * fy; };
+  const float x0 = to_ndc_x(sfa::kSurroundBtnX0);
+  const float x1 = to_ndc_x(sfa::kSurroundBtnX1);
+  const float y_top = to_ndc_y(sfa::kSurroundBtnY0);
+  const float y_bot = to_ndc_y(sfa::kSurroundBtnY1);
+  gx_gl_.DrawSolidQuad(x0 - 0.01f, y_top + 0.01f, x1 + 0.01f,
+                       y_bot - 0.01f, 20, 20, 30);
+  const SurroundButtonColor c = SurroundButtonColorFor(enabled);
+  gx_gl_.DrawSolidQuad(x0, y_top, x1, y_bot, c.r, c.g, c.b);
+}
+
 int Renderer::DrawGxFrame(const std::vector<GxDraw>& draws,
                           const uint8_t* ram, size_t ram_size) {
   if (display_ == EGL_NO_DISPLAY || !gx_gl_ready_) return 0;
