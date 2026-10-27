@@ -2,6 +2,7 @@
 
 #include <cstring>
 #include <utility>
+#include <vector>
 
 #include <dirent.h>
 #include <strings.h>
@@ -1289,6 +1290,74 @@ void Hle::WriteThreadGuestFields(CpuState* cpu, ThreadEntry* t) {
 }
 
 
+// ---- Tramo 12 (PARCHE PROPUESTO, copia host; NO aplicado al repo) ----
+// Hueco: la entrega ARQ de lectura del Tramo 8 despacha el callback
+// (AudioAramReadCompleteCallback) pero NUNCA copia datos ARAM->MRAM:
+// no hay ARAM modelada. Consecuencia medida: bankData de la cancion 94
+// (dest 0x810A9800) conserva datos viejos del bufer ([bank+0]=0), asi
+// que seqStartPlay construye punteros de pista basura y
+// GenerateNextTrackEvent falla en la pista 19 (ver INFORME.md).
+// Parche minimo: modelo ARAM host de 16 MiB (tamano real de ARAM en
+// GameCube). En cada ARQPostRequest de subida (tipo 0) se copia
+// MRAM->ARAM; en la entrega de cada lectura se copia ARAM->MRAM
+// ANTES de redirigir al callback. Layout peticion SDK (ARQPostRequest
+// 0x802516D4, verificado en codigo huesped y en los posts del
+// propio juego): [req+8]=tipo (1=lectura de audio, 0=subida),
+// [req+16]=ORIGEN, [req+20]=DESTINO, [req+24]=len; el origen/destino
+// son ARAM/MRAM segun la direccion (lectura: origen ARAM, destino
+// MRAM; subida: origen MRAM, destino ARAM). NO son campos fijos
+// ARAM/MRAM: la primera version de este parche los tenia
+// intercambiados para subidas y no capturo nada (ver INFORME).
+// No se inventa ningun dato: solo se copian bytes que el propio juego
+// subio antes a ARAM. Si un rango ARAM nunca se escribio, la lectura
+// copia ceros (comportamiento previo, sin regresion).
+namespace {
+constexpr uint32_t kT12AramSize = 0x1000000u;  // 16 MiB
+std::vector<uint8_t> g_t12_aram;
+std::vector<uint8_t> g_t12_aram_written;  // 1 byte por bloque de 256 B
+uint64_t g_t12_aram_write_bytes = 0;
+uint64_t g_t12_aram_read_bytes = 0;
+uint32_t T12ReadBe32(const uint8_t* p) {
+  return (static_cast<uint32_t>(p[0]) << 24) |
+         (static_cast<uint32_t>(p[1]) << 16) |
+         (static_cast<uint32_t>(p[2]) << 8) | static_cast<uint32_t>(p[3]);
+}
+// Puntero host a RAM huesped (cached 0x80000000, uncached 0xC0000000,
+// forma fisica < ram_size); nullptr si fuera de rango.
+uint8_t* T12GuestPtr(CpuState* cpu, uint32_t guest, uint32_t len) {
+  if (cpu == nullptr || cpu->ram == nullptr || len == 0) return nullptr;
+  uint32_t off = 0;
+  if (guest >= 0x80000000u && guest < 0x80000000u + cpu->ram_size) {
+    off = guest - 0x80000000u;
+  } else if (guest >= 0xC0000000u &&
+             guest < 0xC0000000u + cpu->ram_size) {
+    off = guest - 0xC0000000u;
+  } else if (guest < cpu->ram_size) {
+    off = guest;
+  } else {
+    return nullptr;
+  }
+  if (off + len > cpu->ram_size) return nullptr;
+  return cpu->ram + off;
+}
+bool T12ArqFields(CpuState* cpu, uint32_t req, uint32_t* type,
+                  uint32_t* aram, uint32_t* mram, uint32_t* len) {
+  uint8_t* p = T12GuestPtr(cpu, req, 28);
+  if (p == nullptr) return false;
+  *type = T12ReadBe32(p + 8);
+  *aram = T12ReadBe32(p + 16);
+  *mram = T12ReadBe32(p + 20);
+  *len = T12ReadBe32(p + 24);
+  return true;
+}
+void T12AramEnsure() {
+  if (g_t12_aram.empty()) {
+    g_t12_aram.assign(kT12AramSize, 0);
+    g_t12_aram_written.assign(kT12AramSize / 256, 0);
+  }
+}
+}  // namespace
+
 bool Hle::HandleHostCall(CpuState* cpu, uint32_t address) {
   // Entrega ARQ de lectura (Tramo 8, desbloqueo de Music).
   // Problema medido (Tramo 7, G1/G2/G4): el juego alloca
@@ -1381,6 +1450,33 @@ bool Hle::HandleHostCall(CpuState* cpu, uint32_t address) {
   if (!arq_read_pending_.empty()) {
     uint32_t req = arq_read_pending_.front();
     arq_read_pending_.erase(arq_read_pending_.begin());
+    {
+      // Tramo 12: copia ARAM->MRAM de la lectura antes de entregar
+      // el callback (en hardware real el DMA ya completo).
+      uint32_t type = 0, aram = 0, mram = 0, len = 0;
+      if (T12ArqFields(cpu, req, &type, &aram, &mram, &len)) {
+        T12AramEnsure();
+        uint8_t* dst = T12GuestPtr(cpu, mram, len);
+        if (len > 0 && aram + len <= kT12AramSize && dst != nullptr) {
+          bool written = false;
+          for (uint32_t b = aram / 256; b < (aram + len + 255) / 256; ++b)
+            if (g_t12_aram_written[b] != 0) written = true;
+          std::memcpy(dst, g_t12_aram.data() + aram, len);
+          g_t12_aram_read_bytes += len;
+          SFA_LOGI(
+              "hle: T12 ARAM lectura copiada (peticion 0x%08X, tipo %u, "
+              "ARAM 0x%08X -> MRAM 0x%08X, %u B, fuente_escrita=%d, "
+              "primer_u32=0x%08X)",
+              req, type, aram, mram, len, written ? 1 : 0,
+              len >= 4 ? T12ReadBe32(dst) : 0u);
+        } else {
+          SFA_LOGI(
+              "hle: T12 ARAM lectura SIN copiar (peticion 0x%08X, tipo "
+              "%u, ARAM 0x%08X, MRAM 0x%08X, %u B: fuera de rango)",
+              req, type, aram, mram, len);
+        }
+      }
+    }
     ArqReadFrame frame;
     for (int i = 0; i < 32; ++i) {
       frame.gpr[i] = cpu->gpr[i];
@@ -1504,6 +1600,38 @@ bool Hle::HandleHostCall(CpuState* cpu, uint32_t address) {
         SFA_LOGI("hle: ARQ lectura NO encolada (peticion "
                  "0x%08X, duplicada o cola llena)",
                  req);
+      }
+    }
+    {
+      // Tramo 12: captura de subidas MRAM->ARAM (tipo 0). OJO orden:
+      // este gancho corre ANTES que el chunk huesped de
+      // ARQPostRequest (el switch final devuelve false y el chunk
+      // escribe despues los mismos valores en la estructura), asi
+      // que los argumentos se leen de los REGISTROS, no de la
+      // estructura (que aun contiene la peticion anterior del
+      // mismo slot). Args SDK: r3=req, r5=tipo, r7=ARAM, r8=MRAM,
+      // r9=len, r10=callback. En la entrega de lectura (bloque
+      // superior) la estructura YA esta escrita y si se lee de
+      // ella, como antes.
+      uint32_t req = cpu->gpr[3];
+      uint32_t type = cpu->gpr[5];
+      uint32_t src = cpu->gpr[7];
+      uint32_t dst = cpu->gpr[8];
+      uint32_t len = cpu->gpr[9];
+      SFA_LOGI(
+          "hle: T12 ARQ post (peticion 0x%08X, tipo %u, r6=%u, cb="
+          "0x%08X, origen 0x%08X, destino 0x%08X, %u B)",
+          req, type, cpu->gpr[6], cpu->gpr[10], src, dst, len);
+      // Subida (tipo 0): origen MRAM (src), destino ARAM (dst).
+      if (type == 0 && len > 0 && dst + len <= kT12AramSize) {
+        uint8_t* src_ptr = T12GuestPtr(cpu, src, len);
+        if (src_ptr != nullptr) {
+          T12AramEnsure();
+          std::memcpy(g_t12_aram.data() + dst, src_ptr, len);
+          for (uint32_t b = dst / 256; b < (dst + len + 255) / 256; ++b)
+            g_t12_aram_written[b] = 1;
+          g_t12_aram_write_bytes += len;
+        }
       }
     }
   } else if (address == kAramInitSpinHead && pending_arq_completions_ != 0) {
