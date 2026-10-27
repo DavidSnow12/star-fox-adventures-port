@@ -149,6 +149,41 @@ void Renderer::BeginFrame() {
   glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 }
 
+bool Renderer::BeginEfbFrame(int width, int height) {
+  if (display_ == EGL_NO_DISPLAY || !gx_gl_ready_) return false;
+  if (!gx_gl_.BeginEfbTarget(width, height)) return false;
+  glClearColor(0.05f, 0.10f, 0.25f, 1.0f);
+  glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+  return true;
+}
+
+std::pair<int, int> Renderer::CopyEfbCopies(
+    const std::vector<GxCopy>& copies, uint8_t* ram, size_t ram_size) {
+  if (display_ == EGL_NO_DISPLAY || !gx_gl_ready_) return {0, 0};
+  int before_ok = gx_gl_.EfbCopiesOk();
+  int before_rej = gx_gl_.EfbCopiesRejected();
+  for (const GxCopy& c : copies) {
+    std::string why;
+    gx_gl_.CopyEfbToGuestRam(c, ram,
+                             static_cast<uint32_t>(ram_size), &why);
+  }
+  return {gx_gl_.EfbCopiesOk() - before_ok,
+          gx_gl_.EfbCopiesRejected() - before_rej};
+}
+
+bool Renderer::PresentEfb() {
+  if (display_ == EGL_NO_DISPLAY || !gx_gl_ready_) return false;
+  std::vector<uint8_t> rgba;
+  int w = 0, h = 0;
+  // ReadEfbRgba exige el FBO EFB enlazado: se lee ANTES de
+  // EndEfbTarget (que enlaza el framebuffer 0).
+  if (!gx_gl_.ReadEfbRgba(&rgba, &w, &h)) return false;
+  gx_gl_.EndEfbTarget();
+  glViewport(0, 0, width_, height_);
+  gx_gl_.DrawTexturedQuad(rgba.data(), w, h);
+  return true;
+}
+
 void Renderer::RenderFrame() {
   if (display_ == EGL_NO_DISPLAY) return;
   eglSwapBuffers(display_, surface_);

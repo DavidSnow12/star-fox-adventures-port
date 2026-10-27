@@ -200,6 +200,16 @@ float AudioBridge::SeqVolumeOf(uint32_t handle) const {
   const SongSlot* slot = FindSlot(handle);
   return slot != nullptr ? slot->vol_current : 1.0f;
 }
+uint32_t AudioBridge::SeqCc7Of(uint32_t handle, uint32_t midi) const {
+  const SongSlot* slot = FindSlot(handle);
+  if (slot == nullptr || midi >= 16) return 127;
+  return slot->cc7[midi];
+}
+uint32_t AudioBridge::SeqCc10Of(uint32_t handle, uint32_t midi) const {
+  const SongSlot* slot = FindSlot(handle);
+  if (slot == nullptr || midi >= 16) return 64;
+  return slot->cc10[midi];
+}
 bool AudioBridge::SlotMusicActive(const SongSlot* slot) const {
   if (slot == nullptr) return false;
   size_t idx = static_cast<size_t>(slot - song_slots_.data());
@@ -394,6 +404,26 @@ void AudioBridge::OnSeqStop() {
 }
 
 int AudioBridge::OnSeqStopHandle(uint32_t handle) {
+  // Tramo 10: r3 = seqHandle, verificado en el codigo huesped
+  // (sndSeqStop -> seqStop 0x8026DBE8: busca nodo+12 == r3 &
+  // 0x7FFFFFFF en dos listas; sndSeqVolume -> seqVolume 0x8026E054
+  // usa EXACTAMENTE la misma busqueda con su r5; los 3 llamadores
+  // del juego pasan chan+4, el valor que Music_ChannelLoadedCallback
+  // guarda del retorno de sndSeqPlayEx y que pasa como r5 a
+  // sndSeqVolume; en G3, fades con handle 1 = 22 y 2 = 95).
+  // El bit 31 de r3 es un flag huesped, no parte del handle:
+  // seqStop con bit 31 solo limpia un flag (no detiene, no
+  // desengancha la secuencia) y con -1 (sin coincidencia) sale
+  // sin tocar nada. Esos valores nunca detienen ni usan el
+  // fallback de una sola cancion (un chan+4 borrado vale -1, no
+  // un handle valido; ver SeqStopFlagged()).
+  if ((handle & 0x80000000u) != 0) {
+    ++seq_stop_flagged_;
+    SFA_LOGI("bridge: sndSeqStop handle 0x%08X con bit 31 (flag "
+             "huesped, no stop): se cuenta, no se detiene nada",
+             handle);
+    return 0;
+  }
   SongSlot* slot = FindSlot(handle);
   if (slot != nullptr) {
     StopSlot(slot);
@@ -712,11 +742,10 @@ void AudioBridge::PumpSlot(SongSlot* slot, double dt_seconds) {
         slot->cc10[m] = slot->seq.LoopCc10(static_cast<uint32_t>(m));
       }
     } else if (e.kind == MusyxSequencer::Event::kSectionLoop) {
-      // Tramo 9: vuelta de seccion en la fase de bucle por
-      // secciones. Los CC quedan congelados en fin de
-      // primer pase (los CC por seccion y vuelta no se
-      // repiten en esta version; ver INFORME.md §3): el
-      // evento solo se registra, no toca los CC.
+      // Tramo 10: vuelta de seccion en la fase de bucle por
+      // secciones. Los CC de vuelta llegan como eventos kCc
+      // (secuenciador) y se aplican en la rama kCc; este
+      // evento solo se registra.
       SFA_LOGI("bridge: MusyX cancion %u seccion %u vuelta nueva "
                "(handle %u)",
                slot->track_id, e.section_id, slot->handle);
@@ -1353,8 +1382,9 @@ bool AudioBridge::OnAudioEntry(uint32_t pc, uint32_t r3,
     return OnSeqPlay(r3, r4, r6) == 1;
   }
   if (pc == kSndSeqStop) {
-    // Tramo 9: r3 = handle (ver OnSeqStopHandle; con una
-    // unica cancion, el fallback cubre handle 0).
+    // Tramo 10: r3 = seqHandle (verificado en codigo huesped,
+    // ver OnSeqStopHandle; con una unica cancion, el fallback
+    // cubre handle 0; bit 31 / -1 no detienen).
     return OnSeqStopHandle(r3) == 1;
   }
   if (pc == kSndSeqVolume) {

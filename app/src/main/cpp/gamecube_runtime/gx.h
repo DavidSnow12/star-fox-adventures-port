@@ -682,6 +682,14 @@ class GxParser {
   bool Feed(const uint8_t* data, size_t len, uint64_t base_offset);
   // Draws emitidos por el ultimo Feed (se vacia en cada Feed).
   std::vector<GxDraw> TakeFedDraws();
+  // Tramo 10: copias EFB emitidas por el ultimo Feed (se
+  // vacia en cada TakeFedCopies). Espejo de fed_draws_:
+  // cada escritura BP 0x52 anade el evento tanto a copies_
+  // (acumulado historico, usado por tests/censos via
+  // Copies()) como a fed_copies_ (drenaje por frame para
+  // Frame()). Sin este drenaje, Frame() no podria ejecutar
+  // las copias del frame sin reprocesar todo el historico.
+  std::vector<GxCopy> TakeFedCopies();
   // Anade cargas de textura sin reordenar (el llamador las
   // entrega en orden creciente de offset, como las registra
   // el HLE). Para stream completo, usar SetTexLoads().
@@ -752,6 +760,7 @@ class GxParser {
   std::vector<GxTexLoad> tex_loads_;
   std::vector<GxDraw> draws_;
   std::vector<GxCopy> copies_;
+  std::vector<GxCopy> fed_copies_;  // Tramo 10: drenaje por Feed.
   GxStats stats_;
   std::map<uint32_t, uint32_t> cp_;
   std::map<uint32_t, uint32_t> bp_;

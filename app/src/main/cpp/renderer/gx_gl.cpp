@@ -675,6 +675,9 @@ void GxGlRenderer::ApplyFixedState(const GxFixedState& f) {
 int GxGlRenderer::DrawDraws(const std::vector<GxDraw>& draws,
                             const TexResolver& resolver) {
   if (program_ == 0) return 0;
+  // Tramo 10: cualquier draw invalida la cache de readback
+  // EFB (el contenido del FBO cambia).
+  efb_readback_valid_ = false;
   // Altura del viewport GL (una vez por llamada) para el
   // flip vertical del scissor.
   {
@@ -817,6 +820,9 @@ bool GxGlRenderer::BeginEfbTarget(int width, int height) {
   if (efb_fbo_ != 0 && efb_w_ == width && efb_h_ == height) {
     glBindFramebuffer(GL_FRAMEBUFFER, efb_fbo_);
     glViewport(0, 0, width, height);
+    // Tramo 10: nuevo frame sobre el mismo target: la cache
+    // del frame anterior ya no vale.
+    efb_readback_valid_ = false;
     return true;
   }
   DeleteEfbTarget(&efb_fbo_, &efb_tex_, &efb_rbo_);
@@ -847,6 +853,7 @@ bool GxGlRenderer::BeginEfbTarget(int width, int height) {
     return false;
   }
   glViewport(0, 0, width, height);
+  efb_readback_valid_ = false;
   return true;
 }
 
@@ -894,9 +901,21 @@ bool GxGlRenderer::CopyEfbToGuestRam(const GxCopy& copy,
   if (guest_ram == nullptr) return reject("ram-nula");
   EfbCopyDecoded d0 = DecodeEfbCopy(copy);
   if (!d0.execute) return reject("sin-evento-0x52");
-  std::vector<uint8_t> rgba;
-  int rw = 0, rh = 0;
-  if (!ReadEfbRgba(&rgba, &rw, &rh)) return reject("readback-fallo");
+  // Tramo 10: readback con cache por frame (ver gx_gl.h). La
+  // primera copia del frame lee el FBO; las siguientes
+  // reutilizan el buffer (DrawDraws ya invalido la cache si
+  // hubo draws entre medias).
+  if (!efb_readback_valid_) {
+    std::vector<uint8_t> fresh;
+    int fw = 0, fh = 0;
+    if (!ReadEfbRgba(&fresh, &fw, &fh)) return reject("readback-fallo");
+    efb_readback_ = std::move(fresh);
+    efb_readback_w_ = fw;
+    efb_readback_h_ = fh;
+    efb_readback_valid_ = true;
+  }
+  const uint8_t* rgba_data = efb_readback_.data();
+  int rw = efb_readback_w_, rh = efb_readback_h_;
   EfbCopyDecoded d = d0;
   EfbCopyFormat f = DecodeCopyFormat(d);
   bool ok = false;
@@ -906,19 +925,34 @@ bool GxGlRenderer::CopyEfbToGuestRam(const GxCopy& copy,
       if (!d.has_filter) return reject("escala-sin-filtro");
       int taps[7];
       DecodeCopyFilter(d.filter53, d.filter54, taps);
-      ok = ExecuteEfbCopyScaledModel(d, f, rgba.data(), rw, rh, taps,
+      ok = ExecuteEfbCopyScaledModel(d, f, rgba_data, rw, rh, taps,
                                      guest_ram, ram_size);
       if (!ok) return reject("escala-modelo-rechazada");
     } else {
-      ok = ExecuteEfbCopyLinear(d, f, rgba.data(), rw, rh, guest_ram,
+      ok = ExecuteEfbCopyLinear(d, f, rgba_data, rw, rh, guest_ram,
                                 ram_size);
       if (!ok) return reject("lineal-rechazada");
     }
   } else if (f.kind == EfbPixelKind::kTexRgb565Tiled ||
              f.kind == EfbPixelKind::kTexRgba8Tiled) {
-    ok = ExecuteEfbCopyTiled(d, f, rgba.data(), rw, rh, guest_ram,
-                             ram_size);
-    if (!ok) return reject("tiled-rechazada");
+    // Tramo 10: primero el camino 1:1 probado; si el plan
+    // 1:1 falla SOLO por mismatch de ancho (caso src != dst),
+    // probar el downsample entero uniforme (modelo). Otros
+    // fallos del plan 1:1 (RAM, stride, destino) no se
+    // reintentan como downsample: se rechazan como tiled.
+    TexCopyDownsamplePlan dplan;
+    EfbCopyPlan plan1;
+    if (PlanTexCopy(d, f, ram_size, &plan1)) {
+      ok = ExecuteEfbCopyTiled(d, f, rgba_data, rw, rh, guest_ram,
+                               ram_size);
+      if (!ok) return reject("tiled-rechazada");
+    } else if (PlanTexCopyDownsampled(d, f, ram_size, &dplan)) {
+      ok = ExecuteEfbCopyTiledDownsampled(d, f, rgba_data, rw, rh,
+                                          guest_ram, ram_size);
+      if (!ok) return reject("downsample-rechazado");
+    } else {
+      return reject("tiled-rechazada");
+    }
   } else {
     return reject("formato-desconocido");
   }

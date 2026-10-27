@@ -103,6 +103,47 @@
 //    emborronaria sin evidencia de que el HW lo haga; no
 //    aplicar es la opcion exacta-conservadora. El camino con
 //    escala usa el modelo y se marca como tal en su nombre.
+//  - CORRECCION Tramo 10 (direccion del ratio Y, RESUELTA):
+//    el modelo Tramo 9 usaba ratio 256/yscale (downscale) y
+//    exigia 533 filas de readback para un dst de 480, con lo
+//    que rechazaba TODAS las copias XFB reales. La direccion
+//    correcta es la INVERSA: paso yscale/256 por fila de
+//    destino (upscale). Pruebas, todas en el DOL recompilado
+//    (codigo/generated, sin inventar): (a) los 3 llamadores
+//    de GXSetDispCopyYScale pasan YSCALEIN = xfbHeight /
+//    efbHeight (0x8001FE18: +8/+6 del modo; 0x80049E48: idem;
+//    0x80256674: +8/+6 del struct de copia); (b) YAGCD:
+//    BP 0x4E = (u32)(256.0/YSCALEIN) & 0x1FF, y el DOL hace
+//    exactamente f1 = 256.0/arg (0x80259934-0x80259940) y
+//    r6 = int & 0x1FF; (c) la cola de GXSetDispCopyYScale
+//    (0x80259998-0x802599E0) devuelve ~src_h*256/yscale
+//    (480,232 -> 530; 480,256 -> 480), NO src_h*yscale/256
+//    (435): ver CopyYScaleLines, que reproduce esa cola
+//    literalmente. Con yscale 232, una copia 640x480 produce
+//    dst_h = 530 filas desde 480 filas de origen: el
+//    readback necesario es src_h (480), no 533. Residuo
+//    honesto: el conteo exacto de filas tiene +-2 lineas de
+//    incertidumbre (el espaciado XFB en trazas es 676.864 B
+//    = 528 filas + 1024 de guarda; ver INFORME Tramo 10):
+//    se usa la formula del SDK (CopyYScaleLines) y el caso
+//    queda acotado (RAM verificada, sin crash, XFB no se
+//    presenta en pantalla en este port, asi que el conteo no
+//    cambia la imagen visible; solo el contenido RAM del
+//    XFB, que el juego no relee como textura).
+//  - Copias a textura con src != dst (Tramo 10, geometria
+//    RESUELTA, kernel MODELO): el DOL lo pide literalmente
+//    (funcion 0x8006CA14: TexCopySrc(0,0,640,480) y luego
+//    TexCopyDst(320,240,fmt 4, mipmap 1); segunda variante
+//    con fmt 0x11): el destino ES 320x240, no un error de
+//    interpretacion del stride (GXSetTexCopyDst calcula el
+//    stride DESDE el dst via __GetImageTileCount, asi que el
+//    stride de traza confirma el dst). El kernel HW 2:1 NO
+//    esta probado: se implementa como MODELO de media de
+//    bloque (box average) para ratios enteros uniformes
+//    (src_w/dst_w = src_h/dst_h entero, p. ej. 2), solo para
+//    RGB565/RGBA8; fmt 0x11 sigue rechazado (semantica de
+//    pixel sin confirmar) y los ratios no enteros o no
+//    uniformes se rechazan con contador, no se inventan.
 
 #include <cstdint>
 #include <cstring>
@@ -478,7 +519,8 @@ inline bool ExecuteEfbCopyTiled(const EfbCopyDecoded& d,
 // remuestrear verticalmente con yscale. La alineacion exacta
 // (centro de la ventana, redondeo, bordes) NO esta en el DOL:
 // este modelo usa centro (y+0.5)*ratio - 0.5 con ratio =
-// 256/yscale_int, ventana de 7 taps centrada (k-3) y clamp de
+// yscale_int/256 (CORREGIDO Tramo 10: era 256/yscale_int),
+// ventana de 7 taps centrada (k-3) y clamp de
 // bordes, con redondeo (+32)>>6. Es autoconsistente (filas
 // constantes -> identidad exacta) y host-testeable, pero se
 // marca MODELO en su nombre y en el informe: no se presenta
@@ -494,7 +536,7 @@ inline bool ApplyVerticalCopyFilterModel(const uint8_t* src_rows,
   if (src_h <= 0 || dst_h <= 0 || yscale_int <= 0 ||
       src_pitch <= 0 || dst_pitch <= 0)
     return false;
-  double ratio = 256.0 / static_cast<double>(yscale_int);
+  double ratio = static_cast<double>(yscale_int) / 256.0;  // Tramo 10: era 256/yscale (invertido).
   for (int y = 0; y < dst_h; ++y) {
     double center = (static_cast<double>(y) + 0.5) * ratio - 0.5;
     int base = static_cast<int>(center + 0.5);  // redondeo al entero
@@ -513,13 +555,54 @@ inline bool ApplyVerticalCopyFilterModel(const uint8_t* src_rows,
   return true;
 }
 
-// Copia display con escala Y + filtro (MODELO). `readback`
-// debe contener las filas EFB de entrada (src_h = filas
-// disponibles; el numero de filas de salida es height del
-// evento). Requisitos: formato display 2 BPP, yscale_flag con
+// --- Lineas de destino de copia display (SDK, Tramo 10) ---
+//
+// Reproduce literalmente la cola de GXSetDispCopyYScale
+// (DOL 0x80259998-0x802599E0, mascaras DolRecomp): con
+// H = altura de origen (campo altura de BP 0x4A),
+//   r = ((H-1)*256)/yscale_int + 1;
+//   si 128 < yscale_int < 256 y H % parte_impar(yscale) != 0,
+//   r += 1;  r se acota a 1024.
+// (La parte impar es yscale sin factores 2: el bucle del DOL
+// en 0x802599C0 desplaza a la derecha hasta que es impar.)
+// Valores: (480,232)->530, (480,256)->480, (522,232)->575,
+// (528,234)->578. Es el conteo que el propio juego pasa
+// como alto a GXSetDispCopyDst (0x80049FE8-0x80049FF0) y,
+// sobre todo, su magnitud (~530, no 435) es la prueba de
+// la direccion: dst = src*256/yscale, no src*yscale/256.
+// El +-1 del caso de multiplo exacto (522,232: 575 frente
+// a ceil(576.0)) se documenta en el informe; no bloquea el
+// cableado (ver cabecera).
+inline int CopyYScaleOddPart(int yscale_int) {
+  int odd = yscale_int;
+  while ((odd & 1) == 0) odd >>= 1;
+  return odd;
+}
+
+inline int CopyYScaleLines(int src_h, int yscale_int) {
+  if (src_h <= 0 || yscale_int <= 0) return 0;
+  int r = ((src_h - 1) * 256) / yscale_int + 1;
+  if (yscale_int > 128 && yscale_int < 256) {
+    if (src_h % CopyYScaleOddPart(yscale_int) != 0) ++r;
+  }
+  if (r > 1024) r = 1024;
+  return r;
+}
+
+// Copia display con escala Y + filtro (MODELO, CORREGIDO
+// Tramo 10). `readback` debe contener el rectangulo de
+// origen completo (src_h = height del evento, src_w =
+// width): el numero de filas de SALIDA es CopyYScaleLines
+// (src_h, yscale_int), NO height. El modelo Tramo 9 hacia
+// lo contrario (salida = height, entrada = height*256/
+// yscale) y rechazaba todas las copias XFB reales. Ahora
+// la entrada necesaria es src_h (siempre disponible si el
+// rectangulo cabe en el readback) y la salida es dst_h.
+// Requisitos: formato display 2 BPP, yscale_flag con
 // yscale_int capturado (0x4E) y distinto de 256, destino
-// lineal valido. La conversion a YUY2 se aplica DESPUES del
-// filtrado (el filtro opera en RGBA8, como modelo).
+// lineal valido para dst_h filas (sin desbordar la RAM).
+// La conversion a YUY2 se aplica DESPUES del filtrado
+// (el filtro opera en RGBA8, como modelo).
 inline bool ExecuteEfbCopyScaledModel(const EfbCopyDecoded& d,
                                       const EfbCopyFormat& f,
                                       const uint8_t* readback,
@@ -529,47 +612,162 @@ inline bool ExecuteEfbCopyScaledModel(const EfbCopyDecoded& d,
   if (readback == nullptr || ram == nullptr || taps == nullptr)
     return false;
   if (f.kind != EfbPixelKind::kXfbLinear2Bpp) return false;
-  if (!f.yscale_flag || !d.has_yscale || d.yscale_int == 256)
+  if (!f.yscale_flag || !d.has_yscale || d.yscale_int == 256 ||
+      d.yscale_int <= 0)
     return false;
-  EfbCopyPlan plan;
-  if (!PlanEfbCopyLinear(d, f, ram_size, &plan)) return false;
-  if (!d.has_src) return false;
-  // Filas de entrada necesarias: la ventana del modelo llega
-  // hasta round((height-0.5)*ratio - 0.5) + 3. Si el readback
-  // no las cubre, se rechaza (no se inventan filas).
-  double ratio = 256.0 / static_cast<double>(d.yscale_int);
-  int need = static_cast<int>((d.height - 0.5) * ratio - 0.5 + 0.5) + 3 + 1;
-  if (d.src_y + need > readback_h) return false;
-  if (d.src_x + d.width > readback_w) return false;
-  if ((d.width & 1) != 0) return false;
+  if (!d.has_dest || !d.has_size || !d.has_stride || !d.has_src)
+    return false;
+  if (d.dest_guest < 0x80000000u ||
+      d.dest_guest >= 0x81800000u)
+    return false;
+  if (d.width <= 0 || d.height <= 0) return false;
+  int row = d.width * f.bytes_per_pixel;
+  if (d.stride_bytes < row) return false;
+  if ((d.width & 1) != 0) return false;  // YUY2 necesita pares.
+  // Rectangulo de origen dentro del readback (sin inventar
+  // filas: la ventana del filtro hace clamp en los bordes
+  // del bloque de origen, nunca fuera de el).
+  if (d.src_x < 0 || d.src_y < 0 ||
+      d.src_x + d.width > readback_w ||
+      d.src_y + d.height > readback_h)
+    return false;
+  int dst_h = CopyYScaleLines(d.height, d.yscale_int);
+  if (dst_h <= 0) return false;
+  uint32_t off = d.dest_guest - 0x80000000u;
+  uint64_t total = static_cast<uint64_t>(d.stride_bytes) *
+                       static_cast<uint64_t>(dst_h - 1) +
+                   static_cast<uint64_t>(row);
+  if (off + total > ram_size) return false;
   std::vector<uint8_t> filtered(
-      static_cast<size_t>(d.height) * readback_w * 4);
-  // Filtra por columnas de bytes RGBA (src_pitch = ancho*4);
-  // el rectangulo src_x se recorta despues, por filas.
+      static_cast<size_t>(dst_h) * readback_w * 4);
   std::vector<uint8_t> src_block(
-      static_cast<size_t>(need) * readback_w * 4);
-  for (int y = 0; y < need; ++y) {
+      static_cast<size_t>(d.height) * readback_w * 4);
+  for (int y = 0; y < d.height; ++y) {
     std::memcpy(src_block.data() + static_cast<size_t>(y) * readback_w * 4,
                 readback + static_cast<size_t>(d.src_y + y) * readback_w * 4,
                 static_cast<size_t>(readback_w) * 4);
   }
-  if (!ApplyVerticalCopyFilterModel(src_block.data(), need,
+  if (!ApplyVerticalCopyFilterModel(src_block.data(), d.height,
                                     readback_w * 4, taps, d.yscale_int,
-                                    d.height, filtered.data(),
+                                    dst_h, filtered.data(),
                                     readback_w * 4))
     return false;
-  std::vector<uint8_t> conv(
-      static_cast<size_t>(plan.row_bytes) * d.height);
-  for (int y = 0; y < d.height; ++y) {
-    const uint8_t* row =
+  std::vector<uint8_t> conv(static_cast<size_t>(row) * dst_h);
+  for (int y = 0; y < dst_h; ++y) {
+    const uint8_t* row_ptr =
         filtered.data() + static_cast<size_t>(y) * readback_w * 4 +
         static_cast<size_t>(d.src_x) * 4;
-    uint8_t* dst = conv.data() + static_cast<size_t>(y) * plan.row_bytes;
-    if (!Rgba8RowToYuy2(row, d.width, dst)) return false;
+    uint8_t* dst = conv.data() + static_cast<size_t>(y) * row;
+    if (!Rgba8RowToYuy2(row_ptr, d.width, dst)) return false;
   }
-  return CopyEfbRows(conv.data(), plan.row_bytes,
-                     ram + plan.dest_offset, d.stride_bytes,
-                     plan.row_bytes, d.height);
+  return CopyEfbRows(conv.data(), row, ram + off, d.stride_bytes,
+                     row, dst_h);
+}
+
+// --- Copia a textura con downsample entero (MODELO, Tramo 10) ---
+//
+// Geometria PROBADA (ver cabecera: caller 0x8006CA14 del DOL
+// y stride calculado desde el dst en GXSetTexCopyDst): el
+// destino tiene dst_w = (stride/tile_bytes)*tile_w y, bajo
+// la hipotesis de escala UNIFORME (misma en X que en Y, la
+// del unico caso observado: 640x480 -> 320x240, ratio 2),
+// dst_h = src_h / (src_w/dst_w). Kernel MODELO (no HW):
+// media de bloque (box average) scale x scale en RGBA8,
+// antes de codificar en tiles. Solo RGB565/RGBA8 (los kinds
+// tiled de DecodeCopyFormat); fmt 0x11 y cualquier otro
+// formato siguen rechazados. Ratios no enteros, no
+// uniformes (src_h % scale != 0) o sin stride se rechazan
+// sin escribir nada.
+struct TexCopyDownsamplePlan {
+  uint32_t dest_offset = 0;
+  int dst_w = 0;
+  int dst_h = 0;
+  int scale = 0;
+  int total_bytes = 0;
+};
+
+inline bool PlanTexCopyDownsampled(const EfbCopyDecoded& d,
+                                   const EfbCopyFormat& f,
+                                   uint32_t ram_size,
+                                   TexCopyDownsamplePlan* plan) {
+  if (plan == nullptr) return false;
+  if (f.kind != EfbPixelKind::kTexRgb565Tiled &&
+      f.kind != EfbPixelKind::kTexRgba8Tiled)
+    return false;
+  if (!d.has_dest || !d.has_size || !d.has_stride) return false;
+  if (d.dest_guest < 0x80000000u ||
+      d.dest_guest >= 0x81800000u)
+    return false;
+  if (d.width <= 0 || d.height <= 0) return false;
+  if (d.stride_bytes <= 0 ||
+      (d.stride_bytes % f.tile_bytes) != 0)
+    return false;
+  int dst_tiles_x = d.stride_bytes / f.tile_bytes;
+  int dst_w = dst_tiles_x * f.tile_w;
+  if (dst_w <= 0 || dst_w >= d.width) return false;  // No es downsample.
+  if ((d.width % dst_w) != 0) return false;
+  int scale = d.width / dst_w;
+  if (scale <= 1) return false;
+  if ((d.height % scale) != 0) return false;
+  int dst_h = d.height / scale;
+  int tiles_y = (dst_h + f.tile_h - 1) / f.tile_h;
+  uint32_t off = d.dest_guest - 0x80000000u;
+  uint64_t total = static_cast<uint64_t>(d.stride_bytes) *
+                   static_cast<uint64_t>(tiles_y);
+  if (off + total > ram_size) return false;
+  plan->dest_offset = off;
+  plan->dst_w = dst_w;
+  plan->dst_h = dst_h;
+  plan->scale = scale;
+  plan->total_bytes = static_cast<int>(total);
+  return true;
+}
+
+inline bool ExecuteEfbCopyTiledDownsampled(const EfbCopyDecoded& d,
+                                           const EfbCopyFormat& f,
+                                           const uint8_t* readback,
+                                           int readback_w, int readback_h,
+                                           uint8_t* ram,
+                                           uint32_t ram_size) {
+  if (readback == nullptr || ram == nullptr) return false;
+  TexCopyDownsamplePlan plan;
+  if (!PlanTexCopyDownsampled(d, f, ram_size, &plan)) return false;
+  if (!d.has_src) return false;
+  if (d.src_x < 0 || d.src_y < 0 ||
+      d.src_x + d.width > readback_w ||
+      d.src_y + d.height > readback_h)
+    return false;
+  // Media de bloque scale x scale en RGBA8.
+  std::vector<uint8_t> small(
+      static_cast<size_t>(plan.dst_w) * plan.dst_h * 4);
+  for (int y = 0; y < plan.dst_h; ++y) {
+    for (int x = 0; x < plan.dst_w; ++x) {
+      int sr = 0, sg = 0, sb = 0, sa = 0;
+      for (int dy = 0; dy < plan.scale; ++dy) {
+        for (int dx = 0; dx < plan.scale; ++dx) {
+          int sx = d.src_x + x * plan.scale + dx;
+          int sy = d.src_y + y * plan.scale + dy;
+          const uint8_t* p =
+              readback + (static_cast<size_t>(sy) * readback_w + sx) * 4;
+          sr += p[0]; sg += p[1]; sb += p[2]; sa += p[3];
+        }
+      }
+      int n = plan.scale * plan.scale;
+      uint8_t* o = small.data() +
+                   (static_cast<size_t>(y) * plan.dst_w + x) * 4;
+      o[0] = static_cast<uint8_t>(sr / n);
+      o[1] = static_cast<uint8_t>(sg / n);
+      o[2] = static_cast<uint8_t>(sb / n);
+      o[3] = static_cast<uint8_t>(sa / n);
+    }
+  }
+  std::vector<uint8_t> tiled(plan.total_bytes);
+  int gx_fmt = (f.kind == EfbPixelKind::kTexRgb565Tiled) ? 4 : 6;
+  if (!Rgba8ToGxTiled(small.data(), plan.dst_w, plan.dst_h, gx_fmt,
+                      tiled.data()))
+    return false;
+  std::memcpy(ram + plan.dest_offset, tiled.data(), tiled.size());
+  return true;
 }
 
 }  // namespace sfa

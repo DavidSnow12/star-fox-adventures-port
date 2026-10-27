@@ -196,6 +196,11 @@ void GameCubeRuntime::FeedGxFrame() {
     } else {
       std::vector<GxDraw> fed = gx_parser_.TakeFedDraws();
       if (!fed.empty()) SetGxDraws(fed);
+      // Tramo 10: copias del mismo Feed, en orden FIFO.
+      // (TakeFedCopies vacia el drenaje; Copies() historico
+      // no se toca.)
+      std::vector<GxCopy> fed_copies = gx_parser_.TakeFedCopies();
+      if (!fed_copies.empty()) SetGxCopies(fed_copies);
     }
   }
   sfa_fifo_capture_reset();
@@ -267,7 +272,58 @@ void GameCubeRuntime::Frame(Renderer* renderer) {
   audio_bridge_.Tick();
   audio_.Pump();
   renderer->DrawQuad();
-  if (!pending_gx_draws_.empty()) {
+  // Tramo 10: camino EFB. Renderizar UNA vez al target EFB
+  // y presentar con el quad texturado existente (ver
+  // renderer.h): sin dibujar dos veces y sin inventar un
+  // blit. Las copias se ejecutan tras los draws del frame
+  // (deferidas un frame para texturas; exactas para XFB,
+  // que son de fin de frame). Si el FBO falla, se usa el
+  // camino de pantalla de siempre y las copias DE ESTE
+  // frame se descartan (el proximo frame trae copias
+  // nuevas; un FBO que falla sistematicamente deja el
+  // juego sin copias, igual que antes de este tramo).
+  // Tamano EFB 640x480:
+  // es el espacio en el que DrawDraws traduce los draws
+  // (GxDrawToGlTris(d, 640, 480) fijo); un frame con otro
+  // tamano de render ya seria incorrecto antes del EFB.
+  if (game_loaded_ &&
+      (!pending_gx_draws_.empty() || !pending_gx_copies_.empty())) {
+    bool efb_ok = renderer->BeginEfbFrame(640, 480);
+    if (efb_ok) {
+      if (!pending_gx_draws_.empty()) {
+        renderer->DrawGxFrame(pending_gx_draws_, memory_.RamData(),
+                              memory_.RamSize());
+      }
+      if (!pending_gx_copies_.empty()) {
+        auto counts = renderer->CopyEfbCopies(
+            pending_gx_copies_, memory_.RamData(), memory_.RamSize());
+        if (counts.second > 0) {
+          SFA_LOGI("runtime: efb-copy: frame ok=%d rechazadas=%d "
+                   "ultimo=%s",
+                   counts.first, counts.second,
+                   renderer->EfbLastReject().c_str());
+        }
+      }
+      if (!renderer->PresentEfb()) {
+        // Present fallo (sin readback): el frame ya esta
+        // dibujado en el EFB pero no en pantalla; no se
+        // puede recuperar sin redibujar, asi que se deja
+        // el clear de BeginFrame de este frame (el proximo
+        // frame vuelve a intentarlo). Se registra una vez
+        // por fallo para no inundar el log.
+        SFA_LOGI("runtime: efb-copy: PresentEfb fallo (frame "
+                 "sin presentar)");
+      }
+    } else {
+      // Fallback: camino de pantalla de siempre, sin copias.
+      if (!pending_gx_draws_.empty()) {
+        renderer->DrawGxFrame(pending_gx_draws_, memory_.RamData(),
+                              memory_.RamSize());
+      }
+    }
+    pending_gx_draws_.clear();
+    pending_gx_copies_.clear();
+  } else if (!pending_gx_draws_.empty()) {
     // Via GX futura: draws parseados del frame, con texturas
     // desde la RAM huesped del runtime.
     renderer->DrawGxFrame(pending_gx_draws_, memory_.RamData(),

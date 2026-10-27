@@ -69,6 +69,12 @@ class GameCubeRuntime {
   void SetGxDraws(const std::vector<GxDraw>& draws) {
     pending_gx_draws_ = draws;
   }
+  // Tramo 10: copias EFB del frame (drenadas por FeedGxFrame
+  // junto a los draws; ver TakeFedCopies). Frame() las
+  // ejecuta tras dibujar al target EFB y antes de presentar.
+  void SetGxCopies(const std::vector<GxCopy>& copies) {
+    pending_gx_copies_ = copies;
+  }
   bool IsGameEnded() const { return game_ended_; }
   uint64_t PostBootSlices() const { return post_boot_slices_; }
 
@@ -123,6 +129,7 @@ class GameCubeRuntime {
   bool game_ended_ = false;
   uint64_t post_boot_slices_ = 0;
   std::vector<GxDraw> pending_gx_draws_;
+  std::vector<GxCopy> pending_gx_copies_;  // Tramo 10.
   // Alimentacion GX por frame (Fase 11): la captura FIFO se
   // drena tras cada slice y se alimenta al parser incremental,
   // para que Frame() dibuje los draws del frame real (no solo

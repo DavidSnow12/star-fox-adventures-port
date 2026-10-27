@@ -64,21 +64,45 @@ struct MusyxCc {
 // Tramo 9 frente A - seccion de bucle por secciones (canciones 22/95).
 // Una seccion = subconjunto de las notas planas (indices en la tabla
 // plana, en orden de tabla == orden de tiempo) que pertenecen a una
-// seccion huesped (seq_host.py). period_ticks (puente) = max(time+
-// length) - min(time) de la seccion; loops = la seccion buclea en el
-// huesped (loopCount > 0 tras 100.000 pasos). La fase de bucle del
-// secuenciador reproduce cada seccion que buclea con sus intervalos
-// exactos, empezando cada vuelta cuando la anterior ha drenado sus
-// NoteOffs (misma convencion que el bucle 99/74 del Tramo 8); las
-// secciones sin bucle no se repiten. Los CC NO se repiten por seccion
-// en esta version (quedan congelados en fin de primer pase; ver
-// INFORME.md): el evento kSectionLoop solo marca la vuelta.
+// seccion huesped (seq_host.py). period_ticks (puente Tramo 9) =
+// max(time+length) - min(time) de la seccion; loops = la seccion
+// buclea en el huesped (loopCount > 0 tras 100.000 pasos).
+// Tramo 10: la fase de bucle reproduce cada seccion que buclea con
+// el reloj absoluto huesped (loop_point -> loop_end) y repite sus
+// CC7/CC10 de vuelta (loop_ccs). Las secciones sin bucle no se
+// repiten. El evento kSectionLoop marca cada vuelta nueva (y la
+// entrada en fase); los CC de vuelta llegan como eventos kCc
+// normales, antes que las notas del mismo tick.
 struct MusyxSection {
   uint32_t section_id = 0;  // Id de seccion huesped (0..15).
   const size_t* note_indices = nullptr;  // Indices en la tabla plana.
   size_t note_count = 0;
-  uint32_t period_ticks = 0;
+  uint32_t period_ticks = 0;  // Tramo 9: span del primer pase
+                              // (max fin - min inicio). Referencia;
+                              // la fase de bucle Tramo 10 usa
+                              // loop_end - loop_point.
   bool loops = false;
+  // Tramo 10 — vuelta medida huesped (lap 1 == lap 2, == primer pase
+  // filtrado a time >= loop_point; ver gen_section_loops.py).
+  // loop_point = loopPoint del arreglo huesped (reloj de seccion al
+  // buclear); loop_end = reloj huesped al que la seccion buclea
+  // (old_high medido en la transicion, constante en todas las
+  // vueltas medidas). La vuelta dura loop_end - loop_point ticks
+  // exactos (22: 49152; 95 sec0/1: 6144, sec2: 30624, sec3: 29088,
+  // sec4: 27552). loop_note_indices = notas de la vuelta (las de
+  // intro < loop_point NO se repiten en el huesped); loop_ccs =
+  // CC7/CC10 de la vuelta en tiempos absolutos huesped (dedup
+  // consecutivos por (midi, cc)). Sin tablas de vuelta (nullptr),
+  // la seccion no entra en fase de bucle.
+  uint32_t loop_point = 0;
+  uint32_t loop_end = 0;
+  const size_t* loop_note_indices = nullptr;
+  size_t loop_note_count = 0;
+  const MusyxCc* loop_ccs = nullptr;
+  size_t loop_cc_count = 0;
+  uint32_t LoopPeriod() const {
+    return loop_end > loop_point ? loop_end - loop_point : 0;
+  }
 };
 
 struct MusyxSong {
@@ -214,14 +238,25 @@ class MusyxSequencer {
     int section = -1;
   };
   std::vector<PendingOff> pending_offs_;
-  // Fase de bucle por secciones (Tramo 9): un estado por seccion.
+  // Fase de bucle por secciones (Tramo 10): un estado por seccion.
+  // Reloj absoluto por seccion: la vuelta k empieza en lap_start
+  // (tick_ exacto, multiplo de loop_end-loop_point desde loop_end,
+  // sin deriva por overshoot de bloque) y los eventos con tiempo
+  // huesped T vencen en lap_start + (T - loop_point). La vuelta
+  // termina exactamente en lap_start + (loop_end - loop_point);
+  // los NoteOffs cruzan la frontera sin cortar la voz (su tick de
+  // fin es absoluto). A diferencia del Tramo 9, las secciones NO
+  // se anclan a su primera nota (eso desplazaba sec0 de 22 unos
+  // 21504 ticks frente a sec10) ni esperan al drenaje (eso alargaba
+  // cada vuelta hasta el span de notas en vez de hasta loop_end).
   struct SecRun {
     size_t section_index = 0;
-    size_t next = 0;       // Siguiente indice dentro de la seccion.
+    size_t next = 0;       // Siguiente indice en loop_note_indices.
+    size_t next_cc = 0;    // Siguiente indice en loop_ccs.
     uint64_t lap = 0;      // Vueltas completadas (0 = primera vuelta).
     double lap_start = 0.0;  // tick_ en el que empezo la vuelta actual.
-    double first_time = 0.0;  // Tiempo de la primera nota de la seccion.
-    size_t pending = 0;    // Notas de la seccion sonando ahora.
+    double loop_point = 0.0;  // loopPoint huesped de la seccion.
+    double loop_end = 0.0;    // loop_end huesped de la seccion.
   };
   std::vector<SecRun> sec_runs_;
   bool in_loop_phase_ = false;

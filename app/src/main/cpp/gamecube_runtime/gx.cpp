@@ -166,6 +166,12 @@ std::vector<GxDraw> GxParser::TakeFedDraws() {
   return out;
 }
 
+std::vector<GxCopy> GxParser::TakeFedCopies() {
+  std::vector<GxCopy> out;
+  out.swap(fed_copies_);
+  return out;
+}
+
 void GxParser::AppendTexLoads(const std::vector<GxTexLoad>& loads) {
   tex_loads_.insert(tex_loads_.end(), loads.begin(), loads.end());
 }
@@ -269,6 +275,7 @@ GxParser::StreamResult GxParser::ParseStream(const uint8_t* data, size_t len,
         // Tramo 9: escala Y BP 0x4E vigente en el disparo.
         take(0x4E, &c.reg4e, &c.has4e);
         copies_.push_back(c);
+        fed_copies_.push_back(c);  // Tramo 10: drenaje por frame.
       }
       pos += 5;
       continue;

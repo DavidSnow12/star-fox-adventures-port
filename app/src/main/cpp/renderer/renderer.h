@@ -11,6 +11,7 @@
 #include <EGL/egl.h>
 #include <android/native_window.h>
 
+#include <utility>
 #include <vector>
 
 #include "gamecube_runtime/gx.h"
@@ -43,6 +44,43 @@ class Renderer {
   // desde la RAM huesped dada. Sin draws, no dibuja nada.
   int DrawGxFrame(const std::vector<GxDraw>& draws, const uint8_t* ram,
                   size_t ram_size);
+  // Tramo 10: camino EFB (ver DIFF Tramo 10). Renderizar UNA
+  // vez al target EFB y presentar con el quad texturado
+  // existente (sin dibujar dos veces y sin inventar un blit):
+  //   BeginEfbFrame(640,480) -> DrawGxFrame (al FBO) ->
+  //   CopyEfbCopies (readback + escrituras en RAM) ->
+  //   PresentEfb (readback + End + viewport + quad) ->
+  //   DrawAudioButton -> RenderFrame.
+  // BeginEfbFrame enlaza el FBO (o lo recrea si cambia el
+  // tamano) y hace clear con el mismo color que BeginFrame.
+  // Devuelve false si el FBO no se pudo crear: el llamador
+  // debe usar el camino de pantalla de siempre (DrawGxFrame
+  // sin EFB) para no perder el frame. CopyEfbCopies ejecuta
+  // las copias del frame en orden FIFO (deferidas: las
+  // copias a textura quedan disponibles para los draws del
+  // frame SIGUIENTE, no para los de este; las copias XFB
+  // son de fin de frame y no se ven afectadas) y devuelve
+  // (ok, rechazadas); el motivo de la ultima rechazada queda
+  // en EfbLastReject(). PresentEfb lee el EFB (cache del
+  // frame), restaura el framebuffer 0 y el viewport de
+  // pantalla, y dibuja el EFB a pantalla completa con el
+  // quad texturado existente (filtro LINEAR de
+  // UploadTexture: la presentacion suaviza ligeramente
+  // frente al estirado por viewport del camino directo;
+  // alternativa futura, NO en este parche: glBlitFramebuffer
+  // con NEAREST, que el coordinador puede aprobar aparte).
+  // Sin contexto EGL o sin gx listo, los tres son no-op
+  // seguros (BeginEfbFrame false, CopyEfbCopies (0,0),
+  // PresentEfb false).
+  bool BeginEfbFrame(int width, int height);
+  std::pair<int, int> CopyEfbCopies(const std::vector<GxCopy>& copies,
+                                    uint8_t* ram, size_t ram_size);
+  bool PresentEfb();
+  int EfbCopiesOk() const { return gx_gl_.EfbCopiesOk(); }
+  int EfbCopiesRejected() const { return gx_gl_.EfbCopiesRejected(); }
+  const std::string& EfbLastReject() const {
+    return gx_gl_.EfbLastReject();
+  }
   // Orden de frame: BeginFrame (clear) -> DrawTestQuad o
   // DrawGxFrame -> RenderFrame (swap). Sin BeginFrame, el
   // contenido del frame anterior persistiria.

@@ -92,6 +92,9 @@ struct AppState {
   bool audio_done_seen = false;
   bool audio_error_seen = false;
   int audio_poll_counter = 0;
+  // Tramo 10: sondeo del disparador de captura de frame
+  // (marcador, ver PollFrameCaptureRequest).
+  int capture_poll_counter = 0;
 };
 
 bool FileExists(const std::string& path) {
@@ -334,6 +337,72 @@ void PollAudioResult(struct android_app* app, AppState* state) {
   }
 }
 
+// Tramo 10: disparador EXPLICITO de captura de frame
+// (RequestFrameCapture, Tramo 9). NUNCA automatico por
+// frame: solo cuando existe el marcador
+//   <internalDataPath>/captura-frame-pedida
+// cuyo contenido (una linea) es la etiqueta de escena.
+// Activacion hoy (sin boton Java todavia; el coordinador
+// puede anadir un boton de depuracion que escriba el
+// marcador, con el mismo efecto):
+//   adb shell "echo -n titulo > /data/data/com.starfox.port/files/captura-frame-pedida"
+// (ruta interna segun InternalDataPath; en el dispositivo
+// real es files/ de la app). El sondeo borra el marcador
+// ANTES de pedir la captura, asi que un solo marcador da
+// una sola captura (sin re-disparos en sondeos posteriores
+// ni capturas en bucle). Seguridad: solo con ventana+foco
+// y juego cargado (el llamador lo garantiza); escena
+// vacia, ilegible o con caracteres fuera de [A-Za-z0-9_-]
+// se descarta (marcador borrado, log, sin captura); la
+// salida va a <internalDataPath>/capturas (el runtime crea
+// frame_<N>/ dentro; dir y escena nulos/vacios ya se
+// ignoran en RequestFrameCapture). Sin juego, el marcador
+// NO se consume: queda para cuando el juego este cargado
+// (evita perder la peticion por sondear demasiado pronto).
+void PollFrameCaptureRequest(struct android_app* app, AppState* state) {
+  (void)app;  // El marcador vive en internalDataPath, no en app.
+  if (!state->runtime.IsGameLoaded()) return;
+  std::string internal = sfa::InternalDataPath();
+  if (internal.empty()) return;
+  std::string marker = internal + "/captura-frame-pedida";
+  std::FILE* f = std::fopen(marker.c_str(), "rb");
+  if (f == nullptr) return;
+  char buf[128];
+  size_t n = std::fread(buf, 1, sizeof(buf) - 1, f);
+  std::fclose(f);
+  buf[n] = '\0';
+  // Borrar ANTES de validar: un marcador = una captura como
+  // maximo, aunque la escena sea invalida.
+  std::remove(marker.c_str());
+  std::string scene;
+  for (size_t i = 0; i < n; ++i) {
+    char c = buf[i];
+    if (c == '\n' || c == '\r') break;
+    if ((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') ||
+        (c >= '0' && c <= '9') || c == '_' || c == '-') {
+      scene.push_back(c);
+    } else if (c == ' ' || c == '\t') {
+      // Espacios: se ignoran (no se convierten en guion:
+      // la etiqueta debe ser exactamente la escrita, sin
+      // caracteres extranos).
+      continue;
+    } else {
+      scene.clear();
+      break;
+    }
+    if (scene.size() >= 64) break;
+  }
+  if (scene.empty()) {
+    SFA_LOGI("native: captura-frame: marcador descartado "
+             "(escena vacia o invalida)");
+    return;
+  }
+  std::string dir = internal + "/capturas";
+  state->runtime.RequestFrameCapture(dir.c_str(), scene.c_str());
+  SFA_LOGI("native: captura-frame: pedida (escena %s, dir %s)",
+           scene.c_str(), dir.c_str());
+}
+
 // Si Java ya termino la copia SAF, carga el juego (una sola vez).
 // Se llama desde el bucle principal, no en cada iteracion:
 // cada 128 vueltas sin juego en marcha, un fopen barato.
@@ -532,6 +601,13 @@ void android_main(struct android_app* app) {
     if (state.window_ready && state.has_focus &&
         (++state.audio_poll_counter % 128) == 0) {
       PollAudioResult(app, &state);
+    }
+    // Tramo 10: sondeo del marcador de captura (cada 128,
+    // con ventana+foco; PollFrameCaptureRequest exige
+    // ademas juego cargado y no consume sin el).
+    if (state.window_ready && state.has_focus &&
+        (++state.capture_poll_counter % 128) == 0) {
+      PollFrameCaptureRequest(app, &state);
     }
     if (state.window_ready && state.has_focus &&
         state.runtime.IsRunning()) {

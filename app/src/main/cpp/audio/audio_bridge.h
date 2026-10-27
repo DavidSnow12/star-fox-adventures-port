@@ -225,17 +225,24 @@ class AudioBridge {
   // Hook sndSeqStop 0x80272F80: detiene la cancion host.
   // Tramo 9: OnSeqStop() detiene TODAS las canciones (compat v1).
   void OnSeqStop();
-  // Tramo 9: detiene solo la cancion del handle dado (handles
+  // Tramo 10: detiene solo la cancion del handle dado (handles
   // asignados por OnSeqPlay en orden de arranque: 1, 2, ...,
   // igual que los seqHandle del juego medidos en G3: 22->1,
-  // 95->2). Devuelve 1 si detuvo una cancion, 0 si no.
-  // Fallback documentado: con una unica cancion activa, un
+  // 95->2). Convencion r3 VERIFICADA en codigo huesped
+  // (Tramo 10): sndSeqStop -> seqStop busca nodo+12 == r3 &
+  // 0x7FFFFFFF; sndSeqVolume -> seqVolume usa la misma
+  // busqueda con su r5; los 3 llamadores del juego pasan
+  // chan+4 (retorno de sndSeqPlayEx guardado por
+  // Music_ChannelLoadedCallback). NO es sgid ni track.
+  // Devuelve 1 si detuvo una cancion, 0 si no.
+  // Fallback documentado (heuristica, sin llamada real en
+  // juego que lo ejerza): con una unica cancion activa, un
   // handle sin coincidencia detiene esa cancion (cubre
   // llamadas con handle 0); con varias activas y sin
   // coincidencia, no detiene ninguna y cuenta en
-  // SeqStopUnmatched() (el juego podria pasar un id de
-  // grupo en vez de un handle: sin traza real de sndSeqStop
-  // en G3, no se inventa la convencion).
+  // SeqStopUnmatched(). Con bit 31 o -1 (flag huesped /
+  // sin coincidencia en seqStop) NO detiene nada y cuenta
+  // en SeqStopFlagged().
   int OnSeqStopHandle(uint32_t handle);
   // Tramo 9: observacion de streams (ver .cpp y patch-A).
   // OnStartPrepared: confirma que el juego alcanzo
@@ -259,6 +266,15 @@ class AudioBridge {
   }
   uint32_t GetCurrentIdLast() const { return getcurrentid_last_; }
   uint64_t SeqStopUnmatched() const { return seq_stop_unmatched_; }
+  // Tramo 10: sndSeqStop con bit 31 o -1 (flag huesped / sin
+  // coincidencia: seqStop no detiene en esos casos). No detiene
+  // nada y no usa el fallback de una sola cancion.
+  uint64_t SeqStopFlagged() const { return seq_stop_flagged_; }
+  // Tramo 10: CC7/CC10 vigentes del slot de un handle (para tests
+  // host de la repeticion de CC por vuelta). Sin slot, 127/64
+  // (preset huesped).
+  uint32_t SeqCc7Of(uint32_t handle, uint32_t midi) const;
+  uint32_t SeqCc10Of(uint32_t handle, uint32_t midi) const;
   uint64_t SeqSlotsFull() const { return seq_slots_full_; }
   // Canciones activas (tracks) y nº de slots ocupados.
   std::vector<int> ActiveSeqTracks() const;
@@ -507,6 +523,7 @@ class AudioBridge {
   uint64_t getcurrentid_mismatches_ = 0;
   uint32_t getcurrentid_last_ = 0;
   uint64_t seq_stop_unmatched_ = 0;
+  uint64_t seq_stop_flagged_ = 0;  // Tramo 10: stops con bit 31 / -1.
   uint64_t seq_slots_full_ = 0;
   std::string wav_root_;
   std::string cache_root_;

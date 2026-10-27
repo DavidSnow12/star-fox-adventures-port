@@ -139,16 +139,22 @@ class GxGlRenderer {
   // target EFB vigente a la RAM huesped (`guest_ram`,
   // ram_size bytes, base 0x80000000). La decision de formato
   // y la escritura viven en renderer/efb_copy.h (puro); aqui
-  // solo se lee el FBO y se cuentan ok/rechazadas. Con copia
-  // con escala Y y filtro capturado usa el modelo con escala
-  // (ExecuteEfbCopyScaledModel); sin filtro capturado, la
-  // copia con escala se rechaza (no se inventa filtro).
+  // solo se lee el FBO (con cache por frame, ver abajo) y se
+  // cuentan ok/rechazadas. Con copia con escala Y y filtro
+  // capturado usa el modelo con escala CORREGIDO Tramo 10
+  // (ExecuteEfbCopyScaledModel, direccion yscale/256, dst_h
+  // = CopyYScaleLines); sin filtro capturado, la copia con
+  // escala se rechaza (no se inventa filtro). Copia a
+  // textura 1:1 -> tiled; con downsample entero uniforme
+  // (p. ej. 640x480 -> 320x240) -> modelo box average
+  // (ExecuteEfbCopyTiledDownsampled, motivo
+  // downsample-rechazado si falla).
   // `reject_reason` (si no es nulo) recibe el motivo del
   // rechazo, para boot.log: sin-target-EFB, ram-nula,
   // sin-evento-0x52, readback-fallo, escala-sin-filtro,
   // escala-modelo-rechazada, lineal-rechazada,
-  // tiled-rechazada, formato-desconocido. No escribe nada
-  // en RAM si rechaza.
+  // tiled-rechazada, downsample-rechazado,
+  // formato-desconocido. No escribe nada en RAM si rechaza.
   bool CopyEfbToGuestRam(const GxCopy& copy, uint8_t* guest_ram,
                          uint32_t ram_size, std::string* reject_reason);
   int EfbCopiesOk() const { return efb_copies_ok_; }
@@ -244,6 +250,19 @@ class GxGlRenderer {
   int efb_copies_ok_ = 0;
   int efb_copies_rejected_ = 0;
   std::string efb_last_reject_;
+  // Tramo 10: cache de readback del frame vigente. Un frame
+  // tipico trae varias copias del mismo EFB; leerlo una vez
+  // en la primera copia y reutilizarlo evita un glReadPixels
+  // (1,2 MB en 640x480) por copia. Se invalida en cada
+  // DrawDraws (cualquier draw posterior cambia el EFB) y en
+  // BeginEfbTarget (frame nuevo / target nuevo): con el
+  // orden Tramo 10 (draws -> copias -> present) la cache es
+  // exacta; con un orden entrelazado futuro seguiria siendo
+  // exacta por la invalidacion en DrawDraws.
+  bool efb_readback_valid_ = false;
+  std::vector<uint8_t> efb_readback_;
+  int efb_readback_w_ = 0;
+  int efb_readback_h_ = 0;
 
   GLuint program_ = 0;
   GLuint vbo_ = 0;
