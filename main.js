@@ -336,6 +336,10 @@
     refreshPills();
     updatePlayButton(); // la copia recien importada ya persiste
   }
+  // Fase 11: drive.js llama a esta MISMA via tras importar el
+  // ZIP desde el Drive del usuario (es el camino que ya usa el
+  // selector de ZIP tras importZip, sin duplicar logica).
+  window.SFAAfterDataReady = afterDataReady;
 
   // --- Bucle principal ---
   function frame() {
