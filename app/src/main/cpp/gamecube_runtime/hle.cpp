@@ -103,6 +103,9 @@ constexpr HleEntry kHleTable[] = {
     // Fase 7 (port web, nucleo compartido): tambien al final,
     // por el mismo motivo.
     {Hle::kAiCallbackTrampoline, "AITrampoline"},
+    // Fase 8 (port web, nucleo compartido): trampolin de
+    // entrega del callback de breakpoint GX.
+    {Hle::kBpCallbackTrampoline, "BPTrampoline"},
 };
 
 const char* FindHleName(uint32_t address) {
@@ -1143,6 +1146,88 @@ bool Hle::HandleAiTrampoline(CpuState* cpu) {
   // Cierre de rafaga: la mezcla ya corrio entera; toca
   // resolver si desperto a algun trabajador (paso diferido).
   ResolveAiWake(cpu);
+  // Fase 8: al cerrar la rafaga AI, el breakpoint GX tiene
+  // su oportunidad en el mismo punto (si la entrega AI
+  // ocupo el cierre de la cadena VI, el BP no se queda sin
+  // su entrega de este retrace).
+  if (DeliverBreakPtCallbackRet(cpu, ret)) return true;
+  cpu->pc = ret;
+  return true;
+}
+
+// ------------------------------------------------------------------
+// Breakpoint GX (Fase 8, port web; mecanismo y modelo en
+// hle.h, junto a kBpCallbackTrampoline).
+//
+// La entrega sigue el patron de la IRQ AI de la Fase 7: se
+// intenta solo en puntos seguros del HLE (tras la cadena VI,
+// en VIWaitForRetrace y en el sueno de frame del principal,
+// siempre despues de la entrega AI) y el callback corre como
+// codigo huesped ordinario sobre el hilo actual, asi que sus
+// llamadas OS (el OSSendMessage de THPPlayerPostDrawDone a
+// freetex) despiertan trabajadores por las vias normales del
+// planificador, sin necesidad de paso diferido. Nunca se
+// entrega con una cadena AI o BP en curso, ni dos veces en
+// el mismo retrace (la cadencia hardware del mecanismo:
+// GXFlush arma una vez por frame sometido y el disparo
+// llega cuando el GP lo ha consumido, esto es, dentro del
+// mismo frame).
+
+bool Hle::DeliverBreakPtCallback(CpuState* cpu) {
+  return DeliverBreakPtCallbackRet(cpu,
+                                    cpu != nullptr ? cpu->lr : 0);
+}
+
+bool Hle::DeliverBreakPtCallbackRet(CpuState* cpu, uint32_t ret) {
+  if (cpu == nullptr || bp_chain_active_ || ai_chain_active_) {
+    return false;
+  }
+  if (bp_last_retrace_ == retrace_count_) return false;
+  uint32_t r13 = cpu->gpr[13];
+  uint32_t armed = ::mem_read32(cpu, r13 - 20660u);
+  if (cpu->exception != 0) {
+    cpu->exception = 0;
+    return false;
+  }
+  if (armed == 0) return false;  // GXDisableBreakPt lo limpia.
+  uint32_t cb = ::mem_read32(cpu, r13 - 20668u);
+  if (cpu->exception != 0) {
+    cpu->exception = 0;
+    return false;
+  }
+  // El callback ha de ser codigo huesped en RAM principal;
+  // cualquier otra cosa (0, un trampolin HLE, un puntero de
+  // datos) no es un registro valido de GXSetBreakPtCallback.
+  if (cb < 0x80000000u || cb >= 0x81800000u) return false;
+  bp_chain_active_ = true;
+  bp_chain_ret_ = ret;
+  bp_last_retrace_ = retrace_count_;
+  ++bp_delivered_;
+  if (bp_delivered_ <= 12 || bp_delivered_ % 500 == 0) {
+    SFA_LOGI("hle: breakpoint GX entregado (#%llu, callback "
+             "0x%08X, armado 0x%08X, retorno 0x%08X)",
+             static_cast<unsigned long long>(bp_delivered_), cb,
+             armed, bp_chain_ret_);
+  }
+  cpu->pc = cb;
+  cpu->lr = kBpCallbackTrampoline;
+  return true;
+}
+
+bool Hle::HandleBpTrampoline(CpuState* cpu) {
+  if (cpu == nullptr) return false;
+  if (!bp_chain_active_) {
+    // No deberia ocurrir (el PC sintetico solo lo pone este
+    // HLE como lr de la entrega); si el huesped aterriza
+    // aqui sin cadena, se vuelve por lr sin tocar nada mas.
+    SFA_LOGE("hle: trampolin BP sin cadena activa (pc "
+             "0x%08X, lr 0x%08X): retorno sin efecto",
+             cpu->pc, cpu->lr);
+    return Return(cpu, 0);
+  }
+  uint32_t ret = bp_chain_ret_;
+  bp_chain_active_ = false;
+  bp_chain_ret_ = 0;
   cpu->pc = ret;
   return true;
 }
@@ -2668,6 +2753,10 @@ bool Hle::HandleHostCall(CpuState* cpu, uint32_t address) {
       // Fase 7: tras la cadena VI (o sin ella), la IRQ AI
       // encadenada; nunca antes que VI (Fase 6, c4-c6).
       if (DeliverAiCallbacks(cpu)) return true;
+      // Fase 8: el breakpoint GX, tras la IRQ AI (en
+      // hardware la IRQ CP llega cuando el GP consume el
+      // frame, sin orden fijo frente a la de AI).
+      if (DeliverBreakPtCallback(cpu)) return true;
       return Return(cpu, 0);
     }
     case kViSetPreRetraceCallback: {
@@ -2696,6 +2785,10 @@ bool Hle::HandleHostCall(CpuState* cpu, uint32_t address) {
         vi_post_ai_pending_ = false;
         vi_post_ai_ret_ = 0;
         if (DeliverAiCallbacksRet(cpu, ret2)) return true;
+        // Fase 8: el breakpoint GX, tras la IRQ AI y con la
+        // cadena VI completa detras (mismo punto vivo que la
+        // entrega AI durante la pelicula).
+        if (DeliverBreakPtCallbackRet(cpu, ret2)) return true;
         cpu->pc = ret2;
         return true;
       }
@@ -2721,6 +2814,8 @@ bool Hle::HandleHostCall(CpuState* cpu, uint32_t address) {
         // Sin post: la cadena VI ya termino; la IRQ AI se
         // intenta con el mismo retorno como continuacion.
         if (DeliverAiCallbacksRet(cpu, ret)) return true;
+        // Fase 8: el breakpoint GX, tras la IRQ AI.
+        if (DeliverBreakPtCallbackRet(cpu, ret)) return true;
         cpu->pc = ret;
       }
       return true;
@@ -2730,6 +2825,11 @@ bool Hle::HandleHostCall(CpuState* cpu, uint32_t address) {
       // pelicula (o continuacion de su rafaga): ver
       // HandleAiTrampoline junto a DeliverAiCallbacks.
       return HandleAiTrampoline(cpu);
+    case kBpCallbackTrampoline:
+      // Retorno de una entrega del callback de breakpoint
+      // GX (Fase 8): ver HandleBpTrampoline junto a
+      // DeliverBreakPtCallback.
+      return HandleBpTrampoline(cpu);
     case kPadInit:
       pad_init_done_ = true;
       return Return(cpu, 0);
@@ -3222,6 +3322,8 @@ bool Hle::HandleHostCall(CpuState* cpu, uint32_t address) {
         // Fase 7: IRQ AI encadenada tras VI, como en
         // VIWaitForRetrace (nunca antes que VI).
         if (DeliverAiCallbacks(cpu)) return true;
+        // Fase 8: el breakpoint GX, tras la IRQ AI.
+        if (DeliverBreakPtCallback(cpu)) return true;
       }
       return Return(cpu, 0);
     }

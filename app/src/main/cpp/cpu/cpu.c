@@ -445,6 +445,21 @@ static bool is_hardware(u32 addr) {
     return addr >= SFA_HW_BASE && addr < SFA_HW_END;
 }
 
+/* Apertura de lectura Z del PE (Fase 8, port web, nucleo
+ * compartido). GXPeekZ del SDK lee el Z renderizado en
+ * 0xC8400000 + (y << 12) + (x << 2) (ventana del EFB para
+ * peeks de profundidad; la de color, sin el bit 0x400000,
+ * queda fuera de este modelo por no usada de momento). Sin
+ * EFB emulado no hay un Z real que devolver: se devuelve el
+ * Z lejano (0x00FFFFFF, maximo de 24 bits), esto es, "sin
+ * oclusion", que es la lectura segura para los consumidores
+ * del motor (tests de oclusion de sprites/destellos en el
+ * callback de breakpoint GX). Solo lecturas de 32 bits, que
+ * es lo que GXPeekZ emite (lwz). */
+static bool is_pe_z_peek(u32 addr) {
+    return addr >= 0xC8400000u && addr < 0xC8800000u;
+}
+
 static void clear_matching_reservation(CPUState *cpu, u32 addr) {
     u32 reserve_addr = cpu->reserve_addr & ~0x40000000u;
     u32 store_addr = addr & ~0x40000000u;
@@ -540,6 +555,11 @@ u16 mem_read16(CPUState *cpu, u32 addr) {
 }
 
 u32 mem_read32(CPUState *cpu, u32 addr) {
+    if (is_pe_z_peek(addr)) {
+        /* Fase 8: Z del PE siempre lejano (ver is_pe_z_peek). */
+        sfa_hw_trace_record(cpu, addr, 4, 0, 0x00FFFFFFu);
+        return 0x00FFFFFFu;
+    }
     bool hw = false;
     u8 *p = read_ptr(cpu, addr, 4, &hw);
     if (hw) {

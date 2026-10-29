@@ -208,6 +208,37 @@ class Hle {
   // mezcla va diferida a SwitchOnSleep (ver hle.cpp).
   static constexpr uint32_t kAiCallbackTrampoline = 0x80003010u;
   static constexpr uint32_t kAttractMovieDmaCallback = 0x80118528u;
+  // Breakpoint GX (Fase 8, port web, nucleo compartido).
+  // Mecanismo reconstruido del codigo huesped (Fase 8):
+  // GXSetBreakPtCallback (0x80256DD0) guarda el callback en el
+  // global SDK [r13-20668]; GXEnableBreakPt (0x80256E14)
+  // guarda la direccion armada en [r13-20660] y activa los
+  // bits de breakpoint del registro de control CP; en
+  // hardware, cuando el puntero de lectura del GP alcanza la
+  // direccion armada salta la IRQ CP y GXCPInterruptHandler
+  // (0x8025672C) invoca el callback registrado. Rare lo arma
+  // en cada GXFlush (0x8004A620) con el puntero de escritura
+  // FIFO vigente ("todo lo sometido hasta aqui") y su
+  // callback, videoBreakPointCallback (0x80049C00), llama a
+  // THPPlayerPostDrawDone: sin el, los sets de textura
+  // mostrados nunca vuelven a freetex y el attract se seca
+  // en 3 frames por ciclo (Fases 6-7). En este runtime los
+  // registros CP se leen 0 y GXInitFifo* son stubs, asi que
+  // los punteros FIFO del huesped son degenerados (medido en
+  // la Fase 8: GXGetFifoPtrs devuelve 0x80000000/0 y GXFlush
+  // arma una sola vez con un valor residual): no hay una
+  // direccion de stream significativa que cruzar. Pero el
+  // GP de este runtime consume sincrono (FeedGxFrame drena
+  // todo lo sometido en cada frame), asi que "el GP llego
+  // al punto armado" es cierto por construccion una vez por
+  // frame. Modelo: entregar el callback registrado una vez
+  // por retrace mientras el huesped crea tener el
+  // breakpoint armado ([r13-20660] != 0), en los mismos
+  // puntos seguros que la IRQ AI (tras la cadena VI), con
+  // trampolin propio 0x80003014. Generico: se entrega el
+  // callback que el huesped haya registrado, sin filtrar
+  // por direccion (es el mecanismo hardware, no la pelicula).
+  static constexpr uint32_t kBpCallbackTrampoline = 0x80003014u;
   static constexpr uint32_t kPadInit = 0x8024EFC4u;
   static constexpr uint32_t kPadRead = 0x8024F1D4u;
   static constexpr uint32_t kPadReset = 0x8024EDC0u;
@@ -640,6 +671,7 @@ class Hle {
   // cerrar una rafaga y pasos diferidos aplicados en
   // SwitchOnSleep. En una sesion sin pelicula todo queda a 0.
   uint64_t AiDelivered() const { return ai_delivered_; }
+  uint64_t BpDelivered() const { return bp_delivered_; }
   uint64_t AiBursts() const { return ai_bursts_; }
   uint64_t AiIrqWakes() const { return ai_irq_wakes_; }
   uint64_t AiIrqBoosts() const { return ai_irq_boosts_; }
@@ -751,6 +783,17 @@ class Hle {
   bool DeliverAiCallbacks(CpuState* cpu);
   bool DeliverAiCallbacksRet(CpuState* cpu, uint32_t ret);
   bool HandleAiTrampoline(CpuState* cpu);
+  // Breakpoint GX (Fase 8, ver kBpCallbackTrampoline):
+  // entrega del callback de breakpoint registrado por el
+  // huesped, una vez por retrace mientras siga armado, en
+  // los mismos puntos seguros que la IRQ AI y despues de
+  // ella. HandleBpTrampoline cierra la entrega al retorno
+  // del callback (sin rafaga: el breakpoint es por flanco,
+  // un disparo por armado; aqui un armado "creido" por
+  // frame, ver el comentario de la constante).
+  bool DeliverBreakPtCallback(CpuState* cpu);
+  bool DeliverBreakPtCallbackRet(CpuState* cpu, uint32_t ret);
+  bool HandleBpTrampoline(CpuState* cpu);
   // Foto de los trabajadores bloqueados en una cola al abrir
   // una rafaga AI y resolucion al cerrarla: si la mezcla dejo
   // la cola de un receptor bloqueado con mensaje (o con hueco,
@@ -816,6 +859,16 @@ class Hle {
   uint32_t ai_chain_ret_ = 0;
   int ai_chain_count_ = 0;
   uint64_t ai_delivered_ = 0;
+  // Breakpoint GX (Fase 8, ver kBpCallbackTrampoline):
+  // cadena de entrega en curso (el callback vuelve al
+  // trampolin BP), entregas hechas y ultimo retrace en el
+  // que se entrego (puerta de cadencia: maximo una entrega
+  // por retrace, la cadencia con la que el hardware dispara
+  // el breakpoint de un frame sometido por GXFlush).
+  bool bp_chain_active_ = false;
+  uint32_t bp_chain_ret_ = 0;
+  uint64_t bp_delivered_ = 0;
+  uint64_t bp_last_retrace_ = 0;
   uint64_t ai_bursts_ = 0;
   uint64_t ai_irq_wakes_ = 0;
   uint64_t ai_irq_boosts_ = 0;
