@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Star Fox Adventures — Port Web (build completo, pendiente de verificación en navegador)</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #111; color: #eee;
+    font-family: system-ui, sans-serif; }
+  #wrap { position: relative; width: 100%; height: 100%; overflow: hidden; }
+  #game-canvas { display: block; width: 100%; height: 100%;
+    background: #000; touch-action: none; }
+  #hud { position: absolute; top: 0; left: 0; right: 0; padding: 8px 12px;
+    background: rgba(0,0,0,0.6); font-size: 14px; }
+  #status { font-weight: 700; }
+  #status-detail, #depth-mode { font-size: 12px; opacity: 0.85; }
+  #controls { position: absolute; top: 64px; left: 12px; display: flex;
+    gap: 8px; flex-wrap: wrap; }
+  #controls button, #controls label.btn { background: #222; color: #eee;
+    border: 1px solid #555; border-radius: 6px; padding: 8px 12px;
+    font-size: 14px; cursor: pointer; }
+  /* Pildoras: MISMAS fracciones que el port Android (ver main.js):
+     surround x 0.31-0.43, audio x 0.44-0.56, ambas y 0.92-0.98. */
+  .pill { position: absolute; bottom: 2%; height: 6%; border: none;
+    border-radius: 8px; font-size: 13px; font-weight: 700; cursor: pointer; }
+  #pill-surround { left: 31%; width: 12%; background: #334155; color: #fff; }
+  #pill-surround[data-state="on"] { background: #06b6d4; color: #111; }
+  #pill-audio { left: 44%; width: 12%; background: #b45309; color: #fff; }
+  #pill-audio[data-state="listo"] { background: #15803d; }
+  #pill-audio[data-state="error"] { background: #b91c1c; }
+  #help { position: absolute; bottom: 10%; left: 12px; right: 12px;
+    font-size: 12px; opacity: 0.75; }
+  input[type=file] { display: none; }
+</style>
+</head>
+<body>
+<div id="wrap">
+  <canvas id="game-canvas" width="1280" height="720"></canvas>
+  <div id="hud">
+    <div id="status">SIN DATOS — elige tu carpeta de datos</div>
+    <div id="status-detail">Esta pagina NO incluye los datos del juego (uso personal, sin distribucion): pulsa «Elegir carpeta de datos» y elige la carpeta de TU copia que contiene sys/ y files/. Tus ficheros no salen de este navegador: se copian a la memoria local (OPFS/MEMFS), nunca a un servidor.</div>
+    <div id="depth-mode">Readback profundidad EFB: sondeando…</div>
+  </div>
+  <div id="controls">
+    <label class="btn" for="data-folder">📁 Elegir carpeta de datos</label>
+    <button id="save-btn" type="button">💾 Guardar partida</button>
+    <button type="button" onclick="window.SFAStart && window.SFAStart()">↺ Restaurar copia guardada</button>
+  </div>
+  <input type="file" id="data-folder" webkitdirectory>
+  <input type="file" id="audio-folder" webkitdirectory>
+  <button id="pill-surround" class="pill" type="button" data-state="off">SURROUND OFF</button>
+  <button id="pill-audio" class="pill" type="button" data-state="sin-datos">AÑADIR AUDIO</button>
+  <div id="help">
+    Mando: Gamepad API (estandar). Teclado: flechas = D-pad, Enter = Start, Z = Z, Q/E = L/R, J/K/U/I = A/B/X/Y, W/A/S/D = stick.
+    Tactil: stick y botones en pantalla (mismas zonas que Android). Al ocultar la pestana el juego se pausa y se vuelca la partida.
+    Build completo web (Fase 3): runtime + 176 chunks + capa web en un solo wasm. Todavía NO verificado como jugable en navegador: abrir esta página, elegir tu carpeta de datos y seguir el guion de webfull-LEEME.md §6. Tus ficheros no salen de este navegador.
+  </div>
+</div>
+<script src="fs_web.js"></script>
+<script src="main.js"></script>
+<script src="sfa-web.js"></script>
+<script>
+  // Instancia MODULARIZE: la fabrica SFAModule() devuelve la
+  // instancia; main.js/fs_web.js usan window.SFAModule (instancia).
+  // El canvas se pasa aqui para que Emscripten cree el contexto
+  // WebGL2 sobre #game-canvas en sfa_web_init() (renderer web).
+  // Sin datos, la pagina queda en SIN DATOS: el juego NO arranca
+  // solo (sfa_web_init no carga el DOL; lo hace Elegir carpeta).
+  window.SFAModuleReady = SFAModule({ canvas: document.getElementById('game-canvas') })
+    .then(function (instance) {
+      window.SFAModule = instance;
+      if (window.SFAInitWeb) window.SFAInitWeb();
+    })
+    .catch(function (e) {
+      var el = document.getElementById('status');
+      if (el) el.textContent = 'ERROR — no se pudo cargar el wasm (ver consola)';
+      console.error(e);
+    });
+</script>
+</body>
+</html>
