@@ -676,6 +676,7 @@ class Hle {
   uint64_t AiIrqWakes() const { return ai_irq_wakes_; }
   uint64_t AiIrqBoosts() const { return ai_irq_boosts_; }
   uint64_t AiChainHops() const { return ai_chain_hops_; }
+  uint64_t SchedYieldHops() const { return sched_yield_hops_; }
   uint64_t FallbackCacheCount() const { return fallback_cache_; }
   uint64_t FallbackUnknownCount() const { return fallback_unknown_; }
   bool OsInitDone() const { return os_init_done_; }
@@ -883,6 +884,11 @@ class Hle {
   uint32_t irq_woken_queue_ = 0;
   int irq_woken_kind_ = 0;  // 1 Receive, 2 Send
   uint64_t ai_chain_hops_ = 0;
+  // Rescates del planificador en el sueno de frame del
+  // principal (Fase 9): turnos cedidos a un trabajador
+  // dormido en una espera de cola YA completada que ningun
+  // mecanismo de despertar cubria (ver SwitchOnSleep).
+  uint64_t sched_yield_hops_ = 0;
   // Portador de la cadena de despertares (Fase 7): indice
   // del ultimo trabajador al que el paso diferido (IRQ o
   // salto en cadena) dio el turno. Cuando ESE hilo duerme,

@@ -1724,6 +1724,104 @@ bool Hle::SwitchOnSleep(CpuState* cpu) {
   }
   if (current_thread_ < 0) {
     if (cpu->lr != kOsReceiveSleepRet && cpu->lr != kOsSendSleepRet) {
+      // Fase 9 (cuarta puerta del attract): el sueno de
+      // frame del principal es, cuando todos los
+      // trabajadores estan bloqueados, el UNICO punto de
+      // cambio que sigue ocurriendo, y hasta ahora salia
+      // sin mirar a los trabajadores. Un trabajador cuya
+      // espera quedo completada DESPUES de la ultima
+      // evaluacion del planificador se quedaba sin turno
+      // para siempre: la foto de la rafaga AI solo anota
+      // esperas que la propia rafaga puede completar (una
+      // espera ya completada al abrir la foto se descarta:
+      // "ya tenia mensaje"), el salto en cadena solo se
+      // evalua cuando duerme el portador, y las entregas
+      // que corren sobre el contexto del principal tras
+      // SwitchOnSleep (la mezcla AI, el PostDrawDone del
+      // breakpoint GX) envian mensajes sin pasar por
+      // ningun punto de cambio. Medido en la verificacion
+      // de la Fase 9 (harness verify10): el hilo de video
+      // dormido en freetex desde el frame 341; el envio que lo desperto llego con la entrega
+      // BP del retrace 344, DESPUES de que el escaneo de
+      // cadena de ese retrace (al dormir el audio) viera
+      // freetex aun vacia; desde el retrace siguiente la
+      // foto AI lo excluia por tener ya mensaje, nunca se
+      // anoto marca para el, y el anillo entero murio con
+      // dos mensajes esperando en freetex y nueve en
+      // readed2 hasta que el watchdog libero la pelicula.
+      // Regla general (la de __OSReschedule al dormir el
+      // hilo actual): antes de dar el sueno por no
+      // bloqueante, se busca un trabajador dormido en una
+      // espera de cola YA completada — misma revalidacion
+      // estricta que el salto en cadena (contexto dormido
+      // en esa espera, hilo ejecutable, Receive con
+      // mensaje / Send con hueco, leidos en el momento) —
+      // y se le cede UN turno, dejandolo como portador
+      // para que la circulacion siga por la cadena. El
+      // sueno del principal se registra sin cola (como en
+      // el paso IRQ con sueno de frame): MainReady lo
+      // reanuda en el siguiente cambio.
+      int best = -1;
+      uint32_t best_prio = 0xFFFFFFFFu;
+      for (size_t i = 0; i < threads_.size(); ++i) {
+        const ThreadEntry& t = threads_[i];
+        if (!t.runnable || t.suspended || t.finished ||
+            !t.has_ctx) {
+          continue;
+        }
+        int kind = 0;
+        uint32_t queue = 0;
+        if (t.ctx.lr == kOsReceiveSleepRet) {
+          kind = 1;
+          queue = t.ctx.gpr[31];
+        } else if (t.ctx.lr == kOsSendSleepRet) {
+          kind = 2;
+          queue = t.ctx.gpr[28];
+        } else {
+          continue;
+        }
+        if (queue == 0) continue;
+        uint32_t used = ::mem_read32(cpu, queue + 28u);
+        if (cpu->exception != 0) {
+          cpu->exception = 0;
+          continue;
+        }
+        bool satisfied = false;
+        if (kind == 1) {
+          satisfied = used > 0;
+        } else {
+          uint32_t cap = ::mem_read32(cpu, queue + 20u);
+          if (cpu->exception != 0) {
+            cpu->exception = 0;
+            continue;
+          }
+          satisfied = cap > 0 && used < cap;
+        }
+        if (!satisfied) continue;
+        if (best < 0 || t.priority < best_prio) {
+          best = static_cast<int>(i);
+          best_prio = t.priority;
+        }
+      }
+      if (best >= 0) {
+        blocked_queue_ = 0;
+        blocked_kind_ = 0;
+        if (SwitchToWorker(cpu, static_cast<size_t>(best),
+                           true)) {
+          ++sched_yield_hops_;
+          chain_from_idx_ = best;
+          if (sched_yield_hops_ <= 20) {
+            const ThreadEntry& t =
+                threads_[static_cast<size_t>(best)];
+            SFA_LOGI("sched: rescate en sueno de frame "
+                     "(hilo 0x%08X, entry 0x%08X, prioridad "
+                     "%u): espera completada sin mecanismo "
+                     "de despertar",
+                     t.thread_guest, t.entry, t.priority);
+          }
+          return true;
+        }
+      }
       return false;
     }
     // Cola viva, NO la guardada en el marco: el prologo de
