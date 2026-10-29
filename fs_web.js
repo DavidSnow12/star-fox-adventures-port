@@ -13,6 +13,11 @@
 //         (starfox-disco.zip: sys/ y files/ en la raiz del ZIP,
 //         o bajo una unica carpeta envoltorio). Es la via sin
 //         friccion en movil, donde elegir carpetas es torpe.
+//         Fase 12: la raiz de datos se detecta a CUALQUIER
+//         profundidad (ver findDataRoot): tambien vale el ZIP
+//         del paquete PC, que lleva el disco en
+//         StarFox-PC/data/sys/main.dol, o cualquier carpeta
+//         que contenga el disco dentro de otras carpetas.
 //         El ZIP se descomprime DENTRO del navegador (parser
 //         propio del directorio central + DecompressionStream
 //         nativo; sin librerias externas) y sus entradas entran
@@ -100,17 +105,93 @@ window.SFAFS = (function () {
   // rutas llegan como 'algo/sys/main.dol'. Reubica la lista a
   // la carpeta que contiene directamente sys/main.dol para que
   // la eleccion siga siendo valida en vez de fallar en silencio.
-  function rebaseToDataRoot(files) {
-    if (files.some((f) => f.rel.toLowerCase() === 'sys/main.dol')) {
-      return files;
+  //
+  // Fase 12: deteccion PROFUNDA de la raiz. La version de la
+  // Fase 5 solo reubicaba el PRIMER candidato y en la practica
+  // cubria un envoltorio; pero hay contenedores legitimos con
+  // el disco a mas niveles (el ZIP del paquete PC lo lleva en
+  // 'StarFox-PC/data/sys/main.dol', dos niveles) y el usuario
+  // no tiene por que conocer ni corregir la estructura de lo
+  // que elige. Regla: cualquier ruta cuyos DOS ULTIMOS
+  // componentes sean exactamente 'sys' y 'main.dol'
+  // (componentes completos; sin distinguir mayusculas) marca
+  // una raiz candidata, con prefijo = lo anterior a 'sys/'.
+  // Si hay varias candidatas, gana: (1) la que tenga
+  // directorio hermano 'files/', (2) la que tenga mas
+  // ficheros DEL DISCO bajo su raiz (los que cuelgan
+  // directamente de su 'sys/' o su 'files/', que son los que
+  // se copiarian si ganara; contar todo el subarbol haria
+  // ganar siempre a la candidata mas superficial, porque las
+  // anidadas tambien cuelgan de ella), (3) en empate, la mas
+  // superficial.
+  // Al reubicar desde un contenedor (prefijo no vacio) se
+  // copia SOLO lo que cuelga de 'sys/' y 'files/' de esa
+  // raiz: el resto del contenedor (el lanzador del paquete
+  // PC, su manifest.json, ficheros ajenos) se ignora. Con la
+  // raiz en '' (el disco ya en la raiz de lo elegido) la
+  // lista pasa intacta, como siempre.
+  function findDataRoot(files) {
+    const prefixes = new Set();
+    for (const f of files) {
+      const parts = f.rel.split('/');
+      const n = parts.length;
+      if (n >= 2 &&
+          parts[n - 2].toLowerCase() === 'sys' &&
+          parts[n - 1].toLowerCase() === 'main.dol') {
+        prefixes.add(n === 2 ? '' : parts.slice(0, n - 2).join('/') + '/');
+      }
     }
-    const cand = files.find((f) => /\/sys\/main\.dol$/i.test(f.rel));
-    if (!cand) return files;
-    const prefix =
-      cand.rel.slice(0, cand.rel.length - 'sys/main.dol'.length);
+    if (!prefixes.size) return null;
+    let best = null;
+    for (const prefix of prefixes) {
+      let count = 0;
+      let hasFiles = false;
+      for (const f of files) {
+        if (prefix && !f.rel.startsWith(prefix)) continue;
+        const rel = prefix ? f.rel.slice(prefix.length) : f.rel;
+        const top = rel.split('/')[0].toLowerCase();
+        if (top !== 'sys' && top !== 'files') continue;
+        count++;
+        if (top === 'files') hasFiles = true;
+      }
+      const depth = prefix ? prefix.split('/').filter(Boolean).length : 0;
+      if (!best ||
+          (hasFiles !== best.hasFiles ? hasFiles :
+            count !== best.count ? count > best.count :
+            depth < best.depth)) {
+        best = { prefix, hasFiles, count, depth };
+      }
+    }
+    return best.prefix;
+  }
+  function rebaseToDataRoot(files) {
+    const prefix = findDataRoot(files);
+    if (prefix === null || prefix === '') return files;
     return files
       .filter((f) => f.rel.startsWith(prefix))
-      .map((f) => ({ rel: f.rel.slice(prefix.length), file: f.file }));
+      .map((f) => Object.assign({}, f,
+        { rel: f.rel.slice(prefix.length) }))
+      .filter((f) => {
+        const top = f.rel.split('/')[0].toLowerCase();
+        return top === 'sys' || top === 'files';
+      });
+  }
+  // Fase 12: resumen de lo que SI se vio en lo elegido, para
+  // que el error de «sin sys/main.dol» sea accionable de
+  // verdad: nombra las primeras carpetas/ficheros de primer
+  // nivel presentes (las carpetas con '/' final).
+  function seenSummary(files) {
+    const seen = [];
+    let more = false;
+    for (const f of files) {
+      const parts = f.rel.split('/');
+      const label = parts.length > 1 ? parts[0] + '/' : parts[0];
+      if (!label || seen.indexOf(label) >= 0) continue;
+      if (seen.length >= 6) { more = true; break; }
+      seen.push(label);
+    }
+    if (!seen.length) return 'dentro no hay ningun fichero';
+    return 'dentro hay: ' + seen.join(', ') + (more ? ', …' : '');
   }
   async function copyFileList(files, onProgress, opts) {
     // files: [{rel: 'sys/main.dol', file: File|Blob}] con rel
@@ -126,11 +207,14 @@ window.SFAFS = (function () {
       const dol = files.find(
         (f) => f.rel.toLowerCase() === 'sys/main.dol');
       if (!dol) {
+        // Fase 12: el error nombra lo que SI se vio dentro,
+        // para que el usuario distinga «elegi otra cosa» de
+        // «la pagina no encuentra mi disco».
         setStatus('error',
-          'Lo elegido no contiene sys/main.dol. Elige la carpeta ' +
-          'de datos que contiene directamente sys/ y files/ (la ' +
-          'raiz de tu copia del disco), o el ZIP completo del ' +
-          'disco; no una carpeta superior ni la carpeta files/ sola.');
+          'Lo elegido no contiene sys/main.dol en ningun nivel: ' +
+          seenSummary(files) + '. Elige el ZIP completo del disco ' +
+          '(starfox-disco.zip) o una carpeta que contenga el disco ' +
+          '(sys/ y files/), aunque este dentro de otras carpetas.');
         return false;
       }
       // El runtime abre el DOL por ruta exacta: normaliza su rel.
@@ -326,8 +410,8 @@ window.SFAFS = (function () {
   async function importZip(blob, onProgress) {
     // Devuelve lo que devuelva copyFileList (true = datos en
     // MEMFS listos para sfa_web_load_game). La validacion de
-    // raiz (sys/main.dol presente, con o sin UNA carpeta
-    // envoltorio) la hace copyFileList ANTES de copiar, usando
+    // raiz (sys/main.dol presente, a cualquier profundidad:
+    // Fase 12) la hace copyFileList ANTES de copiar, usando
     // solo los nombres: si el ZIP no vale, no se descomprime ni
     // se copia nada.
     if (state.status === 'cargando') return false; // copia en curso
@@ -339,13 +423,14 @@ window.SFAFS = (function () {
         'No se pudo leer el ZIP: ' +
         (e && e.message ? e.message : String(e)) +
         '. Elige el fichero starfox-disco.zip completo, el que ' +
-        'contiene sys/ y files/ en su raiz.');
+        'contiene el disco (sys/ y files/).');
       return false;
     }
     if (!entries.length) {
       setStatus('error',
         'El ZIP no contiene ficheros. Elige el ZIP completo del ' +
-        'disco (sys/ y files/ en la raiz, o bajo una sola carpeta).');
+        'disco (el que contiene sys/ y files/, a cualquier ' +
+        'profundidad).');
       return false;
     }
     const files = entries.map((e) => ({
