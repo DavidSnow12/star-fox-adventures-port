@@ -100,6 +100,9 @@ constexpr HleEntry kHleTable[] = {
     // Tramo 8: al final para no mover los indices de
     // log_count_ de las entradas anteriores.
     {Hle::kArqReadDeliveryTrampoline, "ARQReadTrampoline"},
+    // Fase 7 (port web, nucleo compartido): tambien al final,
+    // por el mismo motivo.
+    {Hle::kAiCallbackTrampoline, "AITrampoline"},
 };
 
 const char* FindHleName(uint32_t address) {
@@ -1014,6 +1017,239 @@ bool Hle::DeliverViCallbacks(CpuState* cpu) {
 }
 
 // ------------------------------------------------------------------
+// IRQ AI (Fase 7 del port web, nucleo compartido; diseno y
+// evidencia en INFORME-WEB-FASE6.md §6 y §9).
+//
+// El audio de la pelicula (AttractMovie) usa la via AI DMA
+// cruda del SDK: AttractMovieAudio_Init registra
+// AttractMovieAudio_DmaCallback (0x80118528) en [r13-20908]
+// con AIRegisterDMACallback, y SOLO ese callback ejecuta la
+// mezcla (0x80118184) que devuelve los buferes decodificados
+// a la cola audfree. Sin modelo de interrupcion AI el
+// callback nunca corria: el hilo de audio se bloquea en el
+// 4.o bufer, el de video se queda sin readed2 tras
+// exactamente 3 frames y el watchdog de TitleMenu_run
+// (contador [r13-23280] > 10) libera y reintenta — el bucle
+// abre/lee 160 B/cierra sobre starfox.thp.
+//
+// Entrega (identica a la validada en el experimento c8 de la
+// Fase 6): como la de VI, con pc = callback y lr = trampolin
+// propio 0x80003010, rafagas de hasta 6 entregas por punto
+// (el DMA real consume 640 B = 160 muestras por disparo), y
+// SOLO en los puntos seguros de VI y siempre DESPUES de la
+// cadena VI completa (HandleHostCall: VIWaitForRetrace,
+// segunda fase del trampolin VI y OSSleepThread del
+// principal). Invariante de la Fase 6 (c4-c6): AI nunca se
+// antepone a VI, o PlayControl muere de hambre.
+//
+// Puertas (las medidas en vivo en la Fase 6): el registrado
+// ha de ser exactamente el callback de la pelicula (el del
+// motor principal NO se entrega: la musica va por el puente
+// MusyX y no se toca) y, si el estado de AttractMovieAudio
+// [r13-23324] no es 0 (el callback encadena primero al
+// registrante previo), ese previo [r13-23328] ha de ser no
+// nulo (en carrera: estado 2, previo 0x80284FE0).
+//
+// Replanificacion diferida (capa 2 de la causa raiz): la
+// mezcla despierta al hilo de audio con OSSendMessage, pero
+// en el planificador cooperativo ese despertar no le da el
+// turno dentro del ciclo (las cadenas terminan en MainReady
+// y el hilo de audio, creado el ultimo, pierde la carrera).
+// Al abrir la rafaga se fotografian los trabajadores
+// bloqueados en una cola vacia/llena (su contexto guardado
+// apunta al retorno de sueno de Receive/Send y la cola vive
+// en r31/r28, como en el principal); al cerrarla, si la
+// mezcla dejo alguna de esas colas con su espera satisfecha,
+// ese hilo queda anotado como despertado por IRQ y
+// SwitchOnSleep le da el paso primero en el siguiente punto
+// de cambio natural. Nunca se cambia de hilo desde el
+// trampolin (c11: el principal perdia el mensaje "ready" a
+// mitad de recepcion) y ninguna entrega nace de SwitchToMain
+// (c13: reignicion en cadena sin progreso del principal).
+
+bool Hle::DeliverAiCallbacks(CpuState* cpu) {
+  return DeliverAiCallbacksRet(cpu, cpu != nullptr ? cpu->lr : 0);
+}
+
+bool Hle::DeliverAiCallbacksRet(CpuState* cpu, uint32_t ret) {
+  if (cpu == nullptr || ai_chain_active_) return false;
+  uint32_t r13 = cpu->gpr[13];
+  uint32_t cb = ::mem_read32(cpu, r13 - 20908u);
+  if (cpu->exception != 0) {
+    cpu->exception = 0;
+    return false;
+  }
+  if (cb != kAttractMovieDmaCallback) return false;
+  uint32_t state = ::mem_read32(cpu, r13 - 23324u);
+  uint32_t prev = ::mem_read32(cpu, r13 - 23328u);
+  if (cpu->exception != 0) {
+    cpu->exception = 0;
+    return false;
+  }
+  // Estado 0: rama autocontenida del callback. Otro estado:
+  // encadena al registrante previo; solo es seguro si ese
+  // puntero es una funcion real (medido: 0x80284FE0).
+  if (state != 0 && prev == 0) return false;
+  SnapshotAiWaiters(cpu);
+  ai_chain_active_ = true;
+  ai_chain_ret_ = ret;
+  ai_chain_count_ = 0;
+  ++ai_bursts_;
+  ++ai_delivered_;
+  if (ai_delivered_ <= 12 || ai_delivered_ % 500 == 0) {
+    SFA_LOGI("hle: AI DMA callback entregado (#%llu, retorno "
+             "0x%08X, estado %u, previo 0x%08X)",
+             static_cast<unsigned long long>(ai_delivered_), ret,
+             state, prev);
+  }
+  cpu->pc = cb;
+  cpu->lr = kAiCallbackTrampoline;
+  return true;
+}
+
+bool Hle::HandleAiTrampoline(CpuState* cpu) {
+  if (cpu == nullptr) return false;
+  if (!ai_chain_active_) {
+    // No deberia ocurrir (el PC sintetico solo lo pone este
+    // HLE como lr de la entrega); si el huesped aterriza aqui
+    // sin cadena, se vuelve por lr sin tocar nada mas.
+    SFA_LOGE("hle: trampolin AI sin cadena activa (pc "
+             "0x%08X, lr 0x%08X): retorno sin efecto",
+             cpu->pc, cpu->lr);
+    return Return(cpu, 0);
+  }
+  uint32_t r13 = cpu->gpr[13];
+  uint32_t cb = ::mem_read32(cpu, r13 - 20908u);
+  uint32_t state = ::mem_read32(cpu, r13 - 23324u);
+  uint32_t prev = ::mem_read32(cpu, r13 - 23328u);
+  if (cpu->exception != 0) cpu->exception = 0;
+  bool gate = (state == 0) || (prev != 0);
+  // Rafaga: mientras el callback siga registrado, las
+  // puertas aguanten y no se llegue a 6 entregas por punto,
+  // se vuelve a entregar (el blr del callback aterriza otra
+  // vez en este trampolin).
+  if (cb == kAttractMovieDmaCallback && gate &&
+      ai_chain_count_ + 1 < 6) {
+    ++ai_chain_count_;
+    ++ai_delivered_;
+    cpu->pc = cb;
+    cpu->lr = kAiCallbackTrampoline;
+    return true;
+  }
+  uint32_t ret = ai_chain_ret_;
+  ai_chain_active_ = false;
+  ai_chain_ret_ = 0;
+  ai_chain_count_ = 0;
+  // Cierre de rafaga: la mezcla ya corrio entera; toca
+  // resolver si desperto a algun trabajador (paso diferido).
+  ResolveAiWake(cpu);
+  cpu->pc = ret;
+  return true;
+}
+
+void Hle::SnapshotAiWaiters(CpuState* cpu) {
+  ai_burst_waiters_.clear();
+  if (cpu == nullptr) return;
+  for (size_t i = 0; i < threads_.size(); ++i) {
+    const ThreadEntry& t = threads_[i];
+    if (!t.has_ctx || t.finished) continue;
+    int kind = 0;
+    uint32_t queue = 0;
+    if (t.ctx.lr == kOsReceiveSleepRet) {
+      kind = 1;
+      queue = t.ctx.gpr[31];
+    } else if (t.ctx.lr == kOsSendSleepRet) {
+      kind = 2;
+      queue = t.ctx.gpr[28];
+    } else {
+      continue;
+    }
+    if (queue == 0) continue;
+    uint32_t used = ::mem_read32(cpu, queue + 28u);
+    if (cpu->exception != 0) {
+      cpu->exception = 0;
+      continue;
+    }
+    if (kind == 1 && used != 0) continue;  // ya tenia mensaje
+    if (kind == 2) {
+      uint32_t cap = ::mem_read32(cpu, queue + 20u);
+      if (cpu->exception != 0) {
+        cpu->exception = 0;
+        continue;
+      }
+      if (cap == 0 || used < cap) continue;  // no bloqueaba
+    }
+    AiWaiter w;
+    w.idx = static_cast<int>(i);
+    w.queue = queue;
+    w.kind = kind;
+    ai_burst_waiters_.push_back(w);
+  }
+}
+
+void Hle::ResolveAiWake(CpuState* cpu) {
+  if (cpu == nullptr || ai_burst_waiters_.empty()) return;
+  int best = -1;
+  uint32_t best_prio = 0xFFFFFFFFu;
+  uint32_t best_queue = 0;
+  int best_kind = 0;
+  for (const AiWaiter& w : ai_burst_waiters_) {
+    if (w.idx < 0 ||
+        static_cast<size_t>(w.idx) >= threads_.size()) {
+      continue;
+    }
+    const ThreadEntry& t = threads_[static_cast<size_t>(w.idx)];
+    if (t.finished || !t.has_ctx) continue;
+    // El candidato ha de seguir bloqueado en la misma cola:
+    // si la cadena del callback cambio de hilo a mitad (la
+    // mezcla no duerme, pero el previo encadenado podria),
+    // la foto ya no describe su espera y no se anota nada.
+    uint32_t want_lr =
+        w.kind == 1 ? kOsReceiveSleepRet : kOsSendSleepRet;
+    uint32_t have_queue =
+        w.kind == 1 ? t.ctx.gpr[31] : t.ctx.gpr[28];
+    if (t.ctx.lr != want_lr || have_queue != w.queue) continue;
+    uint32_t used = ::mem_read32(cpu, w.queue + 28u);
+    if (cpu->exception != 0) {
+      cpu->exception = 0;
+      continue;
+    }
+    bool woken = false;
+    if (w.kind == 1) {
+      woken = used > 0;
+    } else {
+      uint32_t cap = ::mem_read32(cpu, w.queue + 20u);
+      if (cpu->exception != 0) {
+        cpu->exception = 0;
+        continue;
+      }
+      woken = cap > 0 && used < cap;
+    }
+    if (!woken) continue;
+    if (best < 0 || t.priority < best_prio) {
+      best = w.idx;
+      best_prio = t.priority;
+      best_queue = w.queue;
+      best_kind = w.kind;
+    }
+  }
+  ai_burst_waiters_.clear();
+  if (best >= 0) {
+    irq_woken_idx_ = best;
+    irq_woken_queue_ = best_queue;
+    irq_woken_kind_ = best_kind;
+    ++ai_irq_wakes_;
+    if (ai_irq_wakes_ <= 20) {
+      const ThreadEntry& t = threads_[static_cast<size_t>(best)];
+      SFA_LOGI("sched: despertar IRQ AI anotado (hilo "
+               "0x%08X, entry 0x%08X, prioridad %u): paso "
+               "diferido al siguiente cambio natural",
+               t.thread_guest, t.entry, t.priority);
+    }
+  }
+}
+
+// ------------------------------------------------------------------
 // Planificador cooperativo (Fase 9).
 //
 // Modelo (leido del codigo SDK huesped, no de un manual):
@@ -1252,6 +1488,155 @@ bool Hle::SwitchToWorker(CpuState* cpu, size_t idx, bool save_current) {
 }
 
 bool Hle::SwitchOnSleep(CpuState* cpu) {
+  // Portador de la cadena de despertares (Fase 7): de un
+  // solo uso, se consume a la entrada; si el hilo que
+  // duerme ES el portador, tras el bloque de la IRQ se
+  // busca el siguiente eslabon (ver chain_from_idx_ en
+  // hle.h).
+  int chain_carrier = chain_from_idx_;
+  chain_from_idx_ = -1;
+  // Fase 7 (diseno Fase 6 §9): paso DIFERIDO al hilo
+  // despertado por la IRQ AI, evaluado a la ENTRADA de
+  // cualquier sueno. La anotacion la dejo el cierre de una
+  // rafaga (ResolveAiWake). Evaluarlo aqui, y no tras
+  // registrar el sueno del principal, es una correccion
+  // medida en la primera verificacion de la Fase 7: el
+  // registro de abajo sale antes de tiempo cuando el
+  // principal duerme en un punto que no es de cola (espera
+  // VI / sueno de frame), y durante el atasco del attract
+  // esos son los UNICOS puntos de cambio que ocurren (los
+  // trabajadores estan todos bloqueados), asi que la marca
+  // nunca se consumia y el hilo despertado seguia sin turno
+  // (medido: marca anotada en f=230 y consumida en f=281,
+  // ya en el ciclo siguiente y sobre un hilo re-creado).
+  // Las invariantes se mantienen: el cambio ocurre en un
+  // sueno voluntario del hilo actual (nunca desde el
+  // trampolin de la IRQ a mitad de recepcion: eso era c11),
+  // de este cambio no nace ninguna entrega (sin reignicion:
+  // eso era c13) y la entrega AI sigue yendo tras la VI en
+  // sus sitios. La marca se consume se aplique o no.
+  if (irq_woken_idx_ >= 0) {
+    int idx = irq_woken_idx_;
+    uint32_t wqueue = irq_woken_queue_;
+    int wkind = irq_woken_kind_;
+    irq_woken_idx_ = -1;
+    irq_woken_queue_ = 0;
+    irq_woken_kind_ = 0;
+    if (idx != current_thread_ &&
+        idx < static_cast<int>(threads_.size())) {
+      ThreadEntry& t = threads_[static_cast<size_t>(idx)];
+      // Revalidacion estricta: el paso solo se da si el
+      // hilo sigue dormido en la MISMA espera que la IRQ
+      // completo (mismo retorno de sueno en su contexto y
+      // misma cola en el registro de la llamada). Si ya
+      // corrio por round-robin o fue re-creado, la marca
+      // era vieja y se descarta en silencio.
+      uint32_t want_lr =
+          wkind == 1 ? kOsReceiveSleepRet : kOsSendSleepRet;
+      uint32_t have_queue =
+          wkind == 1 ? t.ctx.gpr[31] : t.ctx.gpr[28];
+      if (t.runnable && !t.suspended && !t.finished &&
+          t.has_ctx && t.ctx.lr == want_lr &&
+          have_queue == wqueue) {
+        if (current_thread_ < 0) {
+          // Registrar el sueno del principal como hace el
+          // bloque normal de abajo: si duerme por cola, su
+          // cola; si no (espera VI / sueno de frame), sin
+          // cola, para que MainReady lo reanude en el
+          // siguiente cambio y su mensaje (si lo hay) siga
+          // esperandolo en su cola, como hoy. Solo cede UN
+          // turno al trabajador que la IRQ desperto, que es
+          // lo que __OSReschedule haria en hardware tras la
+          // interrupcion.
+          if (cpu->lr == kOsReceiveSleepRet) {
+            blocked_queue_ = cpu->gpr[31];
+            blocked_kind_ = 1;
+          } else if (cpu->lr == kOsSendSleepRet) {
+            blocked_queue_ = cpu->gpr[28];
+            blocked_kind_ = 2;
+          } else {
+            blocked_queue_ = 0;
+            blocked_kind_ = 0;
+          }
+        }
+        if (SwitchToWorker(cpu, static_cast<size_t>(idx),
+                           true)) {
+          ++ai_irq_boosts_;
+          chain_from_idx_ = idx;
+          return true;
+        }
+      }
+    }
+  }
+  // Fase 7: salto en cadena del paso diferido. El hilo que
+  // duerme es el portador (recibio el turno por la IRQ o
+  // por otro salto) y durante su turno envio mensajes: si
+  // algun trabajador sigue dormido en una espera de cola
+  // que AHORA esta completada (Receive con mensaje, Send
+  // con hueco), ese trabajador es el siguiente eslabon y
+  // recibe el paso antes de que MainReady devuelva la CPU
+  // al principal. Mismo criterio de revalidacion que el
+  // paso IRQ (contexto dormido en esa espera, hilo
+  // ejecutable) y desempate por prioridad del SO (menor
+  // valor primero). Si no hay eslabon, el flujo normal
+  // sigue intacto.
+  if (chain_carrier >= 0 && current_thread_ == chain_carrier) {
+    int best = -1;
+    uint32_t best_prio = 0xFFFFFFFFu;
+    for (size_t i = 0; i < threads_.size(); ++i) {
+      if (static_cast<int>(i) == current_thread_) continue;
+      const ThreadEntry& t = threads_[i];
+      if (!t.runnable || t.suspended || t.finished ||
+          !t.has_ctx) {
+        continue;
+      }
+      int kind = 0;
+      uint32_t queue = 0;
+      if (t.ctx.lr == kOsReceiveSleepRet) {
+        kind = 1;
+        queue = t.ctx.gpr[31];
+      } else if (t.ctx.lr == kOsSendSleepRet) {
+        kind = 2;
+        queue = t.ctx.gpr[28];
+      } else {
+        continue;
+      }
+      if (queue == 0) continue;
+      uint32_t used = ::mem_read32(cpu, queue + 28u);
+      if (cpu->exception != 0) {
+        cpu->exception = 0;
+        continue;
+      }
+      bool satisfied = false;
+      if (kind == 1) {
+        satisfied = used > 0;
+      } else {
+        uint32_t cap = ::mem_read32(cpu, queue + 20u);
+        if (cpu->exception != 0) {
+          cpu->exception = 0;
+          continue;
+        }
+        satisfied = cap > 0 && used < cap;
+      }
+      if (!satisfied) continue;
+      if (best < 0 || t.priority < best_prio) {
+        best = static_cast<int>(i);
+        best_prio = t.priority;
+      }
+    }
+    if (best >= 0 &&
+        SwitchToWorker(cpu, static_cast<size_t>(best), true)) {
+      ++ai_chain_hops_;
+      chain_from_idx_ = best;
+      if (ai_chain_hops_ <= 20) {
+        const ThreadEntry& t = threads_[static_cast<size_t>(best)];
+        SFA_LOGI("sched: salto en cadena IRQ AI (hilo "
+                 "0x%08X, entry 0x%08X, prioridad %u)",
+                 t.thread_guest, t.entry, t.priority);
+      }
+      return true;
+    }
+  }
   if (current_thread_ < 0) {
     if (cpu->lr != kOsReceiveSleepRet && cpu->lr != kOsSendSleepRet) {
       return false;
@@ -1876,6 +2261,17 @@ bool Hle::HandleHostCall(CpuState* cpu, uint32_t address) {
       }
       ThreadEntry* existing = FindThread(cpu->gpr[3]);
       bool recreated = existing != nullptr;
+      if (recreated && irq_woken_idx_ >= 0 &&
+          irq_woken_idx_ ==
+              static_cast<int>(existing - threads_.data())) {
+        // Fase 7: el hilo anotado para el paso diferido
+        // acaba de ser re-creado: su contexto viejo (y la
+        // espera que la IRQ completo) ya no existe; la
+        // marca no debe disparar sobre la nueva encarnacion.
+        irq_woken_idx_ = -1;
+        irq_woken_queue_ = 0;
+        irq_woken_kind_ = 0;
+      }
       ThreadEntry* t = nullptr;
       if (existing != nullptr) {
         t = existing;
@@ -2269,6 +2665,9 @@ bool Hle::HandleHostCall(CpuState* cpu, uint32_t address) {
       // ambos caminos no se duplican en el bucle.
       ++retrace_count_;
       if (DeliverViCallbacks(cpu)) return true;
+      // Fase 7: tras la cadena VI (o sin ella), la IRQ AI
+      // encadenada; nunca antes que VI (Fase 6, c4-c6).
+      if (DeliverAiCallbacks(cpu)) return true;
       return Return(cpu, 0);
     }
     case kViSetPreRetraceCallback: {
@@ -2287,10 +2686,22 @@ bool Hle::HandleHostCall(CpuState* cpu, uint32_t address) {
       return Return(cpu, old);
     }
     case kViCallbackTrampoline: {
+      // Fase 7, segunda fase pendiente: el post-callback
+      // acaba de volver al trampolin (se le despacho con lr
+      // = trampolin precisamente para este encadenado); antes
+      // de regresar al retorno real se entrega la IRQ AI, ya
+      // con la cadena VI completa detras (diseno Fase 6 §9).
+      if (vi_post_ai_pending_) {
+        uint32_t ret2 = vi_post_ai_ret_;
+        vi_post_ai_pending_ = false;
+        vi_post_ai_ret_ = 0;
+        if (DeliverAiCallbacksRet(cpu, ret2)) return true;
+        cpu->pc = ret2;
+        return true;
+      }
       // Segundo tiempo de la cadena VI: pre ya volvio aqui
       // (su blr aterrizo en este PC sintetico). Si hay post,
-      // se despacha con lr = retorno original; si no, se
-      // vuelve directamente a el.
+      // se despacha; si no, se vuelve al retorno original.
       uint32_t post = vi_chain_post_;
       uint32_t ret = vi_chain_ret_;
       vi_chain_post_ = 0;
@@ -2300,12 +2711,25 @@ bool Hle::HandleHostCall(CpuState* cpu, uint32_t address) {
         ++vi_post_delivered_;
         cpu->gpr[3] = static_cast<uint32_t>(retrace_count_);
         cpu->pc = post;
-        cpu->lr = ret;
+        // Fase 7: el post vuelve al trampolin (no a ret)
+        // para encadenar la entrega AI tras el (ver la
+        // segunda fase de arriba).
+        vi_post_ai_pending_ = true;
+        vi_post_ai_ret_ = ret;
+        cpu->lr = kViCallbackTrampoline;
       } else {
+        // Sin post: la cadena VI ya termino; la IRQ AI se
+        // intenta con el mismo retorno como continuacion.
+        if (DeliverAiCallbacksRet(cpu, ret)) return true;
         cpu->pc = ret;
       }
       return true;
     }
+    case kAiCallbackTrampoline:
+      // Retorno de una entrega del callback DMA de AI de la
+      // pelicula (o continuacion de su rafaga): ver
+      // HandleAiTrampoline junto a DeliverAiCallbacks.
+      return HandleAiTrampoline(cpu);
     case kPadInit:
       pad_init_done_ = true;
       return Return(cpu, 0);
@@ -2795,6 +3219,9 @@ bool Hle::HandleHostCall(CpuState* cpu, uint32_t address) {
       if (attempted && !threads_.empty()) ++scheduler_fallbacks_;
       if (current_thread_ < 0) {
         if (DeliverViCallbacks(cpu)) return true;
+        // Fase 7: IRQ AI encadenada tras VI, como en
+        // VIWaitForRetrace (nunca antes que VI).
+        if (DeliverAiCallbacks(cpu)) return true;
       }
       return Return(cpu, 0);
     }

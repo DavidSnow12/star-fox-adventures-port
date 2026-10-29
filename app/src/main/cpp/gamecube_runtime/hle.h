@@ -188,6 +188,26 @@ class Hle {
   // chassis se detendria con unknown_pc (fallo ruidoso, no
   // corrupcion silenciosa).
   static constexpr uint32_t kViCallbackTrampoline = 0x80003000u;
+  // IRQ AI (Fase 7 del port web, nucleo compartido; diseno en
+  // INFORME-WEB-FASE6.md §9): el AttractMovie de Rare recicla
+  // sus 3 buferes de audio decodificado SOLO desde su callback
+  // DMA de AI (AttractMovieAudio_DmaCallback, registrado via
+  // AIRegisterDMACallback en el global SDK [r13-20908]). Sin
+  // modelo de interrupcion AI ese callback nunca se entregaba:
+  // el video decodifica exactamente 3 frames, el pipeline se
+  // seca y el watchdog de TitleMenu_run libera y reintenta
+  // (bucle abre/lee 160 B/cierra sobre starfox.thp, medido en
+  // la Fase 6). La entrega se hace como la de VI (pc =
+  // callback, lr = PC sintetico vecino de los demas
+  // trampolines, 0x80003010; nunca es codigo real) y SOLO tras
+  // la cadena VI completa, nunca antes que VI. Alcance
+  // deliberado: se entrega unicamente este callback; el del
+  // motor de audio principal NO se entrega (la musica va por
+  // el puente MusyX a nivel de API y su comportamiento no se
+  // toca). La replanificacion del hilo despertado por la
+  // mezcla va diferida a SwitchOnSleep (ver hle.cpp).
+  static constexpr uint32_t kAiCallbackTrampoline = 0x80003010u;
+  static constexpr uint32_t kAttractMovieDmaCallback = 0x80118528u;
   static constexpr uint32_t kPadInit = 0x8024EFC4u;
   static constexpr uint32_t kPadRead = 0x8024F1D4u;
   static constexpr uint32_t kPadReset = 0x8024EDC0u;
@@ -615,6 +635,15 @@ class Hle {
   uint64_t ViChains() const { return vi_chains_; }
   uint64_t ViPreDelivered() const { return vi_pre_delivered_; }
   uint64_t ViPostDelivered() const { return vi_post_delivered_; }
+  // IRQ AI (Fase 7): entregas del callback DMA de AI de la
+  // pelicula, rafagas iniciadas, despertares detectados al
+  // cerrar una rafaga y pasos diferidos aplicados en
+  // SwitchOnSleep. En una sesion sin pelicula todo queda a 0.
+  uint64_t AiDelivered() const { return ai_delivered_; }
+  uint64_t AiBursts() const { return ai_bursts_; }
+  uint64_t AiIrqWakes() const { return ai_irq_wakes_; }
+  uint64_t AiIrqBoosts() const { return ai_irq_boosts_; }
+  uint64_t AiChainHops() const { return ai_chain_hops_; }
   uint64_t FallbackCacheCount() const { return fallback_cache_; }
   uint64_t FallbackUnknownCount() const { return fallback_unknown_; }
   bool OsInitDone() const { return os_init_done_; }
@@ -713,6 +742,23 @@ class Hle {
   // o ya hay una cadena en curso (retrace anidado dentro de
   // un callback), devuelve false y el llamador retorna normal.
   bool DeliverViCallbacks(CpuState* cpu);
+  // IRQ AI (Fase 7, ver kAiCallbackTrampoline): entrega del
+  // callback DMA de AI de la pelicula en los mismos puntos
+  // seguros que VI y siempre despues de la cadena VI. La
+  // variante con ret fija el retorno que el trampolin AI
+  // restaura al cerrar la rafaga (la usa la segunda fase del
+  // trampolin VI, donde el retorno real no es cpu->lr).
+  bool DeliverAiCallbacks(CpuState* cpu);
+  bool DeliverAiCallbacksRet(CpuState* cpu, uint32_t ret);
+  bool HandleAiTrampoline(CpuState* cpu);
+  // Foto de los trabajadores bloqueados en una cola al abrir
+  // una rafaga AI y resolucion al cerrarla: si la mezcla dejo
+  // la cola de un receptor bloqueado con mensaje (o con hueco,
+  // si enviaba), ese hilo quedo "despertado por IRQ" y
+  // SwitchOnSleep le da el paso primero en el siguiente punto
+  // de cambio natural (diseno Fase 6 §9).
+  void SnapshotAiWaiters(CpuState* cpu);
+  void ResolveAiWake(CpuState* cpu);
   DvdEntry* FindDvd(uint32_t fileinfo_guest);
   static bool ReadGuestString(CpuState* cpu, uint32_t guest,
                               std::string* out);
@@ -757,6 +803,58 @@ class Hle {
   uint64_t vi_chains_ = 0;
   uint64_t vi_pre_delivered_ = 0;
   uint64_t vi_post_delivered_ = 0;
+  // IRQ AI (Fase 7, ver kAiCallbackTrampoline): cadena de
+  // rafaga en curso (el callback vuelve al trampolin AI; la
+  // rafaga se corta a 6 entregas como en el experimento c8 de
+  // la Fase 6: el DMA real consume 640 B por disparo, unas
+  // 5-6 veces por frame a 48 kHz), segunda fase del
+  // trampolin VI (tras el post-callback se encadena la
+  // entrega AI con el retorno real guardado), e hilo
+  // despertado por IRQ pendiente de paso diferido en
+  // SwitchOnSleep (-1 = ninguno).
+  bool ai_chain_active_ = false;
+  uint32_t ai_chain_ret_ = 0;
+  int ai_chain_count_ = 0;
+  uint64_t ai_delivered_ = 0;
+  uint64_t ai_bursts_ = 0;
+  uint64_t ai_irq_wakes_ = 0;
+  uint64_t ai_irq_boosts_ = 0;
+  bool vi_post_ai_pending_ = false;
+  uint32_t vi_post_ai_ret_ = 0;
+  int irq_woken_idx_ = -1;
+  // Cola y tipo de la espera que la IRQ completo para el
+  // hilo anotado: el paso diferido revalida que el hilo
+  // sigue dormido en esa misma espera antes de darle el
+  // turno (una marca vieja sobre un hilo que ya corrio o
+  // fue re-creado se descarta en silencio).
+  uint32_t irq_woken_queue_ = 0;
+  int irq_woken_kind_ = 0;  // 1 Receive, 2 Send
+  uint64_t ai_chain_hops_ = 0;
+  // Portador de la cadena de despertares (Fase 7): indice
+  // del ultimo trabajador al que el paso diferido (IRQ o
+  // salto en cadena) dio el turno. Cuando ESE hilo duerme,
+  // su envio pudo completar la espera de otro trabajador
+  // (en el pipeline THP: audio->video por readed2, video->
+  // lector por freereq, lector->audio por readed); el
+  // escaneo de cadena de SwitchOnSleep busca ese trabajador
+  // y le cede el paso antes de devolver la CPU al
+  // principal. Sin esto, medido en la primera verificacion
+  // limpia de la Fase 7, el audio encadenaba pero el video
+  // moria de hambre: al dormir el audio, MainReady (con el
+  // principal en sueno de frame) ganaba siempre y el
+  // round-robin nunca llegaba al video. El portador es de
+  // un solo uso (se consume a la entrada de SwitchOnSleep)
+  // y cada salto exige una espera de cola completada y
+  // verificada en el momento: no es replanificacion
+  // generica (eso era el livelock de c9/c10), es la cadena
+  // causal de mensajes que la IRQ puso en marcha.
+  int chain_from_idx_ = -1;
+  struct AiWaiter {
+    int idx = -1;
+    uint32_t queue = 0;
+    int kind = 0;  // 1 Receive (esperaba mensaje), 2 Send (esperaba hueco)
+  };
+  std::vector<AiWaiter> ai_burst_waiters_;
   // Fase 6a: retrace por interrupcion de frame. El chassis no
   // tiene interrupciones reales; el punto logico donde el
   // juego espera un retrace es OSSleepThread desde
