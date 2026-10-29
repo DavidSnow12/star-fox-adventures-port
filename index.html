@@ -19,6 +19,10 @@
   #controls button, #controls label.btn { background: #222; color: #eee;
     border: 1px solid #555; border-radius: 6px; padding: 8px 12px;
     font-size: 14px; cursor: pointer; }
+  /* Fase 10: boton principal cuando ya hay copia guardada. */
+  #play-btn { background: #15803d; border-color: #166534; color: #fff;
+    font-size: 17px; font-weight: 700; padding: 12px 22px; }
+  #play-btn[hidden] { display: none; }
   /* Pildoras: MISMAS fracciones que el port Android (ver main.js):
      surround x 0.31-0.43, audio x 0.44-0.56, ambas y 0.92-0.98. */
   .pill { position: absolute; bottom: 2%; height: 6%; border: none;
@@ -37,15 +41,18 @@
 <div id="wrap">
   <canvas id="game-canvas" width="1280" height="720"></canvas>
   <div id="hud">
-    <div id="status">SIN DATOS — elige tu carpeta de datos</div>
-    <div id="status-detail">Esta pagina NO incluye los datos del juego (uso personal, sin distribucion): pulsa «Elegir carpeta de datos» y elige la carpeta de TU copia que contiene sys/ y files/. Tus ficheros no salen de este navegador: se copian a la memoria local (OPFS/MEMFS), nunca a un servidor.</div>
+    <div id="status">SIN DATOS — importa tus datos (ZIP o carpeta)</div>
+    <div id="status-detail">Esta pagina NO incluye los datos del juego (uso personal, sin distribucion): importa TU copia con «Elegir ZIP del disco» (un solo fichero, lo mas facil en el movil) o con «Elegir carpeta de datos» (la carpeta que contiene sys/ y files/). Tus ficheros no salen de este navegador: se copian a la memoria local (OPFS/MEMFS), nunca a un servidor. Si ya importaste antes en este navegador, aparecera el boton «▶ Jugar».</div>
     <div id="depth-mode">Readback profundidad EFB: sondeando…</div>
   </div>
   <div id="controls">
+    <button id="play-btn" type="button" hidden>▶ Jugar</button>
+    <label class="btn" for="data-zip">🗜️ Elegir ZIP del disco</label>
     <label class="btn" for="data-folder">📁 Elegir carpeta de datos</label>
     <button id="save-btn" type="button">💾 Guardar partida</button>
     <button type="button" onclick="window.SFAStart && window.SFAStart()">↺ Restaurar copia guardada</button>
   </div>
+  <input type="file" id="data-zip" accept=".zip,application/zip,application/x-zip-compressed">
   <input type="file" id="data-folder" webkitdirectory>
   <input type="file" id="audio-folder" webkitdirectory>
   <button id="pill-surround" class="pill" type="button" data-state="off">SURROUND OFF</button>
@@ -53,7 +60,7 @@
   <div id="help">
     Mando: Gamepad API (estandar). Teclado: flechas = D-pad, Enter = Start, Z = Z, Q/E = L/R, J/K/U/I = A/B/X/Y, W/A/S/D = stick.
     Tactil: stick y botones en pantalla (mismas zonas que Android). Al ocultar la pestana el juego se pausa y se vuelca la partida.
-    Build completo web (Fase 3): runtime + 176 chunks + capa web en un solo wasm. Todavía NO verificado como jugable en navegador: abrir esta página, elegir tu carpeta de datos y seguir el guion de webfull-LEEME.md §6. Tus ficheros no salen de este navegador.
+    Build completo web: runtime + 176 chunks + capa web en un solo wasm. Todavía NO verificado como jugable en navegador: abrir esta página, importar tus datos (ZIP del disco o carpeta) y seguir el guion de webfull-LEEME.md §14. Tus ficheros no salen de este navegador.
   </div>
 </div>
 <script src="fs_web.js"></script>

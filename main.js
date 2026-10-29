@@ -60,14 +60,18 @@
   }
   window.SFAUI = function (fsState) {
     const map = {
-      'sin-datos': 'SIN DATOS — elige tu carpeta de datos',
+      'sin-datos': 'SIN DATOS — importa tus datos (ZIP o carpeta)',
       'cargando': 'CARGANDO — copiando a la memoria del navegador',
       'listo': 'DATOS LISTOS en memoria',
       'error': 'ERROR — ' + (fsState.error || 'ver consola'),
     };
     setStatus(map[fsState.status] || fsState.status,
       fsState.status === 'cargando'
-        ? (fsState.filesCopied + ' / ' + fsState.total + ' ficheros')
+        ? (fsState.filesCopied + ' / ' + fsState.total + ' ficheros' +
+           (fsState.totalBytes
+             ? ' · ' + (fsState.bytesCopied / 1048576).toFixed(0) +
+               ' / ' + (fsState.totalBytes / 1048576).toFixed(0) + ' MB'
+             : ''))
         : (fsState.opfsAvailable
           ? 'Almacenamiento persistente (OPFS) disponible'
           : 'Sin OPFS: sesion sin persistencia (Guardar descarga la card)'));
@@ -167,6 +171,15 @@
     if (el) el.textContent = 'Readback profundidad EFB: ' + label;
   }
 
+  // Politica de autoplay: el AudioContext nace suspendido y
+  // solo un gesto lo reanuda. Ademas de los puntos que ya
+  // llamaban a ensureAudio() (teclas, canvas, pildoras,
+  // selectores), el PRIMER pointerdown en cualquier parte de la
+  // pagina lo crea/reanuda: en movil el primer toque suele ser
+  // un boton de la interfaz, no el canvas.
+  document.addEventListener('pointerdown', () => { ensureAudio(); },
+    { passive: true });
+
   // --- Input: teclado ---
   document.addEventListener('keydown', (ev) => {
     if (ev.repeat) return;
@@ -226,9 +239,17 @@
     surroundPill.dataset.state = on ? 'on' : 'off';
     if (audioPill) {
       const st = window.SFAFS ? window.SFAFS.state.status : 'sin-datos';
+      // Fase 10: la pildora es el boton del overlay de audio, y
+      // su texto describe EL AUDIO, no el estado global de la
+      // carga. Antes, un error de validacion de la carpeta (el
+      // estado 'error' del FS) se pintaba aqui como «AUDIO
+      // ERROR», sugiriendo un fallo de sonido que no existia:
+      // el error real ya se lee en el banner de estado. Con
+      // 'error' la pildora vuelve a su accion («AÑADIR AUDIO»)
+      // y a su color neutro.
       audioPill.textContent = st === 'listo' ? 'AUDIO LISTO'
-        : st === 'cargando' ? 'AUDIO…' : st === 'error' ? 'AUDIO ERROR' : 'AÑADIR AUDIO';
-      audioPill.dataset.state = st;
+        : st === 'cargando' ? 'AUDIO…' : 'AÑADIR AUDIO';
+      audioPill.dataset.state = st === 'error' ? 'sin-datos' : st;
     }
   }
   if (audioPill) audioPill.addEventListener('click', (ev) => {
@@ -274,6 +295,19 @@
     const okLoad = await window.SFAFS.copyFileList(files);
     if (okLoad) afterDataReady();
   });
+  // --- Selector de ZIP (Fase 10): la via de un solo fichero ---
+  const zipInput = $('data-zip');
+  if (zipInput) zipInput.addEventListener('change', async () => {
+    ensureAudio();
+    const file = zipInput.files && zipInput.files[0];
+    zipInput.value = ''; // permite re-elegir el mismo fichero
+    if (!file) return;
+    // importZip valida antes de copiar (sin sys/main.dol no se
+    // descomprime nada) y deja el error concreto en el estado;
+    // si la copia falla, NO se llama a afterDataReady (Fase 5).
+    const okLoad = await window.SFAFS.importZip(file);
+    if (okLoad) afterDataReady();
+  });
   const audioInput = $('audio-folder');
   if (audioInput) audioInput.addEventListener('change', async () => {
     // Overlay de audio: solo ficheros bajo audio/ (no reimporta sys/files).
@@ -300,6 +334,7 @@
       setStatus('ERROR — wasm sin sfa_web_load_game', 'El modulo cargado no es el build completo.');
     }
     refreshPills();
+    updatePlayButton(); // la copia recien importada ya persiste
   }
 
   // --- Bucle principal ---
@@ -393,20 +428,47 @@
     }
     probeDepth();
     refreshPills();
+    updatePlayButton();
   };
   window.SFAProbeDepth = probeDepth;
   refreshPills();
+  // --- Boton principal «▸ Jugar» (Fase 10) ---
+  // Si OPFS ya guarda una copia de sesiones anteriores, el
+  // boton principal pasa a ser «▸ Jugar»: UNA pulsacion
+  // restaura la copia y carga el juego (es SFAStart). Sin
+  // copia, el boton queda oculto y la pagina guia a la primera
+  // importacion (ZIP o carpeta), que quedan como opciones.
+  const playBtn = $('play-btn');
+  async function updatePlayButton() {
+    if (!playBtn || !window.SFAFS || !window.SFAFS.hasSavedCopy) return;
+    let has = false;
+    try { has = await window.SFAFS.hasSavedCopy(); } catch (e) { has = false; }
+    playBtn.hidden = !has;
+    if (has && window.SFAFS.state.status === 'sin-datos') {
+      setStatus('▶ Datos guardados en este navegador',
+        'Pulsa «▶ Jugar»: restaura tu copia guardada y arranca ' +
+        'el juego con una sola pulsacion. (ZIP y carpeta siguen ' +
+        'disponibles por si quieres reimportar.)');
+    }
+  }
+  if (playBtn) playBtn.addEventListener('click', () => {
+    ensureAudio();
+    if (window.SFAStart) window.SFAStart();
+  });
+  updatePlayButton();
   window.SFAStart = async function () {
+    ensureAudio();
     const restored = await window.SFAFS.loadFromOpfs();
     if (restored) afterDataReady();
     else if (window.SFAFS.state.status !== 'error') {
       // Fase 5: restaurar sin copia guardada ya no es un no-op
       // silencioso (era indistinguible de "la pagina no va").
-      setStatus('SIN COPIA GUARDADA — elige tu carpeta de datos',
+      setStatus('SIN COPIA GUARDADA — importa tus datos (ZIP o carpeta)',
         'Todavia no hay datos guardados en este navegador. Pulsa ' +
-        '«Elegir carpeta de datos» y elige la carpeta que contiene ' +
-        'sys/ y files/ (tu copia del disco). Los datos no estan en ' +
-        'el servidor: se cargan desde tu equipo y quedan solo en ' +
+        '«Elegir ZIP del disco» y elige el fichero starfox-disco.zip ' +
+        'de tu copia, o «Elegir carpeta de datos» con la carpeta ' +
+        'que contiene sys/ y files/. Los datos no estan en el ' +
+        'servidor: se cargan desde tu equipo y quedan solo en ' +
         'este navegador.');
     }
   };
